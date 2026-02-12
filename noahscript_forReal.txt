@@ -1,107 +1,412 @@
-game.Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function(character)
-        -- Build the path for this player's model
-        local basePath = workspace.Live:WaitForChild(player.Name)  -- Dynamically using player name
-        local humanoid = basePath:WaitForChild("Humanoid")
-        local posture = basePath:WaitForChild("Posture")
-        local lifeforce = basePath:WaitForChild("Lifeforce")
-        local head = character:WaitForChild("Head")
+-- Main GUI Module
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
 
-        -- Ensure HealthDisplayType is set correctly for the humanoid
-        if humanoid then
-            humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
-        else
-            warn(player.Name .. "'s humanoid is missing or not initialized.")
+-- Configuration
+local CONFIG = {
+    GitHubUrl = "https://raw.githubusercontent.com/MosIsOG/playground/refs/heads/main/noahscript.txt",
+    GuiName = "HealthBarController",
+    Position = UDim2.new(0, 10, 0, 10),
+    Size = UDim2.new(0, 200, 0, 80)
+}
+
+-- Module state
+local HealthBarSystem = {
+    Enabled = false,
+    Connections = {},
+    PlayerGuis = {},
+    GitHubScript = nil
+}
+
+-- Create main GUI
+local function createMainGui()
+    -- Clean up existing GUI
+    local existing = CoreGui:FindFirstChild(CONFIG.GuiName)
+    if existing then
+        existing:Destroy()
+    end
+    
+    -- Main ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = CONFIG.GuiName
+    screenGui.Parent = CoreGui
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Parent = screenGui
+    mainFrame.Size = CONFIG.Size
+    mainFrame.Position = CONFIG.Position
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    
+    -- Rounded corners
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.Parent = mainFrame
+    uiCorner.CornerRadius = UDim.new(0, 8)
+    
+    -- Title bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Parent = mainFrame
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    titleBar.BorderSizePixel = 0
+    titleBar.Position = UDim2.new(0, 0, 0, 0)
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.Parent = titleBar
+    titleCorner.CornerRadius = UDim.new(0, 8)
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Parent = titleBar
+    titleLabel.Size = UDim2.new(1, -40, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "Health Bar Controller"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextSize = 14
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Close button
+    local closeButton = Instance.new("TextButton")
+    closeButton.Parent = titleBar
+    closeButton.Size = UDim2.new(0, 30, 0, 30)
+    closeButton.Position = UDim2.new(1, -30, 0, 0)
+    closeButton.BackgroundTransparency = 1
+    closeButton.Text = "✕"
+    closeButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+    closeButton.TextSize = 18
+    closeButton.Font = Enum.Font.SourceSansBold
+    
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+    
+    -- Content Frame
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Parent = mainFrame
+    contentFrame.Size = UDim2.new(1, -20, 1, -40)
+    contentFrame.Position = UDim2.new(0, 10, 0, 35)
+    contentFrame.BackgroundTransparency = 1
+    
+    -- Toggle button
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Parent = contentFrame
+    toggleButton.Size = UDim2.new(1, 0, 0, 35)
+    toggleButton.Position = UDim2.new(0, 0, 0, 0)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    toggleButton.Text = "LOADING..."
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.TextSize = 16
+    toggleButton.Font = Enum.Font.SourceSansBold
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.Parent = toggleButton
+    buttonCorner.CornerRadius = UDim.new(0, 6)
+    
+    -- Status indicator
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Parent = contentFrame
+    statusFrame.Size = UDim2.new(1, 0, 0, 30)
+    statusFrame.Position = UDim2.new(0, 0, 0, 45)
+    statusFrame.BackgroundTransparency = 1
+    
+    local statusDot = Instance.new("Frame")
+    statusDot.Parent = statusFrame
+    statusDot.Size = UDim2.new(0, 10, 0, 10)
+    statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.Parent = statusDot
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Parent = statusFrame
+    statusLabel.Size = UDim2.new(1, -20, 1, 0)
+    statusLabel.Position = UDim2.new(0, 15, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Status: Disabled"
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextSize = 14
+    statusLabel.Font = Enum.Font.SourceSans
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Stats label
+    local statsLabel = Instance.new("TextLabel")
+    statsLabel.Parent = contentFrame
+    statsLabel.Size = UDim2.new(1, 0, 0, 20)
+    statsLabel.Position = UDim2.new(0, 0, 0, 85)
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.Text = "Players Tracked: 0"
+    statsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    statsLabel.TextSize = 12
+    statsLabel.Font = Enum.Font.SourceSans
+    statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    return {
+        ScreenGui = screenGui,
+        ToggleButton = toggleButton,
+        StatusDot = statusDot,
+        StatusLabel = statusLabel,
+        StatsLabel = statsLabel
+    }
+end
+
+-- Health Bar System Functions
+local function clearConnections()
+    for _, connection in pairs(HealthBarSystem.Connections) do
+        connection:Disconnect()
+    end
+    HealthBarSystem.Connections = {}
+    
+    -- Clear existing player GUIs
+    for playerName, gui in pairs(HealthBarSystem.PlayerGuis) do
+        if gui and gui.Parent then
+            gui:Destroy()
         end
+    end
+    HealthBarSystem.PlayerGuis = {}
+end
 
-        -- Create the health bar GUI only if the player's head exists
-        if head then
-            local billboardGui = Instance.new("BillboardGui")
-            billboardGui.Parent = head
-            billboardGui.Adornee = head
-            billboardGui.Size = UDim2.new(0, 200, 0, 50)
-            billboardGui.StudsOffset = Vector3.new(0, 3, 0)
-
-            local barBackground = Instance.new("Frame")
-            barBackground.Parent = billboardGui
-            barBackground.Size = UDim2.new(1, 0, 0.1, 0)
-            barBackground.Position = UDim2.new(0, 0, 0, 0)
-            barBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-
-            local bar = Instance.new("Frame")
-            bar.Parent = barBackground
-            bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
-            bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-
-            local lifeforceLabel = Instance.new("TextLabel")
-            lifeforceLabel.Parent = billboardGui
-            lifeforceLabel.Size = UDim2.new(0, 200, 0, 30)
-            lifeforceLabel.Position = UDim2.new(0, 0, -0.2, 0)
-            lifeforceLabel.Text = "HP: " .. lifeforce.Value
-            lifeforceLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            lifeforceLabel.TextSize = 14
-            lifeforceLabel.BackgroundTransparency = 1
-
-            lifeforce.Changed:Connect(function()
-                bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
-                lifeforceLabel.Text = "HP: " .. lifeforce.Value
-            end)
-
-            local postureLabel = Instance.new("TextLabel")
-            postureLabel.Parent = billboardGui
-            postureLabel.Size = UDim2.new(0, 200, 0, 30)
-            postureLabel.Position = UDim2.new(0, 0, -0.35, 0)
-            postureLabel.Text = "Posture: " .. posture.Value
-            postureLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-            postureLabel.TextSize = 14
-            postureLabel.BackgroundTransparency = 1
-
-            posture.Changed:Connect(function()
-                postureLabel.Text = "Posture: " .. posture.Value
-            end)
-
-            local hitCounter = 0
-
-            local hitLabel = Instance.new("TextLabel")
-            hitLabel.Parent = billboardGui
-            hitLabel.Size = UDim2.new(0, 200, 0, 50)
-            hitLabel.Position = UDim2.new(0, 0, 0, 50)
-            hitLabel.Text = "-0"
-            hitLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-            hitLabel.TextSize = 20
-            hitLabel.BackgroundTransparency = 1
-
-            local function updateHitCounter(damage)
-                hitCounter = hitCounter - damage
-                hitLabel.Text = "-" .. math.abs(hitCounter)
-            end
-
-            humanoid.HealthChanged:Connect(function(newHealth)
-                local damageTaken = humanoid.Health - newHealth
-                if damageTaken > 0 then
-                    updateHitCounter(damageTaken)
-                end
-            end)
-
-            -- Fetch and execute raw script from GitHub
-            local HttpService = game:GetService("HttpService")
-            local url = "https://raw.githubusercontent.com/MosIsOG/playground/refs/heads/main/noahscript.txt"
-            local success, response = pcall(function()
-                return HttpService:GetAsync(url)  -- Fetch the raw script content
-            end)
-
-            if success then
-                local func, errorMsg = loadstring(response)  -- Convert the response into a Lua function
-                if func then
-                    func()  -- Execute the loaded Lua code
-                else
-                    warn("Failed to convert the script to a function: " .. errorMsg)  -- If conversion fails, show error
-                end
-            else
-                warn("Failed to retrieve the raw content from GitHub: " .. response)  -- Handle errors during the fetch
-            end
-        else
-            warn(player.Name .. "'s head is missing, cannot create health bar.")
+local function createHealthBar(player, character)
+    if not HealthBarSystem.Enabled then return end
+    
+    local basePath = workspace:FindFirstChild("Live")
+    if not basePath then return end
+    
+    basePath = basePath:FindFirstChild(player.Name)
+    if not basePath then return end
+    
+    local humanoid = basePath:FindFirstChild("Humanoid")
+    local lifeforce = basePath:FindFirstChild("Lifeforce")
+    local head = character:FindFirstChild("Head")
+    
+    if not (humanoid and lifeforce and head) then return end
+    
+    -- Prevent duplicate GUI
+    if HealthBarSystem.PlayerGuis[player.Name] then
+        HealthBarSystem.PlayerGuis[player.Name]:Destroy()
+    end
+    
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Parent = head
+    billboardGui.Adornee = head
+    billboardGui.Size = UDim2.new(0, 200, 0, 20)
+    billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+    billboardGui.Name = player.Name .. "_HealthBar"
+    billboardGui.ResetOnSpawn = false
+    
+    local barBackground = Instance.new("Frame")
+    barBackground.Parent = billboardGui
+    barBackground.Size = UDim2.new(1, 0, 1, 0)
+    barBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    barBackground.BackgroundTransparency = 0.3
+    barBackground.BorderSizePixel = 0
+    
+    local bar = Instance.new("Frame")
+    bar.Parent = barBackground
+    bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    bar.BorderSizePixel = 0
+    
+    -- Damage counter
+    local hitCounter = 0
+    local hitLabel = Instance.new("TextLabel")
+    hitLabel.Parent = billboardGui
+    hitLabel.Size = UDim2.new(1, 0, 0, 30)
+    hitLabel.Position = UDim2.new(0, 0, 1, 5)
+    hitLabel.Text = "-0"
+    hitLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    hitLabel.TextSize = 20
+    hitLabel.BackgroundTransparency = 1
+    hitLabel.Font = Enum.Font.SourceSansBold
+    hitLabel.TextStrokeTransparency = 0.5
+    hitLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    hitLabel.Name = "DamageCounter"
+    
+    -- Connections
+    local lifeforceConnection = lifeforce.Changed:Connect(function(newValue)
+        bar.Size = UDim2.new(newValue / 100, 0, 1, 0)
+    end)
+    
+    local healthChangedConnection = humanoid.HealthChanged:Connect(function(newHealth)
+        local oldHealth = humanoid.Health
+        local damageTaken = oldHealth - newHealth
+        if damageTaken > 0 then
+            hitCounter = hitCounter + damageTaken
+            hitLabel.Text = "-" .. hitCounter
         end
     end)
+    
+    local diedConnection = humanoid.Died:Connect(function()
+        if billboardGui and billboardGui.Parent then
+            billboardGui:Destroy()
+            HealthBarSystem.PlayerGuis[player.Name] = nil
+        end
+    end)
+    
+    -- Store connections for cleanup
+    table.insert(HealthBarSystem.Connections, lifeforceConnection)
+    table.insert(HealthBarSystem.Connections, healthChangedConnection)
+    table.insert(HealthBarSystem.Connections, diedConnection)
+    
+    HealthBarSystem.PlayerGuis[player.Name] = billboardGui
+    
+    return billboardGui
+end
+
+local function enableSystem()
+    if HealthBarSystem.Enabled then return end
+    
+    HealthBarSystem.Enabled = true
+    
+    -- Player added connection
+    local playerAddedConnection = Players.PlayerAdded:Connect(function(player)
+        if not HealthBarSystem.Enabled then return end
+        
+        local characterAddedConnection = player.CharacterAdded:Connect(function(character)
+            if not HealthBarSystem.Enabled then return end
+            createHealthBar(player, character)
+        end)
+        
+        table.insert(HealthBarSystem.Connections, characterAddedConnection)
+        
+        -- Check if character already exists
+        if player.Character then
+            createHealthBar(player, player.Character)
+        end
+    end)
+    
+    table.insert(HealthBarSystem.Connections, playerAddedConnection)
+    
+    -- Check for existing players
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            createHealthBar(player, player.Character)
+        end
+    end
+    
+    print("DEBUG: Health bar system ENABLED")
+end
+
+local function disableSystem()
+    HealthBarSystem.Enabled = false
+    clearConnections()
+    print("DEBUG: Health bar system DISABLED")
+end
+
+-- Fetch GitHub script
+local function fetchGitHubScript()
+    local success, response = pcall(function()
+        return HttpService:GetAsync(CONFIG.GitHubUrl)
+    end)
+    
+    if success then
+        local func, errorMsg = loadstring(response)
+        if func then
+            HealthBarSystem.GitHubScript = func
+            print("DEBUG: GitHub script loaded successfully")
+            return true
+        else
+            warn("DEBUG: Failed to load GitHub script: " .. errorMsg)
+        end
+    else
+        warn("DEBUG: Failed to fetch GitHub script: " .. tostring(response))
+    end
+    return false
+end
+
+-- Initialize GUI
+local gui = createMainGui()
+local toggleButton = gui.ToggleButton
+local statusDot = gui.StatusDot
+local statusLabel = gui.StatusLabel
+local statsLabel = gui.StatsLabel
+
+-- Fetch GitHub script on startup
+fetchGitHubScript()
+
+-- Setup toggle functionality
+local function updateUI()
+    if HealthBarSystem.Enabled then
+        toggleButton.Text = "DISABLE HEALTH BARS"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        statusLabel.Text = "Status: Enabled"
+    else
+        toggleButton.Text = "ENABLE HEALTH BARS"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+        statusDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        statusLabel.Text = "Status: Disabled"
+    end
+    
+    -- Update stats
+    local tracked = 0
+    for _ in pairs(HealthBarSystem.PlayerGuis) do
+        tracked = tracked + 1
+    end
+    statsLabel.Text = "Players Tracked: " .. tracked .. " | System: " .. (HealthBarSystem.Enabled and "Active" or "Inactive")
+end
+
+toggleButton.MouseButton1Click:Connect(function()
+    if HealthBarSystem.Enabled then
+        disableSystem()
+    else
+        enableSystem()
+        -- Execute GitHub script if loaded
+        if HealthBarSystem.GitHubScript then
+            HealthBarSystem.GitHubScript()
+        end
+    end
+    updateUI()
 end)
+
+-- Update stats periodically
+RunService.Heartbeat:Connect(function()
+    if gui.ScreenGui and gui.ScreenGui.Parent then
+        updateUI()
+    end
+end)
+
+-- Initial UI update
+updateUI()
+
+-- Command bar for toggling (useful for developers)
+local function createCommandBar()
+    local commandBar = Instance.new("Frame")
+    commandBar.Parent = gui.ScreenGui
+    commandBar.Size = UDim2.new(0, 200, 0, 30)
+    commandBar.Position = UDim2.new(0, 10, 0, 100)
+    commandBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    commandBar.BackgroundTransparency = 0.1
+    commandBar.BorderSizePixel = 0
+    commandBar.Visible = false  -- Hidden by default
+    
+    local cmdCorner = Instance.new("UICorner")
+    cmdCorner.Parent = commandBar
+    cmdCorner.CornerRadius = UDim.new(0, 6)
+    
+    local cmdLabel = Instance.new("TextLabel")
+    cmdLabel.Parent = commandBar
+    cmdLabel.Size = UDim2.new(1, -10, 1, 0)
+    cmdLabel.Position = UDim2.new(0, 10, 0, 0)
+    cmdLabel.BackgroundTransparency = 1
+    cmdLabel.Text = "Type '/healthbar' to toggle"
+    cmdLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    cmdLabel.TextSize = 12
+    cmdLabel.Font = Enum.Font.SourceSans
+    cmdLabel.TextXAlignment = Enum.TextXAlignment.Left
+end
+
+createCommandBar()
+
+print("DEBUG: Health Bar Controller GUI loaded successfully")
