@@ -19,7 +19,7 @@ local WorldToViewport = function(...) return Camera.WorldToViewportPoint(Camera,
 
 -- Configuration
 local CONFIG = {
-    BarWidth = 180,
+    BarWidth = 180,  -- FIXED WIDTH - never changes
     BarHeight = 8,
     Spacing = 10,
     FontSize = 16,
@@ -189,7 +189,8 @@ local function CreatePlayerBars(player)
         Visible = true
     }
     
-    -- Fixed length bars - backgrounds are full width, fill bars show percentage
+    -- Fixed length bars - backgrounds are FULL WIDTH (180px), fill bars show percentage
+    -- Background size is ALWAYS CONFIG.BarWidth, fill bar size is percentage of that
     bars.Container = {
         -- Player name
         NameText = Drawings:New("Text", {
@@ -206,13 +207,15 @@ local function CreatePlayerBars(player)
             Color = Color3.fromRGB(30, 30, 30),
             Filled = true,
             Transparency = 0.8,
-            Visible = false
+            Visible = false,
+            ZIndex = 1
         }),
         PostureBar = Drawings:New("Square", {
             Color = Color3.fromRGB(255, 255, 70),
             Filled = true,
             Transparency = 0.9,
-            Visible = false
+            Visible = false,
+            ZIndex = 2
         }),
         PostureText = Drawings:New("Text", {
             Color = Color3.fromRGB(255, 255, 70),
@@ -237,13 +240,15 @@ local function CreatePlayerBars(player)
             Color = Color3.fromRGB(30, 30, 30),
             Filled = true,
             Transparency = 0.8,
-            Visible = false
+            Visible = false,
+            ZIndex = 1
         }),
         HealthBar = Drawings:New("Square", {
             Color = Color3.fromRGB(255, 70, 70),
             Filled = true,
             Transparency = 0.9,
-            Visible = false
+            Visible = false,
+            ZIndex = 2
         }),
         HealthText = Drawings:New("Text", {
             Color = Color3.fromRGB(255, 255, 255),
@@ -369,18 +374,22 @@ local function UpdateBars()
         nameText.Transparency = math.clamp(1 - (500 / distance), 0.5, 1)
         
         -- POSTURE BAR (Top - Yellow)
+        -- Background - ALWAYS full width (FIXED)
         local postureBg = bars.Container.PostureBarBg
         postureBg.Position = V2New(baseX, baseY)
-        postureBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+        postureBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)  -- ALWAYS 180px wide
         postureBg.Visible = true
-        postureBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        postureBg.Transparency = 0.7  -- Lower transparency to see full bar
+        postureBg.ZIndex = 1
         
+        -- Fill bar - Width shows percentage, but background stays full width
         local postureFill = bars.Container.PostureBar
         postureFill.Position = V2New(baseX, baseY)
-        postureFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentPosture / 100), CONFIG.BarHeight)
+        postureFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentPosture / 100), CONFIG.BarHeight)  -- Percentage of fixed width
         postureFill.Visible = true
-        postureFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        postureFill.Transparency = 0.7
         postureFill.Color = Color3.fromRGB(255, 255, 70)
+        postureFill.ZIndex = 2
         
         -- Posture text
         local postureText = bars.Container.PostureText
@@ -390,18 +399,22 @@ local function UpdateBars()
         postureText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         
         -- HEALTH BAR (Bottom - Red)
+        -- Background - ALWAYS full width (FIXED)
         local healthBg = bars.Container.HealthBarBg
         healthBg.Position = V2New(baseX, baseY + CONFIG.Spacing)
-        healthBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+        healthBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)  -- ALWAYS 180px wide
         healthBg.Visible = true
-        healthBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        healthBg.Transparency = 0.7  -- Lower transparency to see full bar
+        healthBg.ZIndex = 1
         
+        -- Fill bar - Width shows percentage, but background stays full width
         local healthFill = bars.Container.HealthBar
         healthFill.Position = V2New(baseX, baseY + CONFIG.Spacing)
-        healthFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentHealth / 100), CONFIG.BarHeight)
+        healthFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentHealth / 100), CONFIG.BarHeight)  -- Percentage of fixed width
         healthFill.Visible = true
-        healthFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        healthFill.Transparency = 0.7
         healthFill.Color = Color3.fromRGB(255, 70, 70)
+        healthFill.ZIndex = 2
         
         -- Health text
         local healthText = bars.Container.HealthText
@@ -627,6 +640,7 @@ local function Initialize()
     print("[HealthSystem] Initialized successfully")
     print("[HealthSystem] Press F3 to toggle bars, F4 to toggle menu")
     print("[HealthSystem] Damage indicators: Health (red) | Posture (yellow)")
+    print("[HealthSystem] Bars are FIXED LENGTH - Background always 180px wide")
 end
 
 -- Start the system
