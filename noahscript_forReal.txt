@@ -3,13 +3,14 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
 
 -- Configuration
 local CONFIG = {
     GitHubUrl = "https://raw.githubusercontent.com/MosIsOG/playground/refs/heads/main/noahscript.txt",
     GuiName = "HealthBarController",
     Position = UDim2.new(0, 10, 0, 10),
-    Size = UDim2.new(0, 200, 0, 80)
+    Size = UDim2.new(0, 240, 0, 140)
 }
 
 -- Module state
@@ -41,7 +42,7 @@ local function createMainGui()
     mainFrame.Parent = screenGui
     mainFrame.Size = CONFIG.Size
     mainFrame.Position = CONFIG.Position
-    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     mainFrame.BackgroundTransparency = 0.1
     mainFrame.BorderSizePixel = 0
     mainFrame.Active = true
@@ -56,7 +57,7 @@ local function createMainGui()
     local titleBar = Instance.new("Frame")
     titleBar.Parent = mainFrame
     titleBar.Size = UDim2.new(1, 0, 0, 30)
-    titleBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     titleBar.BorderSizePixel = 0
     titleBar.Position = UDim2.new(0, 0, 0, 0)
     
@@ -70,7 +71,7 @@ local function createMainGui()
     titleLabel.Position = UDim2.new(0, 10, 0, 0)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = "Health Bar Controller"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
     titleLabel.TextSize = 14
     titleLabel.Font = Enum.Font.SourceSansBold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -82,7 +83,7 @@ local function createMainGui()
     closeButton.Position = UDim2.new(1, -30, 0, 0)
     closeButton.BackgroundTransparency = 1
     closeButton.Text = "✕"
-    closeButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+    closeButton.TextColor3 = Color3.fromRGB(255, 80, 80)
     closeButton.TextSize = 18
     closeButton.Font = Enum.Font.SourceSansBold
     
@@ -152,12 +153,25 @@ local function createMainGui()
     statsLabel.Font = Enum.Font.SourceSans
     statsLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    -- Local player warning
+    local warningLabel = Instance.new("TextLabel")
+    warningLabel.Parent = contentFrame
+    warningLabel.Size = UDim2.new(1, 0, 0, 20)
+    warningLabel.Position = UDim2.new(0, 0, 0, 110)
+    warningLabel.BackgroundTransparency = 1
+    warningLabel.Text = "⚠ Your own health bar is hidden"
+    warningLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+    warningLabel.TextSize = 11
+    warningLabel.Font = Enum.Font.SourceSans
+    warningLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
     return {
         ScreenGui = screenGui,
         ToggleButton = toggleButton,
         StatusDot = statusDot,
         StatusLabel = statusLabel,
-        StatsLabel = statsLabel
+        StatsLabel = statsLabel,
+        WarningLabel = warningLabel
     }
 end
 
@@ -180,6 +194,11 @@ end
 local function createHealthBar(player, character)
     if not HealthBarSystem.Enabled then return end
     
+    -- DON'T create health bar for local player
+    if player == LocalPlayer then
+        return
+    end
+    
     local basePath = workspace:FindFirstChild("Live")
     if not basePath then return end
     
@@ -188,9 +207,10 @@ local function createHealthBar(player, character)
     
     local humanoid = basePath:FindFirstChild("Humanoid")
     local lifeforce = basePath:FindFirstChild("Lifeforce")
+    local posture = basePath:FindFirstChild("Posture")
     local head = character:FindFirstChild("Head")
     
-    if not (humanoid and lifeforce and head) then return end
+    if not (humanoid and lifeforce and posture and head) then return end
     
     -- Prevent duplicate GUI
     if HealthBarSystem.PlayerGuis[player.Name] then
@@ -200,33 +220,50 @@ local function createHealthBar(player, character)
     local billboardGui = Instance.new("BillboardGui")
     billboardGui.Parent = head
     billboardGui.Adornee = head
-    billboardGui.Size = UDim2.new(0, 200, 0, 20)
+    billboardGui.Size = UDim2.new(0, 200, 0, 40)  -- Taller to accommodate both bars
     billboardGui.StudsOffset = Vector3.new(0, 3, 0)
     billboardGui.Name = player.Name .. "_HealthBar"
     billboardGui.ResetOnSpawn = false
     
-    local barBackground = Instance.new("Frame")
-    barBackground.Parent = billboardGui
-    barBackground.Size = UDim2.new(1, 0, 1, 0)
-    barBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    barBackground.BackgroundTransparency = 0.3
-    barBackground.BorderSizePixel = 0
+    -- Posture Bar (Yellow, on top)
+    local postureBackground = Instance.new("Frame")
+    postureBackground.Parent = billboardGui
+    postureBackground.Size = UDim2.new(1, 0, 0, 8)
+    postureBackground.Position = UDim2.new(0, 0, 0, 0)
+    postureBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    postureBackground.BackgroundTransparency = 0.3
+    postureBackground.BorderSizePixel = 0
     
-    local bar = Instance.new("Frame")
-    bar.Parent = barBackground
-    bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
-    bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    bar.BorderSizePixel = 0
+    local postureBar = Instance.new("Frame")
+    postureBar.Parent = postureBackground
+    postureBar.Size = UDim2.new(posture.Value / 100, 0, 1, 0)
+    postureBar.BackgroundColor3 = Color3.fromRGB(255, 255, 0)  -- Bright yellow
+    postureBar.BorderSizePixel = 0
+    
+    -- Health Bar (Red, below posture)
+    local healthBackground = Instance.new("Frame")
+    healthBackground.Parent = billboardGui
+    healthBackground.Size = UDim2.new(1, 0, 0, 8)
+    healthBackground.Position = UDim2.new(0, 0, 0, 10)  -- Below posture bar
+    healthBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    healthBackground.BackgroundTransparency = 0.3
+    healthBackground.BorderSizePixel = 0
+    
+    local healthBar = Instance.new("Frame")
+    healthBar.Parent = healthBackground
+    healthBar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
+    healthBar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)  -- Bright red
+    healthBar.BorderSizePixel = 0
     
     -- Damage counter
     local hitCounter = 0
     local hitLabel = Instance.new("TextLabel")
     hitLabel.Parent = billboardGui
-    hitLabel.Size = UDim2.new(1, 0, 0, 30)
+    hitLabel.Size = UDim2.new(1, 0, 0, 20)
     hitLabel.Position = UDim2.new(0, 0, 1, 5)
     hitLabel.Text = "-0"
-    hitLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-    hitLabel.TextSize = 20
+    hitLabel.TextColor3 = Color3.fromRGB(255, 100, 100)  -- Softer red
+    hitLabel.TextSize = 18
     hitLabel.BackgroundTransparency = 1
     hitLabel.Font = Enum.Font.SourceSansBold
     hitLabel.TextStrokeTransparency = 0.5
@@ -235,7 +272,11 @@ local function createHealthBar(player, character)
     
     -- Connections
     local lifeforceConnection = lifeforce.Changed:Connect(function(newValue)
-        bar.Size = UDim2.new(newValue / 100, 0, 1, 0)
+        healthBar.Size = UDim2.new(newValue / 100, 0, 1, 0)
+    end)
+    
+    local postureConnection = posture.Changed:Connect(function(newValue)
+        postureBar.Size = UDim2.new(newValue / 100, 0, 1, 0)
     end)
     
     local healthChangedConnection = humanoid.HealthChanged:Connect(function(newHealth)
@@ -256,6 +297,7 @@ local function createHealthBar(player, character)
     
     -- Store connections for cleanup
     table.insert(HealthBarSystem.Connections, lifeforceConnection)
+    table.insert(HealthBarSystem.Connections, postureConnection)
     table.insert(HealthBarSystem.Connections, healthChangedConnection)
     table.insert(HealthBarSystem.Connections, diedConnection)
     
@@ -288,14 +330,14 @@ local function enableSystem()
     
     table.insert(HealthBarSystem.Connections, playerAddedConnection)
     
-    -- Check for existing players
+    -- Check for existing players (skip local player)
     for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character then
+        if player ~= LocalPlayer and player.Character then
             createHealthBar(player, player.Character)
         end
     end
     
-    print("DEBUG: Health bar system ENABLED")
+    print("DEBUG: Health bar system ENABLED (local player hidden)")
 end
 
 local function disableSystem()
@@ -331,6 +373,7 @@ local toggleButton = gui.ToggleButton
 local statusDot = gui.StatusDot
 local statusLabel = gui.StatusLabel
 local statsLabel = gui.StatsLabel
+local warningLabel = gui.WarningLabel
 
 -- Fetch GitHub script on startup
 fetchGitHubScript()
@@ -342,11 +385,13 @@ local function updateUI()
         toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
         statusLabel.Text = "Status: Enabled"
+        warningLabel.Visible = true
     else
         toggleButton.Text = "ENABLE HEALTH BARS"
         toggleButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
         statusDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
         statusLabel.Text = "Status: Disabled"
+        warningLabel.Visible = false
     end
     
     -- Update stats
@@ -354,7 +399,7 @@ local function updateUI()
     for _ in pairs(HealthBarSystem.PlayerGuis) do
         tracked = tracked + 1
     end
-    statsLabel.Text = "Players Tracked: " .. tracked .. " | System: " .. (HealthBarSystem.Enabled and "Active" or "Inactive")
+    statsLabel.Text = "Other Players Tracked: " .. tracked .. " | Your bars: Hidden"
 end
 
 toggleButton.MouseButton1Click:Connect(function()
@@ -380,33 +425,4 @@ end)
 -- Initial UI update
 updateUI()
 
--- Command bar for toggling (useful for developers)
-local function createCommandBar()
-    local commandBar = Instance.new("Frame")
-    commandBar.Parent = gui.ScreenGui
-    commandBar.Size = UDim2.new(0, 200, 0, 30)
-    commandBar.Position = UDim2.new(0, 10, 0, 100)
-    commandBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    commandBar.BackgroundTransparency = 0.1
-    commandBar.BorderSizePixel = 0
-    commandBar.Visible = false  -- Hidden by default
-    
-    local cmdCorner = Instance.new("UICorner")
-    cmdCorner.Parent = commandBar
-    cmdCorner.CornerRadius = UDim.new(0, 6)
-    
-    local cmdLabel = Instance.new("TextLabel")
-    cmdLabel.Parent = commandBar
-    cmdLabel.Size = UDim2.new(1, -10, 1, 0)
-    cmdLabel.Position = UDim2.new(0, 10, 0, 0)
-    cmdLabel.BackgroundTransparency = 1
-    cmdLabel.Text = "Type '/healthbar' to toggle"
-    cmdLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    cmdLabel.TextSize = 12
-    cmdLabel.Font = Enum.Font.SourceSans
-    cmdLabel.TextXAlignment = Enum.TextXAlignment.Left
-end
-
-createCommandBar()
-
-print("DEBUG: Health Bar Controller GUI loaded successfully")
+print("DEBUG: Health Bar Controller GUI loaded successfully (local player hidden)")
