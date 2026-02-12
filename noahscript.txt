@@ -1,0 +1,53 @@
+game.Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        local basePath = workspace.Live:WaitForChild(player.Name)
+        local humanoid = basePath:WaitForChild("Humanoid")
+        local posture = basePath:WaitForChild("Posture")
+        local lifeforce = basePath:WaitForChild("Lifeforce")
+        local head = character:WaitForChild("Head")
+
+        if humanoid then
+            humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+        else
+            warn(player.Name .. "'s humanoid is missing or not initialized.")
+        end
+        if head then
+            local billboardGui = Instance.new("BillboardGui")
+            billboardGui.Parent = head
+            billboardGui.Adornee = head
+            billboardGui.Size = UDim2.new(0, 200, 0, 50)
+            billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+
+            local barBackground = Instance.new("Frame")
+            barBackground.Parent = billboardGui
+            barBackground.Size = UDim2.new(1, 0, 0.1, 0)
+            barBackground.Position = UDim2.new(0, 0, 0, 0)
+            barBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+
+            local bar = Instance.new("Frame")
+            bar.Parent = barBackground
+            bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
+            bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+
+            local lifeforceLabel = Instance.new("TextLabel")
+            lifeforceLabel.Parent = billboardGui
+            lifeforceLabel.Size = UDim2.new(0, 200, 0, 30)
+            lifeforceLabel.Position = UDim2.new(0, 0, -0.2, 0)
+            lifeforceLabel.Text = "HP: " .. lifeforce.Value
+            lifeforceLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            lifeforceLabel.TextSize = 14
+            lifeforceLabel.BackgroundTransparency = 1
+            lifeforce.Changed:Connect(function()
+                bar.Size = UDim2.new(lifeforce.Value / 100, 0, 1, 0)
+                lifeforceLabel.Text = "HP: " .. lifeforce.Value
+                print("Lifeforce changed to: " .. lifeforce.Value)  -- Debugging line
+            end)
+
+            local postureLabel = Instance.new("TextLabel")
+            postureLabel.Parent = billboardGui
+            postureLabel.Size = UDim2.new(0, 200, 0, 30)
+            postureLabel.Position = UDim2.new(0, 0, -0.35, 0)
+            postureLabel.Text = "Posture: " .. posture.Value
+            postureLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+            postureLabel.TextSize = 14
+            postureLabel.BackgroundTransparency = 1
