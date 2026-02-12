@@ -1,5 +1,5 @@
 -- Smooth Health Bar System with Posture Display
--- Fixed-length bars with separate damage counters
+-- Fixed-length bars with proper MaxValue and MinValue properties
 
 assert(Drawing, 'Exploit not supported - Drawing API required')
 
@@ -150,10 +150,10 @@ local function CreateMenu()
     })
     
     menu.DamageText = Drawings:New("Text", {
-        Text = "Damage indicators: ON",
+        Text = "Using MaxValue/MinValue",
         Position = menu.Position + V2New(10, 135),
         Size = 12,
-        Color = Color3.fromRGB(200, 200, 100),
+        Color = Color3.fromRGB(100, 200, 255),
         Visible = false
     })
     
@@ -174,17 +174,11 @@ local function CreatePlayerBars(player)
     
     local bars = {
         Player = player,
-        LastCharacter = nil,  -- Track character for damage reset
+        LastCharacter = nil,
         CurrentHealth = 100,
         CurrentPosture = 100,
         TargetHealth = 100,
         TargetPosture = 100,
-        
-        -- Damage tracking - updated to match reference
-        HealthDamage = 0,
-        PostureDamage = 0,
-        HealthDamageTimer = nil,  -- nil when not active
-        PostureDamageTimer = nil, -- nil when not active
         
         Objects = {},
         Visible = true
@@ -223,17 +217,6 @@ local function CreatePlayerBars(player)
             Visible = false
         }),
         
-        -- Posture damage indicator (yellow damage numbers)
-        PostureDamageText = Drawings:New("Text", {
-            Color = Color3.fromRGB(255, 200, 0),
-            Size = 22,
-            Center = true,
-            Outline = true,
-            OutlineOpacity = 0.8,
-            Visible = false,
-            Transparency = 1
-        }),
-        
         -- Health bar (bottom - red)
         HealthBarBg = Drawings:New("Square", {
             Color = Color3.fromRGB(30, 30, 30),
@@ -253,17 +236,6 @@ local function CreatePlayerBars(player)
             Outline = true,
             OutlineOpacity = 0.5,
             Visible = false
-        }),
-        
-        -- Health damage indicator (red damage numbers)
-        HealthDamageText = Drawings:New("Text", {
-            Color = Color3.fromRGB(255, 100, 100),
-            Size = 22,
-            Center = true,
-            Outline = true,
-            OutlineOpacity = 0.8,
-            Visible = false,
-            Transparency = 1
         })
     }
     
@@ -311,14 +283,22 @@ local function UpdateBars()
             continue
         end
         
-        -- Check if this is a different character than before (reset damage)
+        -- Check if this is a different character than before
         if bars.LastCharacter ~= character then
             bars.LastCharacter = character
-            bars.HealthDamage = 0
-            bars.PostureDamage = 0
-            bars.HealthDamageTimer = nil
-            bars.PostureDamageTimer = nil
         end
+        
+        -- Get actual MaxValue and MinValue from the objects
+        local healthMax = lifeforce:GetAttribute("MaxValue") or lifeforce.MaxValue or 100
+        local healthMin = lifeforce:GetAttribute("MinValue") or lifeforce.MinValue or 0
+        local postureMax = posture:GetAttribute("MaxValue") or posture.MaxValue or 100
+        local postureMin = posture:GetAttribute("MinValue") or posture.MinValue or 0
+        
+        -- Ensure we have valid numbers
+        healthMax = (type(healthMax) == "number" and healthMax > 0) and healthMax or 100
+        healthMin = (type(healthMin) == "number") and healthMin or 0
+        postureMax = (type(postureMax) == "number" and postureMax > 0) and postureMax or 100
+        postureMin = (type(postureMin) == "number") and postureMin or 0
         
         -- Check distance
         local headPos = head.Position
@@ -342,32 +322,23 @@ local function UpdateBars()
         activePlayers = activePlayers + 1
         
         -- Update target values
-        local oldHealth = bars.TargetHealth
-        local oldPosture = bars.TargetPosture
-        
         bars.TargetHealth = lifeforce.Value
         bars.TargetPosture = posture.Value
-        
-        -- Track damage taken
-        local healthDamage = oldHealth - bars.TargetHealth
-        if healthDamage > 0 then
-            bars.HealthDamage = bars.HealthDamage + math.floor(healthDamage)
-            bars.HealthDamageTimer = 3 -- Show for 3 seconds
-        end
-        
-        local postureDamage = oldPosture - bars.TargetPosture
-        if postureDamage > 0 then
-            bars.PostureDamage = bars.PostureDamage + math.floor(postureDamage)
-            bars.PostureDamageTimer = 3 -- Show for 3 seconds
-        end
         
         -- Smooth interpolation
         bars.CurrentHealth = bars.CurrentHealth + (bars.TargetHealth - bars.CurrentHealth) * 0.3
         bars.CurrentPosture = bars.CurrentPosture + (bars.TargetPosture - bars.CurrentPosture) * 0.3
         
-        -- Clamp values
-        bars.CurrentHealth = math.clamp(bars.CurrentHealth, 0, 100)
-        bars.CurrentPosture = math.clamp(bars.CurrentPosture, 0, 100)
+        -- Clamp values using actual Min/Max
+        bars.CurrentHealth = math.clamp(bars.CurrentHealth, healthMin, healthMax)
+        bars.CurrentPosture = math.clamp(bars.CurrentPosture, postureMin, postureMax)
+        
+        -- Calculate fill percentages based on actual Max/Min
+        local healthRange = healthMax - healthMin
+        local postureRange = postureMax - postureMin
+        
+        local healthFillPercent = healthRange > 0 and ((bars.CurrentHealth - healthMin) / healthRange) or 0
+        local postureFillPercent = postureRange > 0 and ((bars.CurrentPosture - postureMin) / postureRange) or 0
         
         -- Position bars above head - FIXED WIDTH
         local baseX = screenPos.X - CONFIG.BarWidth / 2
@@ -389,14 +360,14 @@ local function UpdateBars()
         
         local postureFill = bars.Container.PostureBar
         postureFill.Position = V2New(baseX, baseY)
-        postureFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentPosture / 100), CONFIG.BarHeight)
+        postureFill.Size = V2New(CONFIG.BarWidth * postureFillPercent, CONFIG.BarHeight)
         postureFill.Visible = true
         postureFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         postureFill.Color = Color3.fromRGB(255, 255, 70)
         
-        -- Posture text
+        -- Posture text with current/max format
         local postureText = bars.Container.PostureText
-        postureText.Text = string.format("Posture: %d", math.floor(bars.CurrentPosture))
+        postureText.Text = string.format("%.0f/%.0f", bars.CurrentPosture, postureMax)
         postureText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY - 2)
         postureText.Visible = true
         postureText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
@@ -410,97 +381,20 @@ local function UpdateBars()
         
         local healthFill = bars.Container.HealthBar
         healthFill.Position = V2New(baseX, baseY + CONFIG.Spacing)
-        healthFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentHealth / 100), CONFIG.BarHeight)
+        healthFill.Size = V2New(CONFIG.BarWidth * healthFillPercent, CONFIG.BarHeight)
         healthFill.Visible = true
         healthFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         healthFill.Color = Color3.fromRGB(255, 70, 70)
         
-        -- Health text
+        -- Health text with current/max format
         local healthText = bars.Container.HealthText
-        healthText.Text = string.format("HP: %d", math.floor(bars.CurrentHealth))
+        healthText.Text = string.format("%.0f/%.0f", bars.CurrentHealth, healthMax)
         healthText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY + CONFIG.Spacing - 2)
         healthText.Visible = true
         healthText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         
-        -- POSTURE DAMAGE INDICATOR (Yellow damage numbers)
-        if bars.PostureDamageTimer then
-            bars.PostureDamageTimer = bars.PostureDamageTimer - 0.016
-            
-            if bars.PostureDamageTimer < 0 then
-                bars.PostureDamageTimer = nil
-                bars.PostureDamage = 0
-                bars.Container.PostureDamageText.Visible = false
-                bars.Container.PostureDamageText.Transparency = 1
-            else
-                local postureDamageText = bars.Container.PostureDamageText
-                postureDamageText.Text = "-" .. bars.PostureDamage
-                postureDamageText.Position = V2New(screenPos.X, baseY - 45)
-                postureDamageText.Visible = true
-                postureDamageText.Transparency = 0
-                
-                -- Float up effect
-                local floatOffset = (3 - bars.PostureDamageTimer) * 8
-                postureDamageText.Position = V2New(screenPos.X, baseY - 45 - floatOffset)
-            end
-        else
-            bars.Container.PostureDamageText.Visible = false
-            bars.Container.PostureDamageText.Transparency = 1
-        end
-        
-        -- HEALTH DAMAGE INDICATOR (Red damage numbers)
-        if bars.HealthDamageTimer then
-            bars.HealthDamageTimer = bars.HealthDamageTimer - 0.016
-            
-            if bars.HealthDamageTimer < 0 then
-                bars.HealthDamageTimer = nil
-                bars.HealthDamage = 0
-                bars.Container.HealthDamageText.Visible = false
-                bars.Container.HealthDamageText.Transparency = 1
-            else
-                local healthDamageText = bars.Container.HealthDamageText
-                healthDamageText.Text = "-" .. bars.HealthDamage
-                healthDamageText.Position = V2New(screenPos.X, baseY - 15)
-                healthDamageText.Visible = true
-                healthDamageText.Transparency = 0
-                
-                -- Float up effect
-                local floatOffset = (3 - bars.HealthDamageTimer) * 8
-                healthDamageText.Position = V2New(screenPos.X, baseY - 15 - floatOffset)
-            end
-        else
-            bars.Container.HealthDamageText.Visible = false
-            bars.Container.HealthDamageText.Transparency = 1
-        end
-        
         -- Set humanoid display type to AlwaysOn
         humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
-        
-        -- Track damage from HealthChanged for lifeforce
-        if not bars.HealthConnection then
-            bars.HealthConnection = humanoid.HealthChanged:Connect(function(newHealth)
-                local oldHealth = humanoid.Health
-                local damage = oldHealth - newHealth
-                if damage > 0 then
-                    bars.HealthDamage = bars.HealthDamage + math.floor(damage)
-                    bars.HealthDamageTimer = 3  -- Show for 3 seconds
-                end
-            end)
-            table.insert(HealthSystem.Connections, bars.HealthConnection)
-        end
-        
-        -- Track posture damage
-        if not bars.PostureConnection and posture then
-            bars.PostureConnection = posture.Changed:Connect(function(newValue)
-                local oldValue = bars.TargetPosture
-                local damage = oldValue - newValue
-                if damage > 0 then
-                    bars.PostureDamage = bars.PostureDamage + math.floor(damage)
-                    bars.PostureDamageTimer = 3  -- Show for 3 seconds
-                end
-                bars.TargetPosture = newValue
-            end)
-            table.insert(HealthSystem.Connections, bars.PostureConnection)
-        end
     end
     
     -- Update menu stats
@@ -654,8 +548,8 @@ local function Initialize()
     
     print("[HealthSystem] Initialized successfully")
     print("[HealthSystem] Press F3 to toggle bars, F4 to toggle menu")
-    print("[HealthSystem] Damage indicators: Health (red) | Posture (yellow)")
-    print("[HealthSystem] Damage accumulates for 3 seconds and resets on new target")
+    print("[HealthSystem] Using actual MaxValue/MinValue properties")
+    print("[HealthSystem] Display format: Current/Max")
 end
 
 -- Start the system
