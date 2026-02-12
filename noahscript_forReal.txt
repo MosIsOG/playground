@@ -1,5 +1,5 @@
 -- Smooth Health Bar System with Posture Display
--- Inspired by Unnamed ESP's clean UI style
+-- Fixed-length bars with separate damage counters
 
 assert(Drawing, 'Exploit not supported - Drawing API required')
 
@@ -23,7 +23,7 @@ local CONFIG = {
     BarHeight = 8,
     Spacing = 10,
     FontSize = 16,
-    UpdateRate = 1, -- ms
+    UpdateRate = 1,
     MaxDistance = 1000,
     ToggleKey = Enum.KeyCode.F3,
     Position = V2New(10, 10)
@@ -39,30 +39,6 @@ local HealthSystem = {
     Dragging = false,
     DragOffset = V2New()
 }
-
--- Smooth value interpolation
-local SmoothValue = {}
-SmoothValue.__index = SmoothValue
-
-function SmoothValue.new(initial)
-    local self = setmetatable({
-        Current = initial or 0,
-        Target = initial or 0,
-        Velocity = 0,
-        SmoothTime = 0.15
-    }, SmoothValue)
-    return self
-end
-
-function SmoothValue:Update(dt)
-    local smoothness = 8
-    self.Current = self.Current + (self.Target - self.Current) * math.min(1, dt * smoothness)
-    return self.Current
-end
-
-function SmoothValue:Set(target)
-    self.Target = target
-end
 
 -- Drawing manager
 local Drawings = {
@@ -91,7 +67,7 @@ end
 local function CreateMenu()
     local menu = {
         Elements = {},
-        Size = V2New(220, 140),
+        Size = V2New(240, 160),
         Position = CONFIG.Position
     }
     
@@ -117,7 +93,7 @@ local function CreateMenu()
     })
     
     menu.TitleText = Drawings:New("Text", {
-        Text = "Health Bar Controller",
+        Text = "Health & Posture Bars",
         Position = menu.Position + V2New(10, 5),
         Size = 18,
         Color = Color3.fromRGB(255, 255, 255),
@@ -137,7 +113,7 @@ local function CreateMenu()
     })
     
     menu.ToggleText = Drawings:New("Text", {
-        Text = "ENABLE HEALTH BARS",
+        Text = "ENABLE BARS",
         Position = menu.Position + V2New(menu.Size.X/2, 57),
         Size = 16,
         Color = Color3.fromRGB(255, 255, 255),
@@ -173,6 +149,14 @@ local function CreateMenu()
         Visible = false
     })
     
+    menu.DamageText = Drawings:New("Text", {
+        Text = "Damage indicators: ON",
+        Position = menu.Position + V2New(10, 135),
+        Size = 12,
+        Color = Color3.fromRGB(200, 200, 100),
+        Visible = false
+    })
+    
     return menu
 end
 
@@ -190,30 +174,36 @@ local function CreatePlayerBars(player)
     
     local bars = {
         Player = player,
-        SmoothHealth = SmoothValue.new(100),
-        SmoothPosture = SmoothValue.new(100),
-        HitCounter = 0,
-        HitTimer = 0,
+        CurrentHealth = 100,
+        CurrentPosture = 100,
+        TargetHealth = 100,
+        TargetPosture = 100,
+        
+        -- Damage tracking
+        HealthDamage = 0,
+        PostureDamage = 0,
+        HealthDamageTimer = 0,
+        PostureDamageTimer = 0,
+        
         Objects = {},
         Visible = true
     }
     
-    -- Billboard GUI container (using Drawing objects for performance)
+    -- Fixed length bars - backgrounds are full width, fill bars show percentage
     bars.Container = {
-        HealthBarBg = Drawings:New("Square", {
-            Color = Color3.fromRGB(20, 20, 20),
-            Filled = true,
-            Transparency = 0.8,
+        -- Player name
+        NameText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 255),
+            Size = 14,
+            Center = true,
+            Outline = true,
+            OutlineOpacity = 0.5,
             Visible = false
         }),
-        HealthBar = Drawings:New("Square", {
-            Color = Color3.fromRGB(255, 70, 70),
-            Filled = true,
-            Transparency = 0.9,
-            Visible = false
-        }),
+        
+        -- Posture bar (top - yellow)
         PostureBarBg = Drawings:New("Square", {
-            Color = Color3.fromRGB(20, 20, 20),
+            Color = Color3.fromRGB(30, 30, 30),
             Filled = true,
             Transparency = 0.8,
             Visible = false
@@ -224,12 +214,52 @@ local function CreatePlayerBars(player)
             Transparency = 0.9,
             Visible = false
         }),
-        DamageText = Drawings:New("Text", {
-            Color = Color3.fromRGB(255, 100, 100),
-            Size = 20,
+        PostureText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 70),
+            Size = 12,
+            Outline = true,
+            OutlineOpacity = 0.5,
+            Visible = false
+        }),
+        
+        -- Posture damage indicator (yellow damage numbers)
+        PostureDamageText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 200, 0),
+            Size = 22,
             Center = true,
             Outline = true,
-            OutlineOpacity = 0.7,
+            OutlineOpacity = 0.8,
+            Visible = false
+        }),
+        
+        -- Health bar (bottom - red)
+        HealthBarBg = Drawings:New("Square", {
+            Color = Color3.fromRGB(30, 30, 30),
+            Filled = true,
+            Transparency = 0.8,
+            Visible = false
+        }),
+        HealthBar = Drawings:New("Square", {
+            Color = Color3.fromRGB(255, 70, 70),
+            Filled = true,
+            Transparency = 0.9,
+            Visible = false
+        }),
+        HealthText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 255),
+            Size = 12,
+            Outline = true,
+            OutlineOpacity = 0.5,
+            Visible = false
+        }),
+        
+        -- Health damage indicator (red damage numbers)
+        HealthDamageText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 100, 100),
+            Size = 22,
+            Center = true,
+            Outline = true,
+            OutlineOpacity = 0.8,
             Visible = false
         })
     }
@@ -244,7 +274,7 @@ local function CreatePlayerBars(player)
 end
 
 -- Update health bar positions and values
-local function UpdateBars(dt)
+local function UpdateBars()
     if not HealthSystem.Enabled then return end
     
     local viewportSize = Camera.ViewportSize
@@ -299,68 +329,150 @@ local function UpdateBars(dt)
         
         activePlayers = activePlayers + 1
         
-        -- Update smooth values
-        bars.SmoothHealth:Set(lifeforce.Value)
-        bars.SmoothPosture:Set(posture.Value)
-        local smoothHealth = bars.SmoothHealth:Update(dt)
-        local smoothPosture = bars.SmoothPosture:Update(dt)
+        -- Update target values
+        local oldHealth = bars.TargetHealth
+        local oldPosture = bars.TargetPosture
         
-        -- Position bars above head
+        bars.TargetHealth = lifeforce.Value
+        bars.TargetPosture = posture.Value
+        
+        -- Track damage taken
+        local healthDamage = oldHealth - bars.TargetHealth
+        if healthDamage > 0 then
+            bars.HealthDamage = bars.HealthDamage + math.floor(healthDamage)
+            bars.HealthDamageTimer = 2 -- Show for 2 seconds
+        end
+        
+        local postureDamage = oldPosture - bars.TargetPosture
+        if postureDamage > 0 then
+            bars.PostureDamage = bars.PostureDamage + math.floor(postureDamage)
+            bars.PostureDamageTimer = 2 -- Show for 2 seconds
+        end
+        
+        -- Smooth interpolation
+        bars.CurrentHealth = bars.CurrentHealth + (bars.TargetHealth - bars.CurrentHealth) * 0.3
+        bars.CurrentPosture = bars.CurrentPosture + (bars.TargetPosture - bars.CurrentPosture) * 0.3
+        
+        -- Clamp values
+        bars.CurrentHealth = math.clamp(bars.CurrentHealth, 0, 100)
+        bars.CurrentPosture = math.clamp(bars.CurrentPosture, 0, 100)
+        
+        -- Position bars above head - FIXED WIDTH
         local baseX = screenPos.X - CONFIG.BarWidth / 2
-        local baseY = screenPos.Y - 50 - (distance / 50)
+        local baseY = screenPos.Y - 85 - (distance / 100)
         
-        -- Posture bar (top - yellow)
-        local postureBar = bars.Container.PostureBarBg
-        postureBar.Position = V2New(baseX, baseY)
-        postureBar.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
-        postureBar.Visible = true
+        -- Player name
+        local nameText = bars.Container.NameText
+        nameText.Text = player.Name
+        nameText.Position = V2New(screenPos.X, baseY - 20)
+        nameText.Visible = true
+        nameText.Transparency = math.clamp(1 - (500 / distance), 0.5, 1)
+        
+        -- POSTURE BAR (Top - Yellow)
+        local postureBg = bars.Container.PostureBarBg
+        postureBg.Position = V2New(baseX, baseY)
+        postureBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+        postureBg.Visible = true
+        postureBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         
         local postureFill = bars.Container.PostureBar
         postureFill.Position = V2New(baseX, baseY)
-        postureFill.Size = V2New(CONFIG.BarWidth * (smoothPosture / 100), CONFIG.BarHeight)
+        postureFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentPosture / 100), CONFIG.BarHeight)
         postureFill.Visible = true
+        postureFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         postureFill.Color = Color3.fromRGB(255, 255, 70)
         
-        -- Health bar (bottom - red)
-        local healthBar = bars.Container.HealthBarBg
-        healthBar.Position = V2New(baseX, baseY + CONFIG.Spacing)
-        healthBar.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
-        healthBar.Visible = true
+        -- Posture text
+        local postureText = bars.Container.PostureText
+        postureText.Text = string.format("Posture: %d", math.floor(bars.CurrentPosture))
+        postureText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY - 2)
+        postureText.Visible = true
+        postureText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        
+        -- HEALTH BAR (Bottom - Red)
+        local healthBg = bars.Container.HealthBarBg
+        healthBg.Position = V2New(baseX, baseY + CONFIG.Spacing)
+        healthBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+        healthBg.Visible = true
+        healthBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         
         local healthFill = bars.Container.HealthBar
         healthFill.Position = V2New(baseX, baseY + CONFIG.Spacing)
-        healthFill.Size = V2New(CONFIG.BarWidth * (smoothHealth / 100), CONFIG.BarHeight)
+        healthFill.Size = V2New(CONFIG.BarWidth * (bars.CurrentHealth / 100), CONFIG.BarHeight)
         healthFill.Visible = true
+        healthFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         healthFill.Color = Color3.fromRGB(255, 70, 70)
         
-        -- Damage counter with fade effect
-        bars.HitTimer = bars.HitTimer - dt
-        if bars.HitTimer > 0 then
-            local damageText = bars.Container.DamageText
-            damageText.Position = V2New(screenPos.X, baseY - 25)
-            damageText.Text = "-" .. bars.HitCounter
-            damageText.Visible = true
-            damageText.Transparency = math.min(1, bars.HitTimer / 2) -- Fade out
+        -- Health text
+        local healthText = bars.Container.HealthText
+        healthText.Text = string.format("HP: %d", math.floor(bars.CurrentHealth))
+        healthText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY + CONFIG.Spacing - 2)
+        healthText.Visible = true
+        healthText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        
+        -- POSTURE DAMAGE INDICATOR (Yellow damage numbers)
+        bars.PostureDamageTimer = bars.PostureDamageTimer - 0.016
+        if bars.PostureDamageTimer > 0 and bars.PostureDamage > 0 then
+            local postureDamageText = bars.Container.PostureDamageText
+            postureDamageText.Text = "-" .. bars.PostureDamage
+            postureDamageText.Position = V2New(screenPos.X, baseY - 45)
+            postureDamageText.Visible = true
+            postureDamageText.Transparency = math.min(0.9, 1 - (bars.PostureDamageTimer / 2))
+            
+            -- Float up effect
+            local floatOffset = (2 - bars.PostureDamageTimer) * 10
+            postureDamageText.Position = V2New(screenPos.X, baseY - 45 - floatOffset)
         else
-            bars.Container.DamageText.Visible = false
-            bars.HitCounter = 0
+            bars.Container.PostureDamageText.Visible = false
+            bars.PostureDamage = 0
         end
         
-        -- Track damage from HealthChanged
+        -- HEALTH DAMAGE INDICATOR (Red damage numbers)
+        bars.HealthDamageTimer = bars.HealthDamageTimer - 0.016
+        if bars.HealthDamageTimer > 0 and bars.HealthDamage > 0 then
+            local healthDamageText = bars.Container.HealthDamageText
+            healthDamageText.Text = "-" .. bars.HealthDamage
+            healthDamageText.Position = V2New(screenPos.X, baseY - 15)
+            healthDamageText.Visible = true
+            healthDamageText.Transparency = math.min(0.9, 1 - (bars.HealthDamageTimer / 2))
+            
+            -- Float up effect
+            local floatOffset = (2 - bars.HealthDamageTimer) * 10
+            healthDamageText.Position = V2New(screenPos.X, baseY - 15 - floatOffset)
+        else
+            bars.Container.HealthDamageText.Visible = false
+            bars.HealthDamage = 0
+        end
+        
+        -- Set humanoid display type to AlwaysOn
+        humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+        
+        -- Track damage from HealthChanged for lifeforce
         if not bars.HealthConnection then
             bars.HealthConnection = humanoid.HealthChanged:Connect(function(newHealth)
                 local oldHealth = humanoid.Health
                 local damage = oldHealth - newHealth
                 if damage > 0 then
-                    bars.HitCounter = bars.HitCounter + math.floor(damage)
-                    bars.HitTimer = 2 -- Show for 2 seconds
+                    bars.HealthDamage = bars.HealthDamage + math.floor(damage)
+                    bars.HealthDamageTimer = 2
                 end
             end)
             table.insert(HealthSystem.Connections, bars.HealthConnection)
         end
         
-        -- Set humanoid display type
-        humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+        -- Track posture damage
+        if not bars.PostureConnection and posture then
+            bars.PostureConnection = posture.Changed:Connect(function(newValue)
+                local oldValue = bars.TargetPosture
+                local damage = oldValue - newValue
+                if damage > 0 then
+                    bars.PostureDamage = bars.PostureDamage + math.floor(damage)
+                    bars.PostureDamageTimer = 2
+                end
+                bars.TargetPosture = newValue
+            end)
+            table.insert(HealthSystem.Connections, bars.PostureConnection)
+        end
     end
     
     -- Update menu stats
@@ -375,15 +487,17 @@ local function ToggleSystem()
     
     if HealthSystem.Menu then
         if HealthSystem.Enabled then
-            HealthSystem.Menu.ToggleText.Text = "DISABLE HEALTH BARS"
+            HealthSystem.Menu.ToggleText.Text = "DISABLE BARS"
             HealthSystem.Menu.ToggleBg.Color = Color3.fromRGB(200, 50, 50)
             HealthSystem.Menu.StatusDot.Color = Color3.fromRGB(0, 255, 0)
             HealthSystem.Menu.StatusText.Text = "Status: Enabled"
+            HealthSystem.Menu.DamageText.Visible = true
         else
-            HealthSystem.Menu.ToggleText.Text = "ENABLE HEALTH BARS"
+            HealthSystem.Menu.ToggleText.Text = "ENABLE BARS"
             HealthSystem.Menu.ToggleBg.Color = Color3.fromRGB(50, 150, 50)
             HealthSystem.Menu.StatusDot.Color = Color3.fromRGB(255, 0, 0)
             HealthSystem.Menu.StatusText.Text = "Status: Disabled"
+            HealthSystem.Menu.DamageText.Visible = false
             
             -- Hide all bars
             for _, bars in pairs(HealthSystem.PlayerBars) do
@@ -394,7 +508,7 @@ local function ToggleSystem()
         end
     end
     
-    print(string.format("[HealthSystem] %s", HealthSystem.Enabled and "Enabled" or "Disabled"))
+    print("[HealthSystem] " .. (HealthSystem.Enabled and "Enabled" or "Disabled"))
 end
 
 -- Toggle menu
@@ -470,6 +584,7 @@ local function Initialize()
             HealthSystem.Menu.StatusDot.Position = newPos + V2New(15, 95)
             HealthSystem.Menu.StatusText.Position = newPos + V2New(30, 87)
             HealthSystem.Menu.StatsText.Position = newPos + V2New(10, 115)
+            HealthSystem.Menu.DamageText.Position = newPos + V2New(10, 135)
         end
     end)
     table.insert(HealthSystem.Connections, inputChanged)
@@ -480,7 +595,7 @@ local function Initialize()
         
         -- Create bars when character loads
         local function onCharacterAdded(character)
-            wait(0.5) -- Wait for character to fully load
+            task.wait(0.5)
             CreatePlayerBars(player)
         end
         
@@ -500,14 +615,7 @@ local function Initialize()
     end
     
     -- Render loop
-    local lastTime = tick()
-    RunService.RenderStepped:Connect(function()
-        local currentTime = tick()
-        local dt = currentTime - lastTime
-        lastTime = currentTime
-        
-        UpdateBars(dt)
-    end)
+    RunService.RenderStepped:Connect(UpdateBars)
     
     -- Camera change handler
     local cameraChanged = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
@@ -518,6 +626,7 @@ local function Initialize()
     
     print("[HealthSystem] Initialized successfully")
     print("[HealthSystem] Press F3 to toggle bars, F4 to toggle menu")
+    print("[HealthSystem] Damage indicators: Health (red) | Posture (yellow)")
 end
 
 -- Start the system
@@ -527,7 +636,7 @@ if not success then
 else
     -- Initial menu state
     HealthSystem.MenuOpen = true
-    ToggleMenu() -- Show menu on startup
+    ToggleMenu()
 end
 
 -- Cleanup on script unload
