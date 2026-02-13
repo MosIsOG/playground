@@ -15,7 +15,7 @@ local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 local V2New = Vector2.new
 local V3New = Vector3.new
-local WorldToViewport = function(...) return Camera.WorldToViewportPoint(Camera, ...) end
+local WorldToViewport = function(...) return Camera:WorldToViewportPoint(...) end
 
 -- Configuration
 local CONFIG = {
@@ -341,7 +341,7 @@ local function UpdateBars()
         end
         
         -- Get screen position
-        local screenPos, visible = WorldToViewport(headPos)
+        local screenPos, visible = Camera:WorldToViewportPoint(headPos)
         if not visible or screenPos.Z < 0 then
             for _, obj in pairs(bars.Container) do
                 pcall(function() obj.Visible = false end)
@@ -357,14 +357,18 @@ local function UpdateBars()
         local postureMax = 100
         local postureMin = 0
         
-        pcall(function()
-            healthMax = lifeforce:GetAttribute("MaxValue") or lifeforce.MaxValue or 100
-            healthMin = lifeforce:GetAttribute("MinValue") or lifeforce.MinValue or 0
-        end)
-        pcall(function()
-            postureMax = posture:GetAttribute("MaxValue") or posture.MaxValue or 100
-            postureMin = posture:GetAttribute("MinValue") or posture.MinValue or 0
-        end)
+        if lifeforce then
+            pcall(function()
+                healthMax = lifeforce:GetAttribute("MaxValue") or 100
+                healthMin = lifeforce:GetAttribute("MinValue") or 0
+            end)
+        end
+        if posture then
+            pcall(function()
+                postureMax = posture:GetAttribute("MaxValue") or 100
+                postureMin = posture:GetAttribute("MinValue") or 0
+            end)
+        end
         
         -- Ensure valid numbers
         healthMax = (type(healthMax) == "number" and healthMax > 0) and healthMax or 100
@@ -649,7 +653,7 @@ local function Initialize()
     -- Camera change handler
     local cameraChanged = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
         Camera = workspace.CurrentCamera
-        WorldToViewport = function(...) return Camera.WorldToViewportPoint(Camera, ...) end
+        WorldToViewport = function(...) return Camera:WorldToViewportPoint(...) end
     end)
     table.insert(HealthSystem.Connections, cameraChanged)
     
