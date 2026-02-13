@@ -1,5 +1,5 @@
 -- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health Bar | NPCs = Custom Green Bar
+-- Logic: Players = Native Health Bar (AlwaysOn) | NPCs = Custom Green Bar
 -- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
@@ -246,7 +246,7 @@ RunService.RenderStepped:Connect(function()
     for _, folder in ipairs(LiveFolder:GetChildren()) do
         local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
         
-        -- IGNORE LOCAL PLAYER FOR DRAWINGS (We only want the humanoid logic)
+        -- IGNORE LOCAL PLAYER FOR DRAWINGS
         if model then
             
             local head = model:FindFirstChild("Head")
@@ -254,11 +254,12 @@ RunService.RenderStepped:Connect(function()
 
             -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
             local player = Players:GetPlayerFromCharacter(model)
-            if player then
-                -- Force native health bar
-                if humanoid then
-                    humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
-                end
+            
+            -- CRITICAL: CHECK IF HUMAN EXIST AND SET DISPLAY TYPE
+            if player and humanoid then
+                pcall(function()
+                     humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                end)
             end
 
             -- === DRAWING LOGIC (Name + NPC Bars) ===
