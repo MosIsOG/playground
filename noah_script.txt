@@ -313,41 +313,27 @@ local function UpdateBars()
             continue
         end
         
-        -- Get required parts safely
+        -- Get required parts safely - they should be IN the character model
         local humanoid = character:FindFirstChild("Humanoid")
         local head = character:FindFirstChild("Head")
+        
+        print(string.format("[DEBUG] Character %s - Checking for Humanoid: %s, Head: %s", bars.DisplayName, humanoid and "YES" or "NO", head and "YES" or "NO"))
+        
         local lifeforce, posture
         
-        -- Debug: Log character details
-        if not lifeforce or not posture then
-            warn(string.format("[DEBUG] Character %s missing components - Humanoid: %s, Head: %s, Lifeforce: %s, Posture: %s", 
-                bars.DisplayName, 
-                humanoid and "YES" or "NO", 
-                head and "YES" or "NO",
-                lifeforce and "YES" or "NO",
-                posture and "YES" or "NO"))
-        end
-        
-        -- Try to get Lifeforce and Posture from either the character or its folder
+        -- Lifeforce and Posture are in the FOLDER, not in the character model
         if bars.Folder then
             lifeforce = bars.Folder:FindFirstChild("Lifeforce")
             posture = bars.Folder:FindFirstChild("Posture")
-            print(string.format("[DEBUG] Looking in Folder for %s - Found Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
-        else
-            -- Fallback: try direct path
-            lifeforce = character:FindFirstChild("Lifeforce")
-            posture = character:FindFirstChild("Posture")
-            print(string.format("[DEBUG] No folder, looking in character %s - Found Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
+            print(string.format("[DEBUG] Folder lookup for %s - Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
         end
         
-        -- If not found in folder, try character
+        -- If not found in folder, try character itself as fallback
         if not lifeforce then 
             lifeforce = character:FindFirstChild("Lifeforce")
-            print(string.format("[DEBUG] Fallback: Looking in character for Lifeforce - Found: %s", lifeforce and "YES" or "NO"))
         end
         if not posture then 
             posture = character:FindFirstChild("Posture")
-            print(string.format("[DEBUG] Fallback: Looking in character for Posture - Found: %s", posture and "YES" or "NO"))
         end
         
         -- Hide bars if missing required components
@@ -536,13 +522,25 @@ local function ScanForCharacters()
     
     for _, folder in pairs(basePath:GetChildren()) do
         print(string.format("[DEBUG] Found folder: %s", folder.Name))
-        -- Check if this folder has a character
-        local character = folder:FindFirstChildWhichIsA("Model")
+        
+        -- Look for a Model that has a Humanoid (the actual character, not weapons/tools)
+        local character = nil
+        for _, child in pairs(folder:GetChildren()) do
+            if child:IsA("Model") then
+                local humanoid = child:FindFirstChild("Humanoid")
+                if humanoid then
+                    character = child
+                    print(string.format("[DEBUG] Found character model with Humanoid: %s", child.Name))
+                    break
+                end
+            end
+        end
+        
         if character then
-            print(string.format("[DEBUG] Found character model in %s: %s", folder.Name, character.Name))
+            print(string.format("[DEBUG] Creating bars for character in folder %s", folder.Name))
             CreateCharacterBars(character, folder)
         else
-            print(string.format("[DEBUG] No character model found in folder %s", folder.Name))
+            print(string.format("[DEBUG] No character model with Humanoid found in folder %s", folder.Name))
         end
     end
 end
