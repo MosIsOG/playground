@@ -1,7 +1,7 @@
 -- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health + Custom Red/Yellow Bars (With Numbers)
--- NPCs = Green Bar (Toggleable)
--- Width: Extended to 180
+-- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values
+-- NPCs = Custom Green Bar (Toggleable)
+-- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,12 +14,13 @@ local LocalPlayer = Players.LocalPlayer
 local Config = {
     Enabled = true,
     ShowNames = true,
-    ShowBars = true,    -- Toggles Player Bars
-    ShowNPCs = true,    -- Toggles Entire NPC ESP
+    ShowBars = true,     -- Master bar toggle
+    ShowNPCs = true,     -- Toggle for NPC ESP
+    ShowValues = true,   -- Toggle for text values (100/100)
     MaxDistance = 1500,
     TextSize = 14,
-    BarWidth = 180,     -- Extended Width
-    BarHeight = 8,      -- Slightly taller
+    BarWidth = 180,      -- Wider bars as requested
+    BarHeight = 6,
     YOffset = 60
 }
 
@@ -46,8 +47,8 @@ end
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 420, 0, 360) -- Slightly taller for new option
-MainFrame.Position = UDim2.new(0.5, -210, 0.5, -180)
+MainFrame.Size = UDim2.new(0, 420, 0, 380) -- Slightly taller for new options
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -190)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
 MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
@@ -72,6 +73,7 @@ TitleLabel.Position = UDim2.new(0, 10, 0, 0)
 TitleLabel.Size = UDim2.new(1, -20, 1, 0)
 TitleLabel.Parent = Header
 
+-- Drag Logic
 local dragging, dragInput, dragStart, startPos
 Header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -204,8 +206,9 @@ end
 
 CreateToggle("Master Enabled", "Enabled")
 CreateToggle("Show Names", "ShowNames")
-CreateToggle("Show Player Bars", "ShowBars")
-CreateToggle("Show NPCs", "ShowNPCs") -- NEW OPTION
+CreateToggle("Show NPCs", "ShowNPCs") -- NEW: NPC Toggle
+CreateToggle("Show Bars", "ShowBars")
+CreateToggle("Show Values", "ShowValues") -- NEW: Values Toggle
 CreateSlider("Max Distance", "MaxDistance", 100, 5000)
 
 --------------------------------------------------------------------------------
@@ -244,22 +247,22 @@ RunService.RenderStepped:Connect(function()
             
             local head = model:FindFirstChild("Head")
             local humanoid = model:FindFirstChild("Humanoid")
-
-            -- Player Identification
             local player = Players:GetPlayerFromCharacter(model)
-            local isNPC = not player
-            
-            -- SKIP IF NPC AND NPC TOGGLE IS OFF
-            if isNPC and not Config.ShowNPCs then
-                if ESP_Cache[model] then RemoveESP(model) end
-                continue
-            end
 
-            -- AlwaysOn for Players
+            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
             if player and humanoid then
                 pcall(function()
                      humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
                 end)
+            end
+
+            local isNPC = not player
+
+            -- Check if we should skip due to settings
+            if isNPC and not Config.ShowNPCs then
+                -- Skip this loop iteration if NPC and NPCs disabled
+                if ESP_Cache[model] then RemoveESP(model) end
+                continue
             end
 
             if head and humanoid then
@@ -269,15 +272,15 @@ RunService.RenderStepped:Connect(function()
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
                             
-                            -- Health Bar (Red/Green)
+                            -- Health Bar (Bar1)
                             Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
-                            Bar1Text = CreateDrawing("Text", {Size = 12, Outline = true, Center = false, Color = Color3.new(1,1,1)}), -- Numeric
+                            Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
                             
-                            -- Posture Bar (Yellow)
+                            -- Posture Bar (Bar2)
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
-                            Bar2Text = CreateDrawing("Text", {Size = 12, Outline = true, Center = false, Color = Color3.new(1,1,1)}), -- Numeric
+                            Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
                         }
                     }
                 end
@@ -291,37 +294,45 @@ RunService.RenderStepped:Connect(function()
 
                 if onScreen and distance <= Config.MaxDistance then
                     
-                    local val1, max1, color1 = 0, 100, Color3.new(1, 0, 0)
-                    local val2, max2, color2 = 0, 100, Color3.new(1, 1, 0)
+                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0) -- Red
+                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0) -- Yellow
                     local showBar2 = false
 
                     if isNPC then
-                        -- NPC LOGIC
+                        -- NPC LOGIC: Green Bar
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
-                        color1 = Color3.new(0.2, 0.9, 0.2)
+                        min1 = 0
+                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
                         showBar2 = false
                     else
-                        -- PLAYER LOGIC
+                        -- PLAYER LOGIC: Red Bar + Yellow Posture (Dynamic Min/Max)
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
                         if lf then 
                             val1 = lf.Value 
-                            max1 = lf:GetAttribute("MaxValue") or 100
+                            -- Fetch Attributes or Properties for dynamic range
+                            max1 = lf:GetAttribute("MaxValue") or lf.MaxValue or 100
+                            min1 = lf:GetAttribute("MinValue") or lf.MinValue or 0
                         end
                         if pos then 
                             val2 = pos.Value 
-                            max2 = pos:GetAttribute("MaxValue") or 100
+                            max2 = pos:GetAttribute("MaxValue") or pos.MaxValue or 100
+                            min2 = pos:GetAttribute("MinValue") or pos.MinValue or 0
                             showBar2 = true
                         end
                         
-                        color1 = Color3.new(0.9, 0.2, 0.2)
+                        color1 = Color3.new(0.9, 0.2, 0.2) -- Red
                     end
 
-                    local pct1 = math.clamp(val1 / max1, 0, 1)
-                    local pct2 = math.clamp(val2 / max2, 0, 1)
+                    -- Calculate Percentage (Respecting Min/Max)
+                    local range1 = max1 - min1
+                    local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
+                    local range2 = max2 - min2
+                    local pct2 = range2 > 0 and math.clamp((val2 - min2) / range2, 0, 1) or 0
+
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
@@ -335,45 +346,48 @@ RunService.RenderStepped:Connect(function()
                         d.Name.Visible = false
                     end
 
-                    -- 2. BARS
-                    -- Logic: If it's a player, check "ShowBars". If it's an NPC, check "ShowNPCs" (already checked above, but valid here).
-                    local shouldShowBars = (not isNPC and Config.ShowBars) or (isNPC)
-
-                    if shouldShowBars then
+                    -- 2. BARS & VALUES
+                    if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
                         
-                        -- BAR 1 (Health)
+                        -- Bar 1 (Health)
                         d.Bar1Bg.Visible = true
                         d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
                         d.Bar1Bg.Position = barPos
-                        
                         d.Bar1Fill.Visible = true
                         d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
                         d.Bar1Fill.Position = barPos
                         d.Bar1Fill.Color = color1
 
-                        -- Bar 1 Text (Numeric Value)
-                        d.Bar1Text.Visible = true
-                        d.Bar1Text.Text = string.format("%.0f/%.0f", val1, max1)
-                        d.Bar1Text.Position = barPos + Vector2.new(Config.BarWidth + 5, -2)
+                        -- Bar 1 Text (Value)
+                        if Config.ShowValues then
+                            d.Bar1Text.Visible = true
+                            d.Bar1Text.Text = string.format("%.0f/%.0f", val1, max1)
+                            d.Bar1Text.Position = barPos + Vector2.new(Config.BarWidth + 5, -3) -- Right side
+                        else
+                            d.Bar1Text.Visible = false
+                        end
 
-                        -- BAR 2 (Posture - Players Only)
+                        -- Bar 2 (Posture)
                         if showBar2 then
-                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 4) -- Stack on top
+                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 2) -- Stack on top
                             
                             d.Bar2Bg.Visible = true
                             d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
                             d.Bar2Bg.Position = bar2Pos
-                            
                             d.Bar2Fill.Visible = true
                             d.Bar2Fill.Size = Vector2.new(Config.BarWidth * pct2, Config.BarHeight)
                             d.Bar2Fill.Position = bar2Pos
                             d.Bar2Fill.Color = color2
 
-                            -- Bar 2 Text (Numeric Value)
-                            d.Bar2Text.Visible = true
-                            d.Bar2Text.Text = string.format("%.0f/%.0f", val2, max2)
-                            d.Bar2Text.Position = bar2Pos + Vector2.new(Config.BarWidth + 5, -2)
+                            -- Bar 2 Text (Value)
+                            if Config.ShowValues then
+                                d.Bar2Text.Visible = true
+                                d.Bar2Text.Text = string.format("%.0f/%.0f", val2, max2)
+                                d.Bar2Text.Position = bar2Pos + Vector2.new(Config.BarWidth + 5, -3)
+                            else
+                                d.Bar2Text.Visible = false
+                            end
                         else
                             d.Bar2Bg.Visible = false
                             d.Bar2Fill.Visible = false
@@ -387,6 +401,7 @@ RunService.RenderStepped:Connect(function()
                         d.Bar2Fill.Visible = false
                         d.Bar2Text.Visible = false
                     end
+
                 else
                     for _, v in pairs(d) do v.Visible = false end
                 end
