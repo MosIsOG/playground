@@ -252,6 +252,15 @@ RunService.RenderStepped:Connect(function()
             local humanoid = model:FindFirstChild("Humanoid")
 
             if head and humanoid then
+            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
+            local player = Players:GetPlayerFromCharacter(model)
+            
+            -- CRITICAL: CHECK IF HUMAN EXIST AND SET DISPLAY TYPE
+            if player and humanoid then
+                pcall(function()
+                     humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                end)
+            end
                 
                 if not ESP_Cache[model] then
                     ESP_Cache[model] = {
@@ -269,6 +278,7 @@ RunService.RenderStepped:Connect(function()
                         }
                     }
                 end
+            
 
                 local entry = ESP_Cache[model]
                 entry.Seen = true
