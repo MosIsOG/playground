@@ -521,16 +521,17 @@ local function ScanForCharacters()
     for _, folder in pairs(basePath:GetChildren()) do
         print(string.format("[DEBUG] Found folder: %s", folder.Name))
         local character = nil
-        for _, child in pairs(folder:GetChildren()) do
-            if child:IsA("Model") then
-                local humanoid = child:FindFirstChild("Humanoid")
-                local head = child:FindFirstChild("Head")
+        -- Search recursively: some setups nest the character model deeper inside the folder
+        for _, descendant in pairs(folder:GetDescendants()) do
+            if descendant:IsA("Model") then
+                local humanoid = descendant:FindFirstChildWhichIsA("Humanoid", false) or descendant:FindFirstChild("Humanoid")
+                local head = descendant:FindFirstChild("Head")
                 if humanoid and head then
-                    character = child
-                    print(string.format("[DEBUG] Found character model with Humanoid and Head: %s", child.Name))
+                    character = descendant
+                    print(string.format("[DEBUG] Found character model (descendant) with Humanoid and Head: %s", descendant.Name))
                     break
                 else
-                    print(string.format("[DEBUG] Ignored model %s (Humanoid: %s, Head: %s)", child.Name, humanoid and "YES" or "NO", head and "YES" or "NO"))
+                    print(string.format("[DEBUG] Ignored descendant model %s (Humanoid: %s, Head: %s)", descendant.Name, humanoid and "YES" or "NO", head and "YES" or "NO"))
                 end
             end
         end
@@ -678,7 +679,7 @@ local function Initialize()
         local childAdded = basePath.ChildAdded:Connect(function(folder)
             task.wait(0.5) -- Wait for character to load
             pcall(function()
-                local character = folder:FindFirstChildWhichIsA("Model")
+                local character = folder:FindFirstChildWhichIsA("Model", true)
                 if character then
                     CreateCharacterBars(character, folder)
                 end
