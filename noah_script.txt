@@ -1,1092 +1,390 @@
--- Unnamed ESP (Modified for Max Distance Control)
-assert(Drawing, 'exploit not supported')
+-- Universal ESP with "Mission Hunter" Style GUI
+-- Press [INSERT] to Toggle Menu
 
--- [1] AUTO-OPEN MENU ON LOAD
--- I set the default "MenuOpen" option to true so you see the GUI immediately.
-
-if not syn and not PROTOSMASHER_LOADED then print'Unnamed ESP only officially supports Synapse and Protosmasher! If you\'re an exploit developer and have added drawing API to your exploit, try setting syn as true then checking if that works, otherwise, DM me on discord @ cppbook.org#1968 or add an issue to the Unnamed ESP Github Repository and I\'ll see it through email!' end
-
-if not cloneref then cloneref = function(o) return o end end
-
-local UserInputService = cloneref(game:GetService'UserInputService')
-local HttpService = cloneref(game:GetService'HttpService')
-local TweenService = cloneref(game:GetService'TweenService')
-local RunService = cloneref(game:GetService'RunService')
-local Players = game:GetService'Players'
-local LocalPlayer = Players.LocalPlayer
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
-local Mouse = LocalPlayer:GetMouse()
-local V2New = Vector2.new
-local V3New = Vector3.new
-local WTVP = Camera.WorldToViewportPoint
-local WorldToViewport = function(...) return WTVP(Camera, ...) end
-local Menu = {}
-local MouseHeld = false
-local LastRefresh = 0
-local OptionsFile = 'IC3_ESP_SETTINGS.dat'
-local Binding = false
-local BindedKey = nil
-local OIndex = 0
-local LineBox = {}
-local UIButtons = {}
-local Sliders = {}
-local ColorPicker = { Loading = false, LastGenerated = 0 }
-local Dragging = false
-local DraggingUI = false
-local Rainbow = false
-local DragOffset = V2New()
-local DraggingWhat = nil
-local OldData = {}
-local IgnoreList = {}
-local EnemyColor = Color3.new(1, 0, 0)
-local TeamColor = Color3.new(0, 1, 0)
-local MenuLoaded = false
-local ErrorLogging = false
-local TracerPosition = V2New(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 135)
-local DragTracerPosition = false
-local SubMenu = {}
-local IsSynapse = syn and not PROTOSMASHER_LOADED
-local Connections = { Active = {} }
-local Signal = {} Signal.__index = Signal
-local GetCharacter, CurrentColorPicker, Spectating
+local LocalPlayer = Players.LocalPlayer
 
-local QUAD_SUPPORTED_EXPLOIT = pcall(function() Drawing.new('Quad'):Remove() end)
-
-shared.MenuDrawingData = shared.MenuDrawingData or { Instances = {} }
-shared.InstanceData = shared.InstanceData or {}
-shared.RSName = shared.RSName or ('UnnamedESP_by_ic3-' .. HttpService:GenerateGUID(false))
-
-local GetDataName = shared.RSName .. '-GetData'
-local UpdateName = shared.RSName .. '-Update'
-
-local Debounce = setmetatable({}, {
-	__index = function(t, i)
-		return rawget(t, i) or false
-	end
-})
-
-if shared.UESP_InputChangedCon then shared.UESP_InputChangedCon:Disconnect() end
-if shared.UESP_InputBeganCon then shared.UESP_InputBeganCon:Disconnect() end
-if shared.UESP_InputEndedCon then shared.UESP_InputEndedCon:Disconnect() end
-if shared.CurrentColorPicker then shared.CurrentColorPicker:Dispose() end
-
-local function IsStringEmpty(String)
-	if type(String) == 'string' then
-		return String:match'^%s+$' ~= nil or #String == 0 or String == '' or false;
-	end
-	
-	return false;
-end
-
-local function Set(t, i, v) t[i] = v end
-
-local Teams = {};
-local CustomTeams = { -- Games that don't use roblox's team system
-};
-
-local RenderList = {Instances = {}};
-
-function RenderList:AddOrUpdateInstance(Instance, Obj2Draw, Text, Color)
-	RenderList.Instances[Instance] = { ParentInstance = Instance; Instance = Obj2Draw; Text = Text; Color = Color };
-	return RenderList.Instances[Instance];
-end
-
-local CustomPlayerTag;
-local CustomESP;
-local CustomCharacter;
-local GetHealth;
-local GetAliveState;
-local CustomRootPartName;
-
-local Modules = {
-	[292439477] = {
-		CustomRootPartName = 'Torso',
-	}
-};
-
-if Modules[game.PlaceId] ~= nil or Modules[game.GameId] ~= nil then
-	local Module = Modules[game.PlaceId] or Modules[game.GameId]
-	if Module.Initialize then Module.Initialize() end
-	CustomPlayerTag = Module.CustomPlayerTag or nil
-	CustomESP = Module.CustomESP or nil
-	CustomCharacter = Module.CustomCharacter or nil
-	GetHealth = Module.GetHealth or nil
-	GetAliveState = Module.GetAliveState or nil
-	CustomRootPartName = Module.CustomRootPartName or nil
-end
-
-function GetCharacter(Player)
-	return CustomCharacter and CustomCharacter(Player) or Player.Character
-end
-
-function GetMouseLocation()
-	return UserInputService:GetMouseLocation();
-end
-
-function MouseHoveringOver(Values)
-	local X1, Y1, X2, Y2 = Values[1], Values[2], Values[3], Values[4]
-	local MLocation = GetMouseLocation();
-	return (MLocation.x >= X1 and MLocation.x <= (X1 + (X2 - X1))) and (MLocation.y >= Y1 and MLocation.y <= (Y1 + (Y2 - Y1)));
-end
-
-function GetTableData(t)
-	if typeof(t) ~= 'table' then return end
-	return setmetatable(t, {
-		__call = function(t, func)
-			if typeof(func) ~= 'function' then return end;
-			for i, v in pairs(t) do
-				pcall(func, i, v);
-			end
-		end;
-	});
-end
-local function Format(format, ...)
-	return string.format(format, ...);
-end
-function CalculateValue(Min, Max, Percent)
-	return Min + math.floor(((Max - Min) * Percent) + .5);
-end
-
-function NewDrawing(InstanceName)
-	local Instance = Drawing.new(InstanceName)
-	return (function(Properties)
-		for i, v in pairs(Properties) do
-			pcall(Set, Instance, i, v)
-		end
-		return Instance
-	end)
-end
-
-function Menu:AddMenuInstance(Name, DrawingType, Properties)
-	local Instance;
-	if shared.MenuDrawingData.Instances[Name] ~= nil then
-		Instance = shared.MenuDrawingData.Instances[Name];
-		for i, v in pairs(Properties) do
-			pcall(Set, Instance, i, v);
-		end
-	else
-		Instance = NewDrawing(DrawingType)(Properties);
-	end
-	shared.MenuDrawingData.Instances[Name] = Instance;
-	return Instance;
-end
-function Menu:UpdateMenuInstance(Name)
-	local Instance = shared.MenuDrawingData.Instances[Name];
-	if Instance ~= nil then
-		return (function(Properties)
-			for i, v in pairs(Properties) do
-				pcall(Set, Instance, i, v);
-			end
-			return Instance;
-		end)
-	end
-end
-function Menu:GetInstance(Name)
-	return shared.MenuDrawingData.Instances[Name];
-end
-
-local Options = setmetatable({}, {
-	__call = function(t, ...)
-		local Arguments = {...};
-		local Name = Arguments[1];
-		OIndex = OIndex + 1;
-		rawset(t, Name, setmetatable({
-			Name			= Arguments[1];
-			Text			= Arguments[2];
-			Value			= Arguments[3];
-			DefaultValue	= Arguments[3];
-			AllArgs			= Arguments;
-			Index			= OIndex;
-		}, {
-			__call = function(t, v, force)
-				local self = t;
-				if typeof(t.Value) == 'function' then
-					t.Value();
-				elseif typeof(t.Value) == 'EnumItem' then
-					local BT = Menu:GetInstance(Format('%s_BindText', t.Name));
-					if not force then
-						Binding = true;
-						local Val = 0
-						while Binding do
-							wait();
-							Val = (Val + 1) % 17;
-							BT.Text = Val <= 8 and '|' or '';
-						end
-					end
-					t.Value = force and v or BindedKey;
-					if BT and t.BasePosition and t.BaseSize then
-						BT.Text = tostring(t.Value):match'%w+%.%w+%.(.+)';
-						BT.Position = t.BasePosition + V2New(t.BaseSize.X - BT.TextBounds.X - 20, -10);
-					end
-				else
-					local NewValue = v;
-					if NewValue == nil then NewValue = not t.Value; end
-					rawset(t, 'Value', NewValue);
-
-					if Arguments[2] ~= nil and Menu:GetInstance'TopBar'.Visible then
-						if typeof(Arguments[3]) == 'number' then
-							local AMT = Menu:GetInstance(Format('%s_AmountText', t.Name));
-							if AMT then
-								AMT.Text = tostring(t.Value);
-							end
-						else
-							local Inner = Menu:GetInstance(Format('%s_InnerCircle', t.Name));
-							if Inner then Inner.Visible = t.Value; end
-						end
-					end
-				end
-			end;
-		}));
-	end;
-})
-
-function Load()
-	local _, Result = pcall(readfile, OptionsFile);
-	if _ then 
-		local _, Table = pcall(HttpService.JSONDecode, HttpService, Result);
-		if _ and typeof(Table) == 'table' then
-			for i, v in pairs(Table) do
-				if typeof(Options[i]) == 'table' and Options[i].Value ~= nil and (typeof(Options[i].Value) == 'boolean' or typeof(Options[i].Value) == 'number') then
-					Options[i].Value = v.Value;
-					pcall(Options[i], v.Value);
-				end
-			end
-			if Table.TeamColor then TeamColor = Color3.new(Table.TeamColor.R, Table.TeamColor.G, Table.TeamColor.B) end
-			if Table.EnemyColor then EnemyColor = Color3.new(Table.EnemyColor.R, Table.EnemyColor.G, Table.EnemyColor.B) end
-			if typeof(Table.MenuKey) == 'string' then Options.MenuKey(Enum.KeyCode[Table.MenuKey], true) end
-			if typeof(Table.ToggleKey) == 'string' then Options.ToggleKey(Enum.KeyCode[Table.ToggleKey], true) end
-		end
-	end
-end
-
--- =========================================================================
--- OPTIONS CONFIGURATION
--- =========================================================================
-
-Options('Enabled', 'ESP Enabled', true);
-Options('ShowTeam', 'Show Team', true);
-Options('ShowTeamColor', 'Show Team Color', false);
-Options('ShowName', 'Show Names', true);
-Options('ShowDistance', 'Show Distance', true);
-Options('ShowHealth', 'Show Health', true);
-Options('ShowBoxes', 'Show Boxes', true);
-Options('ShowTracers', 'Show Tracers', true);
-Options('ShowDot', 'Show Head Dot', false);
-Options('VisCheck', 'Visibility Check', false);
-Options('Crosshair', 'Crosshair', false);
-Options('TextOutline', 'Text Outline', true);
-Options('TextSize', 'Text Size', syn and 18 or 14, 10, 24);
-
--- THIS IS THE SLIDER YOU WANTED FOR RANGE
-Options('MaxDistance', 'Max Distance', 2500, 100, 25000); 
--- Arg 1: Internal Name
--- Arg 2: Display Text
--- Arg 3: Default Value
--- Arg 4: Min Value
--- Arg 5: Max Value
-
-Options('RefreshRate', 'Refresh Rate (ms)', 5, 1, 200);
-Options('YOffset', 'Y Offset', 0, -200, 200);
-Options('MenuKey', 'Menu Key', Enum.KeyCode.F4, 1);
-Options('ToggleKey', 'Toggle Key', Enum.KeyCode.F3, 1);
-Options('ResetSettings', 'Reset Settings', function()
-	for i, v in pairs(Options) do
-		if Options[i] ~= nil and Options[i].Value ~= nil and Options[i].Text ~= nil and (typeof(Options[i].Value) == 'boolean' or typeof(Options[i].Value) == 'number' or typeof(Options[i].Value) == 'EnumItem') then
-			Options[i](Options[i].DefaultValue, true);
-		end
-	end
-end, 5);
-Options('SaveSettings', 'Save Settings', function()
-	local COptions = {};
-	for i, v in pairs(Options) do
-		COptions[i] = v;
-	end
-	if typeof(TeamColor) == 'Color3' then COptions.TeamColor = { R = TeamColor.R; G = TeamColor.G; B = TeamColor.B } end
-	if typeof(EnemyColor) == 'Color3' then COptions.EnemyColor = { R = EnemyColor.R; G = EnemyColor.G; B = EnemyColor.B } end
-	if typeof(COptions.MenuKey.Value) == 'EnumItem' then COptions.MenuKey = COptions.MenuKey.Value.Name end
-	if typeof(COptions.ToggleKey.Value) == 'EnumItem' then COptions.ToggleKey = COptions.ToggleKey.Value.Name end
-	writefile(OptionsFile, HttpService:JSONEncode(COptions));
-end, 3);
-
-Load(1);
-
--- FORCE MENU OPEN ON START
-Options('MenuOpen', nil, true); 
-
-local function Combine(...)
-	local Output = {};
-	for i, v in pairs{...} do
-		if typeof(v) == 'table' then
-			table.foreach(v, function(i, v)
-				Output[i] = v;
-			end)
-		end
-	end
-	return Output
-end
-
-function LineBox:Create(Properties)
-	local Box = { Visible = true }; 
-	local Properties = Combine({
-		Transparency	= 1;
-		Thickness		= 3;
-		Visible			= true;
-	}, Properties);
-
-	if shared.am_ic3 then
-		Box['OutlineSquare']= NewDrawing'Square'(Properties);
-		Box['Square'] 		= NewDrawing'Square'(Properties);
-	elseif QUAD_SUPPORTED_EXPLOIT then
-		Box['Quad']			= NewDrawing'Quad'(Properties);
-	else
-		Box['TopLeft']		= NewDrawing'Line'(Properties);
-		Box['TopRight']		= NewDrawing'Line'(Properties);
-		Box['BottomLeft']	= NewDrawing'Line'(Properties);
-		Box['BottomRight']	= NewDrawing'Line'(Properties);
-	end
-
-	function Box:Update(CF, Size, Color, Properties, Parts)
-		if not CF or not Size then return end
-
-		if shared.am_ic3 and typeof(Parts) == 'table' then
-            -- ... (Omitted specific complex box logic for brevity, kept standard)
-            -- This part relies on specific exploits
-		end
-		
-		local TLPos, Visible1	= WorldToViewport((CF * CFrame.new( Size.X,  Size.Y, 0)).Position);
-		local TRPos, Visible2	= WorldToViewport((CF * CFrame.new(-Size.X,  Size.Y, 0)).Position);
-		local BLPos, Visible3	= WorldToViewport((CF * CFrame.new( Size.X, -Size.Y, 0)).Position);
-		local BRPos, Visible4	= WorldToViewport((CF * CFrame.new(-Size.X, -Size.Y, 0)).Position);
-
-		local Quad = Box['Quad'];
-
-		if QUAD_SUPPORTED_EXPLOIT then
-			if Visible1 and Visible2 and Visible3 and Visible4 then
-				Quad.Visible = true;
-				Quad.Color	= Color;
-				Quad.PointA = V2New(TLPos.X, TLPos.Y);
-				Quad.PointB = V2New(TRPos.X, TRPos.Y);
-				Quad.PointC = V2New(BRPos.X, BRPos.Y);
-				Quad.PointD = V2New(BLPos.X, BLPos.Y);
-			else
-				Box['Quad'].Visible = false;
-			end
-		else
-			Visible1 = TLPos.Z > 0 
-			Visible2 = TRPos.Z > 0 
-			Visible3 = BLPos.Z > 0 
-			Visible4 = BRPos.Z > 0 
-
-			if Visible1 then
-				Box['TopLeft'].Visible		= true;
-				Box['TopLeft'].Color		= Color;
-				Box['TopLeft'].From			= V2New(TLPos.X, TLPos.Y);
-				Box['TopLeft'].To			= V2New(TRPos.X, TRPos.Y);
-			else
-				Box['TopLeft'].Visible		= false;
-			end
-			if Visible2 then
-				Box['TopRight'].Visible		= true;
-				Box['TopRight'].Color		= Color;
-				Box['TopRight'].From		= V2New(TRPos.X, TRPos.Y);
-				Box['TopRight'].To			= V2New(BRPos.X, BRPos.Y);
-			else
-				Box['TopRight'].Visible		= false;
-			end
-			if Visible3 then
-				Box['BottomLeft'].Visible	= true;
-				Box['BottomLeft'].Color		= Color;
-				Box['BottomLeft'].From		= V2New(BLPos.X, BLPos.Y);
-				Box['BottomLeft'].To		= V2New(TLPos.X, TLPos.Y);
-			else
-				Box['BottomLeft'].Visible	= false;
-			end
-			if Visible4 then
-				Box['BottomRight'].Visible	= true;
-				Box['BottomRight'].Color	= Color;
-				Box['BottomRight'].From		= V2New(BRPos.X, BRPos.Y);
-				Box['BottomRight'].To		= V2New(BLPos.X, BLPos.Y);
-			else
-				Box['BottomRight'].Visible	= false;
-			end
-		end
-	end
-	function Box:SetVisible(bool)
-		if shared.am_ic3 then
-			Box['Square'].Visible = bool;
-			Box['OutlineSquare'].Visible = bool;
-		elseif self.Quad then
-			self.Quad.Visible = false
-		elseif self.TopLeft and self.TopRight and self.BottomLeft and self.BottomRight then
-			self.TopLeft.Visible = bool
-			self.TopRight.Visible = bool
-			self.BottomLeft.Visible = bool
-			self.BottomRight.Visible = bool
-		end
-	end
-	function Box:Remove()
-		self:SetVisible(false)
-		if shared.am_ic3 then
-			Box['Square']:Remove()
-			Box['OutlineSquare']:Remove()
-		elseif self.Quad then
-			Box['Quad']:Remove()
-		elseif self.TopLeft and self.TopRight and self.BottomLeft and self.BottomRight then
-			self.TopLeft:Remove()
-			self.TopRight:Remove()
-			self.BottomLeft:Remove()
-			self.BottomRight:Remove()
-		end
-	end
-
-	return Box;
-end
-
-local Colors = {
-	White = Color3.fromHex'ffffff',
-	Primary = {
-		Main	= Color3.fromHex'424242',
-		Light	= Color3.fromHex'6d6d6d',
-		Dark	= Color3.fromHex'1b1b1b'
-	},
-	Secondary = {
-		Main	= Color3.fromHex'e0e0e0',
-		Light	= Color3.fromHex'ffffff',
-		Dark	= Color3.fromHex'aeaeae'
-	}
+-- Configuration
+local Config = {
+    Enabled = true,
+    Box = true,
+    Name = true,
+    Health = true,
+    MaxDistance = 2000,
+    TextSize = 14
 }
 
-function Connections:Listen(Connection, Function)
-    local NewConnection = Connection:Connect(Function);
-    table.insert(self.Active, NewConnection);
-    return NewConnection;
-end
+-- State
+local ESP_Cache = {}
+local LiveFolder = workspace:FindFirstChild("Live")
 
-function Connections:DisconnectAll()
-    for Index, Connection in pairs(self.Active) do
-        if Connection.Connected then
-            Connection:Disconnect();
-        end
+--------------------------------------------------------------------------------
+-- 1. GUI CONSTRUCTION (Mission Hunter Style)
+--------------------------------------------------------------------------------
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MissionHunterESP"
+-- Protect GUI from detection if possible, or put in PlayerGui
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- Main Window
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 450, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -225, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15) -- Very dark bg
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+-- Title Bar (Just text, no distinct bar background in reference)
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Text = "Universal ESP"
+TitleLabel.Font = Enum.Font.Code
+TitleLabel.TextSize = 14
+TitleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Position = UDim2.new(0, 10, 0, 5)
+TitleLabel.Size = UDim2.new(1, -20, 0, 20)
+TitleLabel.Parent = MainFrame
+
+-- Tab Container
+local TabFrame = Instance.new("Frame")
+TabFrame.Position = UDim2.new(0, 10, 0, 30)
+TabFrame.Size = UDim2.new(1, -20, 0, 25)
+TabFrame.BackgroundTransparency = 1
+TabFrame.Parent = MainFrame
+
+local function CreateTabButton(text, xOffset, isActive)
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+    btn.BackgroundTransparency = 1
+    btn.Size = UDim2.new(0, 80, 1, 0)
+    btn.Position = UDim2.new(0, xOffset, 0, 0)
+    btn.Parent = TabFrame
+    
+    -- Underline for active tab (Simulated)
+    if isActive then
+        local line = Instance.new("Frame")
+        line.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        line.BorderSizePixel = 0
+        line.Size = UDim2.new(1, 0, 0, 2)
+        line.Position = UDim2.new(0, 0, 1, 0)
+        line.Parent = btn
     end
-    self.Active = {};
+    return btn
 end
 
-function Signal.new()
-	local self = setmetatable({ _BindableEvent = Instance.new'BindableEvent' }, Signal);
-	return self;
+CreateTabButton("Visuals", 0, true)
+CreateTabButton("Settings", 85, false)
+
+-- Content Area (Darker container)
+local ContentArea = Instance.new("Frame")
+ContentArea.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+ContentArea.BorderSizePixel = 1
+ContentArea.BorderColor3 = Color3.fromRGB(30, 30, 30)
+ContentArea.Position = UDim2.new(0, 10, 0, 60)
+ContentArea.Size = UDim2.new(0.5, -15, 0.8, 0) -- Left side
+ContentArea.Parent = MainFrame
+
+-- Section Header "Main"
+local SectionHeader = Instance.new("TextLabel")
+SectionHeader.Text = "Main"
+SectionHeader.Font = Enum.Font.SourceSansBold
+SectionHeader.TextSize = 14
+SectionHeader.TextColor3 = Color3.fromRGB(200, 200, 200)
+SectionHeader.TextXAlignment = Enum.TextXAlignment.Left
+SectionHeader.BackgroundTransparency = 1
+SectionHeader.Position = UDim2.new(0, 10, 0, 5)
+SectionHeader.Size = UDim2.new(1, -20, 0, 20)
+SectionHeader.Parent = ContentArea
+
+local Separator = Instance.new("Frame")
+Separator.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Blue Accent Line
+Separator.BorderSizePixel = 0
+Separator.Size = UDim2.new(1, 0, 0, 1)
+Separator.Position = UDim2.new(0, 0, 1, 0)
+Separator.Parent = SectionHeader
+
+-- UI Element Creators
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ContentArea
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+-- Padding for top
+local Pad = Instance.new("Frame")
+Pad.Size = UDim2.new(1,0,0,30)
+Pad.BackgroundTransparency = 1
+Pad.LayoutOrder = 0
+Pad.Parent = ContentArea
+
+local function CreateToggle(text, configKey)
+    local container = Instance.new("Frame")
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1, 0, 0, 20)
+    container.LayoutOrder = 1
+    container.Parent = ContentArea
+    
+    local btn = Instance.new("TextButton")
+    btn.Text = ""
+    btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+    btn.BorderSizePixel = 0
+    btn.Position = UDim2.new(0, 10, 0, 2)
+    btn.Size = UDim2.new(0, 16, 0, 16)
+    btn.Parent = container
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 13
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0, 35, 0, 0)
+    lbl.Size = UDim2.new(1, -35, 1, 0)
+    lbl.Parent = container
+    
+    btn.MouseButton1Click:Connect(function()
+        Config[configKey] = not Config[configKey]
+        btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+    end)
 end
 
-function Signal:Connect(Callback)
-	return self._BindableEvent.Event:Connect(function(...) Callback(...) end);
+local function CreateSlider(text, configKey, min, max)
+    local container = Instance.new("Frame")
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1, 0, 0, 45)
+    container.LayoutOrder = 2
+    container.Parent = ContentArea
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 13
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.Size = UDim2.new(1, -20, 0, 20)
+    lbl.Parent = container
+    
+    local sliderBg = Instance.new("Frame")
+    sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Dark track
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Position = UDim2.new(0, 10, 0, 22)
+    sliderBg.Size = UDim2.new(1, -20, 0, 18)
+    sliderBg.Parent = container
+    
+    local sliderFill = Instance.new("Frame")
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Blue Fill
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Size = UDim2.new((Config[configKey] - min) / (max - min), 0, 1, 0)
+    sliderFill.Parent = sliderBg
+    
+    local valueLbl = Instance.new("TextLabel")
+    valueLbl.Text = tostring(Config[configKey])
+    valueLbl.Font = Enum.Font.Code
+    valueLbl.TextSize = 13
+    valueLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    valueLbl.BackgroundTransparency = 1
+    valueLbl.Size = UDim2.new(1, 0, 1, 0)
+    valueLbl.Parent = sliderBg
+    
+    local dragging = false
+    
+    local function Update(input)
+        local pos = input.Position.X
+        local boxPos = sliderBg.AbsolutePosition.X
+        local boxSize = sliderBg.AbsoluteSize.X
+        local relative = math.clamp((pos - boxPos) / boxSize, 0, 1)
+        
+        local newVal = math.floor(min + (max - min) * relative)
+        Config[configKey] = newVal
+        
+        sliderFill.Size = UDim2.new(relative, 0, 1, 0)
+        valueLbl.Text = tostring(newVal)
+    end
+    
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            Update(input)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            Update(input)
+        end
+    end)
 end
 
-function Signal:Fire(...)
-    self._BindableEvent:Fire(...);
+-- Add Widgets
+CreateToggle("Enabled", "Enabled")
+CreateToggle("Show Boxes", "Box")
+CreateToggle("Show Names", "Name")
+CreateToggle("Show Health", "Health")
+
+-- Add a spacer/divider style for Slider section
+local Spacer = Instance.new("Frame")
+Spacer.BackgroundTransparency = 1
+Spacer.Size = UDim2.new(1,0,0,10)
+Spacer.LayoutOrder = 2
+Spacer.Parent = ContentArea
+
+CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+
+--------------------------------------------------------------------------------
+-- 2. ESP LOGIC (Integrated with UI Config)
+--------------------------------------------------------------------------------
+
+local function CreateDrawing(type, props)
+    local obj = Drawing.new(type)
+    for k, v in pairs(props) do obj[k] = v end
+    return obj
 end
 
-local function GetMouseLocation()
-	return UserInputService:GetMouseLocation();
+local function RemoveESP(model)
+    if ESP_Cache[model] then
+        for _, drawing in pairs(ESP_Cache[model].Drawings) do
+            drawing:Remove()
+        end
+        ESP_Cache[model] = nil
+    end
 end
 
-local function CreateDrawingsTable()
-    local Drawings = { __Objects = {} };
-    local Metatable = {};
+RunService.RenderStepped:Connect(function()
+    if not Config.Enabled then 
+        for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
+        return 
+    end
 
-    function Metatable.__index(self, Index)
-        local Object = rawget(self.__Objects, Index);
-        if not Object or (IsSynapse and not Object.__SELF.__OBJECT_EXISTS) then
-            local Type = Index:sub(1, Index:find'-' - 1);
-            Success, Object = pcall(Drawing.new, Type);
-            if not Object or not Success then return function() end; end
-            self.__Objects[Index] = setmetatable({ __SELF = Object; Type = Type }, {
-                __call = function(self, Properties)
-                    local Object = rawget(self, '__SELF'); if IsSynapse and not Object.__OBJECT_EXISTS then return false, 'render object destroyed'; end
-                    if Properties == false then
-                        Object.Visible = false;
-                        Object.Transparency = 0;
-                        Object:Remove();
-                        return true;
-                    end
-                    if typeof(Properties) == 'table' then
-                        for Property, Value in pairs(Properties) do
-                            Object[Property] = Value
+    if not LiveFolder then LiveFolder = workspace:FindFirstChild("Live") return end
+
+    -- Reset seen status
+    for _, entry in pairs(ESP_Cache) do entry.Seen = false end
+
+    for _, folder in ipairs(LiveFolder:GetChildren()) do
+        local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
+        
+        -- Ignore LocalPlayer
+        if model and model ~= LocalPlayer.Character then
+            
+            local head = model:FindFirstChild("Head")
+            local humanoid = model:FindFirstChild("Humanoid")
+
+            if head and humanoid then
+                if not ESP_Cache[model] then
+                    ESP_Cache[model] = {
+                        Seen = true,
+                        Drawings = {
+                            Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
+                            Box = CreateDrawing("Square", {Thickness = 1, Filled = false, Color = Color3.new(1,0,0)}),
+                            HealthBar = CreateDrawing("Square", {Filled = true}),
+                            HealthBarBg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0,0,0), Transparency = 0.5})
+                        }
+                    }
+                end
+
+                local entry = ESP_Cache[model]
+                entry.Seen = true
+                local d = entry.Drawings
+
+                local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
+                local distance = (Camera.CFrame.Position - head.Position).Magnitude
+
+                if onScreen and distance <= Config.MaxDistance then
+                    local isNPC = model.Name:match("^NPC_")
+                    local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+                    
+                    if rootPart then
+                        local RootPos, _ = Camera:WorldToViewportPoint(rootPart.Position)
+                        local HeadPos = Vector2.new(vector.X, vector.Y)
+                        local LegPos = Vector2.new(RootPos.X, RootPos.Y + (vector.Y - RootPos.Y) * -1.5) -- Estimation
+                        
+                        local BoxHeight = math.abs(HeadPos.Y - LegPos.Y)
+                        local BoxWidth = BoxHeight * 0.6
+                        local BoxPos = Vector2.new(HeadPos.X - BoxWidth/2, HeadPos.Y - BoxHeight/5) -- Adjust slightly up
+                        
+                        -- Color Logic
+                        local color = isNPC and Color3.new(0.2, 1, 0.2) or Color3.new(1, 0.2, 0.2)
+
+                        -- 1. BOX
+                        if Config.Box then
+                            d.Box.Visible = true
+                            d.Box.Size = Vector2.new(BoxWidth, BoxHeight)
+                            d.Box.Position = BoxPos
+                            d.Box.Color = color
+                        else
+                            d.Box.Visible = false
+                        end
+
+                        -- 2. NAME
+                        if Config.Name then
+                            d.Name.Visible = true
+                            d.Name.Text = (isNPC and model.Name:gsub("^NPC_", "") or model.Name) .. string.format(" [%.0f]", distance)
+                            d.Name.Position = Vector2.new(HeadPos.X, BoxPos.Y - 15)
+                            d.Name.Color = color
+                        else
+                            d.Name.Visible = false
+                        end
+
+                        -- 3. HEALTH (Simplified Left Bar)
+                        if Config.Health then
+                            local hp = humanoid.Health
+                            local maxhp = humanoid.MaxHealth
+                            local hpPct = math.clamp(hp/maxhp, 0, 1)
+                            
+                            d.HealthBarBg.Visible = true
+                            d.HealthBarBg.Size = Vector2.new(2, BoxHeight)
+                            d.HealthBarBg.Position = Vector2.new(BoxPos.X - 5, BoxPos.Y)
+                            
+                            d.HealthBar.Visible = true
+                            d.HealthBar.Size = Vector2.new(2, BoxHeight * hpPct)
+                            d.HealthBar.Position = Vector2.new(BoxPos.X - 5, BoxPos.Y + (BoxHeight * (1-hpPct)))
+                            d.HealthBar.Color = Color3.fromHSV(hpPct * 0.3, 1, 1) -- Red to Green
+                        else
+                            d.HealthBarBg.Visible = false
+                            d.HealthBar.Visible = false
                         end
                     end
-                    return Object;
+                else
+                    for _, v in pairs(d) do v.Visible = false end
                 end
-            });
-            Object.Visible = true;
-            Object.Transparency = 1; 
-            
-            if Type == 'Text' then
-                Object.Size = 20;
-                Object.Color = Color3.new(1, 1, 1);
-                Object.Center = true;
-				Object.Outline = true;
-				OutlineOpacity = 0.5;
-            elseif Type == 'Square' or Type == 'Rectangle' then
-                Object.Thickness = 2;
-                Object.Filled = false;
-            end
-            return self.__Objects[Index];
-        end
-        return Object;
-    end
-    function Metatable.__call(self, Delete, ...)
-        if Delete == false then
-            for Index, Drawing in pairs(rawget(self, '__Objects')) do
-                Drawing(false);
             end
         end
     end
-    return setmetatable(Drawings, Metatable);
-end
 
-function CreateMenu(NewPosition) 
-	MenuLoaded = false;
-	UIButtons  = {};
-	Sliders	   = {};
-
-	local BaseSize = V2New(300, 625);
-	local BasePosition = NewPosition or V2New(Camera.ViewportSize.X / 8 - (BaseSize.X / 2), Camera.ViewportSize.Y / 2 - (BaseSize.Y / 2));
-
-	BasePosition = V2New(math.clamp(BasePosition.X, 0, Camera.ViewportSize.X), math.clamp(BasePosition.Y, 0, Camera.ViewportSize.Y));
-
-	Menu:AddMenuInstance('Main', 'Square', {
-		Size		= BaseSize;
-		Position	= BasePosition;
-		Filled		= false;
-		Color		= Colors.Primary.Main;
-		Thickness	= 3;
-		Visible		= true;
-	});
-	Menu:AddMenuInstance('TopBar', 'Square', {
-		Position	= BasePosition;
-		Size		= V2New(BaseSize.X, 15);
-		Color		= Colors.Primary.Dark;
-		Filled		= true;
-		Visible		= true;
-	});
-	Menu:AddMenuInstance('TopBarTwo', 'Square', {
-		Position 	= BasePosition + V2New(0, 15);
-		Size		= V2New(BaseSize.X, 45);
-		Color		= Colors.Primary.Main;
-		Filled		= true;
-		Visible		= true;
-	});
-	Menu:AddMenuInstance('TopBarText', 'Text', {
-		Size 		= 25;
-		Position	= shared.MenuDrawingData.Instances.TopBarTwo.Position + V2New(25, 10);
-		Text		= 'Unnamed ESP';
-		Color		= Colors.Secondary.Light;
-		Visible		= true;
-		Transparency= 1;
-		Outline 	= true;
-		OutlineOpacity = 0.5;
-	});
-	Menu:AddMenuInstance('Filling', 'Square', {
-		Size		= BaseSize - V2New(0, 60);
-		Position	= BasePosition + V2New(0, 60);
-		Filled		= true;
-		Color		= Colors.Secondary.Main;
-		Transparency= .35;
-		Visible		= true;
-	});
-
-	local CPos = 0;
-
-	GetTableData(Options)(function(i, v)
-		if typeof(v.Value) == 'boolean' and not IsStringEmpty(v.Text) and v.Text ~= nil then
-			CPos 				= CPos + 25;
-			local BaseSize		= V2New(BaseSize.X, 30);
-			local BasePosition	= shared.MenuDrawingData.Instances.Filling.Position + V2New(30, v.Index * 25 - 10);
-			UIButtons[#UIButtons + 1] = {
-				Option = v;
-				Instance = Menu:AddMenuInstance(Format('%s_Hitbox', v.Name), 'Square', {
-					Position	= BasePosition - V2New(30, 15);
-					Size		= BaseSize;
-					Visible		= false;
-				});
-			};
-			Menu:AddMenuInstance(Format('%s_OuterCircle', v.Name), 'Circle', {
-				Radius		= 10;
-				Position	= BasePosition;
-				Color		= Colors.Secondary.Light;
-				Filled		= true;
-				Visible		= true;
-			});
-			Menu:AddMenuInstance(Format('%s_InnerCircle', v.Name), 'Circle', {
-				Radius		= 7;
-				Position	= BasePosition;
-				Color		= Colors.Secondary.Dark;
-				Filled		= true;
-				Visible		= v.Value;
-			});
-			Menu:AddMenuInstance(Format('%s_Text', v.Name), 'Text', {
-				Text		= v.Text;
-				Size		= 20;
-				Position	= BasePosition + V2New(20, -10);
-				Visible		= true;
-				Color		= Colors.Secondary.Light;
-				Transparency= 1;
-				Outline		= true;
-				OutlineOpacity = 0.5;
-			});
-		end
-	end)
-	GetTableData(Options)(function(i, v) 
-		if typeof(v.Value) == 'number' then
-			CPos 				= CPos + 25;
-			local BaseSize		= V2New(BaseSize.X, 30);
-			local BasePosition	= shared.MenuDrawingData.Instances.Filling.Position + V2New(0, CPos - 10);
-			local Line			= Menu:AddMenuInstance(Format('%s_SliderLine', v.Name), 'Square', {
-				Transparency	= 1;
-				Color			= Colors.Secondary.Light;
-				Filled			= true;
-				Visible			= true;
-				Position 		= BasePosition + V2New(15, -5);
-				Size 			= BaseSize - V2New(30, 10);
-				Transparency	= 0.5;
-			});
-			local Slider		= Menu:AddMenuInstance(Format('%s_Slider', v.Name), 'Square', {
-				Visible			= true;
-				Filled			= true;
-				Color			= Colors.Primary.Dark;
-				Size			= V2New(5, Line.Size.Y);
-				Transparency	= 0.5;
-			});
-			local Text			= Menu:AddMenuInstance(Format('%s_Text', v.Name), 'Text', {
-				Text			= v.Text;
-				Size			= 20;
-				Center			= true;
-				Transparency	= 1;
-				Outline			= true;
-				OutlineOpacity  = 0.5;
-				Visible			= true;
-				Color			= Colors.White;
-			}); Text.Position	= Line.Position + (Line.Size / 2) - V2New(0, Text.TextBounds.Y / 1.75);
-			local AMT			= Menu:AddMenuInstance(Format('%s_AmountText', v.Name), 'Text', {
-				Text			= tostring(v.Value);
-				Size			= 22;
-				Center			= true;
-				Transparency	= 1;
-				Outline			= true;
-				OutlineOpacity  = 0.5;
-				Visible			= true;
-				Color			= Colors.White;
-				Position		= Text.Position;
-			});
-			local CSlider = {Slider = Slider; Line = Line; Min = v.AllArgs[4]; Max = v.AllArgs[5]; Option = v};
-			local Dummy = Instance.new'NumberValue';
-			Dummy:GetPropertyChangedSignal'Value':Connect(function()
-				Text.Transparency = Dummy.Value;
-				AMT.Transparency = 1 - Dummy.Value;
-			end);
-			Dummy.Value = 1;
-			function CSlider:ShowValue(Bool)
-				self.ShowingValue = Bool;
-				TweenService:Create(Dummy, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Value = Bool and 0 or 1 }):Play();
-			end
-			Sliders[#Sliders + 1] = CSlider;
-			Slider.Position = Line.Position + V2New(35, 0);
-			v.BaseSize = BaseSize;
-			v.BasePosition = BasePosition;
-		end
-	end)
-	local FirstItem = false;
-	GetTableData(Options)(function(i, v) 
-		if typeof(v.Value) == 'EnumItem' then
-			CPos 				= CPos + (not FirstItem and 30 or 25);
-			FirstItem			= true;
-			local BaseSize		= V2New(BaseSize.X, FirstItem and 30 or 25);
-			local BasePosition	= shared.MenuDrawingData.Instances.Filling.Position + V2New(0, CPos - 10);
-			UIButtons[#UIButtons + 1] = {
-				Option = v;
-				Instance = Menu:AddMenuInstance(Format('%s_Hitbox', v.Name), 'Square', {
-					Size		= V2New(BaseSize.X, 20) - V2New(30, 0);
-					Visible		= true;
-					Transparency= .5;
-					Position	= BasePosition + V2New(15, -10);
-					Color		= Colors.Secondary.Light;
-					Filled		= true;
-				});
-			};
-			local Text		= Menu:AddMenuInstance(Format('%s_Text', v.Name), 'Text', {
-				Text		= v.Text;
-				Size		= 20;
-				Position	= BasePosition + V2New(20, -10);
-				Visible		= true;
-				Color		= Colors.Secondary.Light;
-				Transparency= 1;
-				Outline		= true;
-				OutlineOpacity = 0.5;
-			});
-			local BindText	= Menu:AddMenuInstance(Format('%s_BindText', v.Name), 'Text', {
-				Text		= tostring(v.Value):match'%w+%.%w+%.(.+)';
-				Size		= 20;
-				Position	= BasePosition;
-				Visible		= true;
-				Color		= Colors.Secondary.Light;
-				Transparency= 1;
-				Outline		= true;
-				OutlineOpacity = 0.5;
-			});
-			Options[i].BaseSize = BaseSize;
-			Options[i].BasePosition = BasePosition;
-			BindText.Position = BasePosition + V2New(BaseSize.X - BindText.TextBounds.X - 20, -10);
-		end
-	end)
-	GetTableData(Options)(function(i, v) 
-		if typeof(v.Value) == 'function' then
-			local BaseSize		= V2New(BaseSize.X, 30);
-			local BasePosition	= shared.MenuDrawingData.Instances.Filling.Position + V2New(0, CPos + (25 * v.AllArgs[4]) - 35);
-			UIButtons[#UIButtons + 1] = {
-				Option = v;
-				Instance = Menu:AddMenuInstance(Format('%s_Hitbox', v.Name), 'Square', {
-					Size		= V2New(BaseSize.X, 20) - V2New(30, 0);
-					Visible		= true;
-					Transparency= .5;
-					Position	= BasePosition + V2New(15, -10);
-					Color		= Colors.Secondary.Light;
-					Filled		= true;
-				});
-			};
-			local Text		= Menu:AddMenuInstance(Format('%s_Text', v.Name), 'Text', {
-				Text		= v.Text;
-				Size		= 20;
-				Position	= BasePosition + V2New(20, -10);
-				Visible		= true;
-				Color		= Colors.Secondary.Light;
-				Transparency= 1;
-				Outline		= true;
-				OutlineOpacity = 0.5;
-			});
-		end
-	end)
-
-	delay(.1, function()
-		MenuLoaded = true;
-	end);
-end
-
-CreateMenu();
-
-shared.UESP_InputChangedCon = UserInputService.InputChanged:Connect(function(input)
-	if input.UserInputType.Name == 'MouseMovement' and Options.MenuOpen.Value then
-		for i, v in pairs(Sliders) do
-			local Values = {
-				v.Line.Position.X;
-				v.Line.Position.Y;
-				v.Line.Position.X + v.Line.Size.X;
-				v.Line.Position.Y + v.Line.Size.Y;
-			};
-			if MouseHoveringOver(Values) then
-				v:ShowValue(true);
-			else
-				if not MouseHeld then v:ShowValue(false); end
-			end
-		end
-	end
-end)
-shared.UESP_InputBeganCon = UserInputService.InputBegan:Connect(function(input)
-	if input.UserInputType.Name == 'MouseButton1' and Options.MenuOpen.Value then
-		MouseHeld = true;
-		local Bar = Menu:GetInstance'TopBar';
-		local Values = {
-			Bar.Position.X;
-			Bar.Position.Y;
-			Bar.Position.X + Bar.Size.X;
-			Bar.Position.Y + Bar.Size.Y;
-		}
-		if MouseHoveringOver(Values) then
-			DraggingUI = true;
-			DragOffset = Menu:GetInstance'Main'.Position - GetMouseLocation();
-		else
-			for i, v in pairs(Sliders) do
-				local Values = {
-					v.Line.Position.X;
-					v.Line.Position.Y;
-					v.Line.Position.X + v.Line.Size.X;
-					v.Line.Position.Y + v.Line.Size.Y;
-				};
-				if MouseHoveringOver(Values) then
-					DraggingWhat = v;
-					Dragging = true;
-					break
-				end
-			end
-		end
-	end
-end)
-shared.UESP_InputEndedCon = UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType.Name == 'MouseButton1' and Options.MenuOpen.Value then
-		MouseHeld = false;
-		local IgnoreOtherInput = false;
-
-		if not IgnoreOtherInput then
-			for i, v in pairs(UIButtons) do
-				local Values = {
-					v.Instance.Position.X;
-					v.Instance.Position.Y;
-					v.Instance.Position.X + v.Instance.Size.X;
-					v.Instance.Position.Y + v.Instance.Size.Y;
-				};
-				if MouseHoveringOver(Values) then
-					v.Option();
-					IgnoreOtherInput = true;
-					break 
-				end
-			end
-			for i, v in pairs(Sliders) do
-				if IgnoreOtherInput then break end
-				local Values = {
-					v.Line.Position.X;
-					v.Line.Position.Y;
-					v.Line.Position.X + v.Line.Size.X;
-					v.Line.Position.Y + v.Line.Size.Y;
-				};
-				if not MouseHoveringOver(Values) then
-					v:ShowValue(false);
-				end
-			end
-		end
-	elseif input.UserInputType.Name == 'Keyboard' then
-		if Binding then
-			BindedKey = input.KeyCode;
-			Binding = false;
-		elseif input.KeyCode == Options.MenuKey.Value then
-			Options.MenuOpen();
-		elseif input.KeyCode == Options.ToggleKey.Value then
-			Options.Enabled();
-		end
-	end
+    -- Cleanup
+    for model, entry in pairs(ESP_Cache) do
+        if not entry.Seen or not model.Parent then
+            RemoveESP(model)
+        end
+    end
 end)
 
-local function ToggleMenu()
-	if Options.MenuOpen.Value then
-		GetTableData(shared.MenuDrawingData.Instances)(function(i, v)
-			if OldData[v] then
-				pcall(Set, v, 'Visible', true);
-			end
-		end)
-	else
-		GetTableData(shared.MenuDrawingData.Instances)(function(i, v)
-			OldData[v] = v.Visible;
-			if v.Visible then
-				pcall(Set, v, 'Visible', false);
-			end
-		end)
-	end
-end
+-- Toggle Menu Input
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.Insert then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
 
-local LastRayIgnoreUpdate, RayIgnoreList = 0, {}
-
-local function CheckRay(Instance, Distance, Position, Unit)
-	local Pass = true;
-	local Model = Instance;
-	if Distance > 999 then return false; end
-	if Instance.ClassName == 'Player' then
-		Model = GetCharacter(Instance);
-	end
-	if not Model then
-		Model = Instance.Parent;
-		if Model.Parent == workspace then
-			Model = Instance;
-		end
-	end
-	if not Model then return false end
-	local _Ray = Ray.new(Position, Unit * Distance)
-	if tick() - LastRayIgnoreUpdate > 3 then
-		LastRayIgnoreUpdate = tick()
-		table.clear(RayIgnoreList)
-		table.insert(RayIgnoreList, LocalPlayer.Character)
-		table.insert(RayIgnoreList, Camera)
-		if Mouse.TargetFilter then table.insert(RayIgnoreList, Mouse.TargetFilter) end
-		if #IgnoreList > 64 then
-			while #IgnoreList > 64 do
-				table.remove(IgnoreList, 1)
-			end
-		end
-		for i, v in pairs(IgnoreList) do table.insert(RayIgnoreList, v) end
-	end
-	local Hit = workspace:FindPartOnRayWithIgnoreList(_Ray, RayIgnoreList)
-	if Hit and not Hit:IsDescendantOf(Model) then
-		Pass = false;
-		if Hit.Transparency >= .3 or not Hit.CanCollide and Hit.ClassName ~= Terrain then 
-			table.insert(IgnoreList, Hit)
-		end
-	end
-	return Pass;
-end
-
-local function CheckPlayer(Player, Character)
-	if not Options.Enabled.Value then return false end
-	local Pass = true;
-	local Distance = 0;
-	if Player ~= LocalPlayer and Character then
-		local Head = Character:FindFirstChild'Head';
-		if Pass and Character and Head then
-			Distance = (Camera.CFrame.Position - Head.Position).Magnitude;
-			if Options.VisCheck.Value then
-				Pass = CheckRay(Player, Distance, Camera.CFrame.Position, (Head.Position - Camera.CFrame.Position).unit);
-			end
-			if Distance > Options.MaxDistance.Value then
-				Pass = false;
-			end
-		end
-	else
-		Pass = false;
-	end
-	return Pass, Distance;
-end
-
-local function CheckDistance(Instance)
-	if not Options.Enabled.Value then return false end
-	local Pass = true;
-	local Distance = 0;
-	if Instance ~= nil then
-		Distance = (Camera.CFrame.Position - Instance.Position).Magnitude;
-		if Options.VisCheck.Value then
-			Pass = CheckRay(Instance, Distance, Camera.CFrame.Position, (Instance.Position - Camera.CFrame.Position).unit);
-		end
-		if Distance > Options.MaxDistance.Value then
-			Pass = false;
-		end
-	else
-		Pass = false;
-	end
-	return Pass, Distance;
-end
-
-local function UpdatePlayerData()
-	if (tick() - LastRefresh) > (Options.RefreshRate.Value / 1000) then
-		LastRefresh = tick();
-		if CustomESP and Options.Enabled.Value then
-			local a, b = pcall(CustomESP);
-		end
-		for i, v in pairs(Players:GetPlayers()) do
-			local Data = shared.InstanceData[v.Name] or { Instances = {}; };
-			Data.Instances['Box'] = Data.Instances['Box'] or LineBox:Create{Thickness = 4};
-			Data.Instances['NameTag'] = Data.Instances['NameTag'] or NewDrawing'Text'{
-				Size			= Options.TextSize.Value;
-				Center			= true;
-				Outline			= Options.TextOutline.Value;
-				OutlineOpacity	= 1;
-				Visible			= true;
-			};
-			
-			local NameTag		= Data.Instances['NameTag'];
-			local Box			= Data.Instances['Box'];
-
-			local Character = GetCharacter(v);
-			local Pass, Distance = CheckPlayer(v, Character);
-
-			if Pass and Character then
-				local Humanoid = Character:FindFirstChildOfClass'Humanoid';
-				local Head = Character:FindFirstChild'Head';
-				local HumanoidRootPart = Character:FindFirstChild(CustomRootPartName or 'HumanoidRootPart')
-				local Dead = (Humanoid and Humanoid:GetState().Name == 'Dead')
-				
-				if type(GetAliveState) == 'function' then
-					Dead = (not GetAliveState(v, Character))
-				end
-
-				if Character ~= nil and Head and HumanoidRootPart and not Dead then
-					local ScreenPosition, Vis = WorldToViewport(Head.Position);
-					local Color = (CheckTeam(v) and TeamColor or EnemyColor); Color = Options.ShowTeamColor.Value and v.TeamColor.Color or Color;
-					
-					if ScreenPosition.Z > 0 then
-						local ScreenPositionUpper	= WorldToViewport((HumanoidRootPart:GetRenderCFrame() * CFrame.new(0, Head.Size.Y + HumanoidRootPart.Size.Y + (Options.YOffset.Value / 25), 0)).Position);
-						local Scale					= Head.Size.Y / 2;
-
-						if Options.ShowName.Value then
-							NameTag.Visible		= true;
-							NameTag.Text		= v.Name;
-							NameTag.Size		= Options.TextSize.Value;
-							NameTag.Outline		= Options.TextOutline.Value;
-							NameTag.Position	= V2New(ScreenPositionUpper.X, ScreenPositionUpper.Y) - V2New(0, NameTag.TextBounds.Y);
-							NameTag.Color		= Color;
-							NameTag.Transparency= 0.85;
-						else
-							NameTag.Visible = false;
-						end
-						
-						if Options.ShowBoxes.Value and Vis and HumanoidRootPart then
-							local Body = {
-								Head;
-								Character:FindFirstChild'Left Leg' or Character:FindFirstChild'LeftLowerLeg';
-								Character:FindFirstChild'Right Leg' or Character:FindFirstChild'RightLowerLeg';
-								Character:FindFirstChild'Left Arm' or Character:FindFirstChild'LeftLowerArm';
-								Character:FindFirstChild'Right Arm' or Character:FindFirstChild'RightLowerArm';
-							}
-							Box:Update(HumanoidRootPart.CFrame, V3New(2, 3, 1) * (Scale * 2), Color, nil, shared.am_ic3 and Body);
-						else
-							Box:SetVisible(false);
-						end
-					else
-						NameTag.Visible			= false;
-						Box:SetVisible(false);
-					end
-				else
-					NameTag.Visible			= false;
-					Box:SetVisible(false);
-				end
-			else
-				NameTag.Visible			= false;
-				Box:SetVisible(false);
-			end
-			shared.InstanceData[v.Name] = Data;
-		end
-	end
-end
-
-local LastInvalidCheck = 0;
-
-local function Update()
-	if tick() - LastInvalidCheck > 0.3 then
-		LastInvalidCheck = tick();
-		if Camera.Parent ~= workspace then
-			Camera = workspace.CurrentCamera;
-			WTVP = Camera.WorldToViewportPoint;
-		end
-	end
-
-	if Options.MenuOpen.Value and MenuLoaded then
-		local MLocation = GetMouseLocation();
-		shared.MenuDrawingData.Instances.Main.Color = Color3.fromHSV(tick() * 24 % 255/255, 1, 1);
-		local MainInstance = Menu:GetInstance'Main';
-		
-		if MouseHeld then
-			local MousePos = GetMouseLocation();
-			if Dragging then
-				DraggingWhat.Slider.Position = V2New(math.clamp(MLocation.X - DraggingWhat.Slider.Size.X / 2, DraggingWhat.Line.Position.X, DraggingWhat.Line.Position.X + DraggingWhat.Line.Size.X - DraggingWhat.Slider.Size.X), DraggingWhat.Slider.Position.Y);
-				local Percent	= (DraggingWhat.Slider.Position.X - DraggingWhat.Line.Position.X) / ((DraggingWhat.Line.Position.X + DraggingWhat.Line.Size.X - DraggingWhat.Line.Position.X) - DraggingWhat.Slider.Size.X);
-				local Value		= CalculateValue(DraggingWhat.Min, DraggingWhat.Max, Percent);
-				DraggingWhat.Option(Value);
-			elseif DraggingUI then
-				Debounce.UIDrag = true;
-				local Main = Menu:GetInstance'Main';
-				Main.Position = MousePos + DragOffset;
-			end
-		else
-			Dragging = false;
-			if DraggingUI and Debounce.UIDrag then
-				Debounce.UIDrag = false;
-				DraggingUI = false;
-				CreateMenu(Menu:GetInstance'Main'.Position);
-			end
-		end
-		if not Debounce.Menu then
-			Debounce.Menu = true;
-			ToggleMenu();
-		end
-	elseif Debounce.Menu and not Options.MenuOpen.Value then
-		Debounce.Menu = false;
-		ToggleMenu();
-	end
-end
-
-RunService:UnbindFromRenderStep(GetDataName);
-RunService:UnbindFromRenderStep(UpdateName);
-RunService:BindToRenderStep(GetDataName, 300, UpdatePlayerData);
-RunService:BindToRenderStep(UpdateName, 199, Update);
+print("ESP Loaded. Press INSERT to toggle Menu.")
