@@ -1,0 +1,768 @@
+-- Smooth Health Bar System with Posture Display
+-- Shows bars for ALL characters (players AND NPCs) with Lifeforce/Posture
+
+assert(Drawing, 'Exploit not supported - Drawing API required')
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+local V2New = Vector2.new
+local V3New = Vector3.new
+local WorldToViewport = function(...) return Camera:WorldToViewportPoint(...) end
+
+-- Configuration
+local CONFIG = {
+    BarWidth = 180,
+    BarHeight = 8,
+    Spacing = 10,
+    FontSize = 16,
+    UpdateRate = 1,
+    MaxDistance = 1000,
+    ToggleKey = Enum.KeyCode.F3,
+    Position = V2New(10, 10)
+}
+
+-- Module state
+local HealthSystem = {
+    Enabled = false,
+    MenuOpen = false,
+    Instances = {},
+    CharacterBars = {}, -- Changed from PlayerBars to CharacterBars
+    Connections = {},
+    Dragging = false,
+    DragOffset = V2New()
+}
+
+-- Drawing manager
+local Drawings = {
+    __Objects = {}
+}
+
+function Drawings:New(type, props)
+    local obj = Drawing.new(type)
+    if props then
+        for k, v in pairs(props) do
+            pcall(function() obj[k] = v end)
+        end
+    end
+    table.insert(self.__Objects, obj)
+    return obj
+end
+
+function Drawings:Clear()
+    for _, obj in pairs(self.__Objects) do
+        pcall(function() obj:Remove() end)
+    end
+    self.__Objects = {}
+end
+
+-- Generate unique ID for any character
+local function GetCharacterId(character, folder)
+    if not character then return nil end
+    -- For players: use UserId, for NPCs: use instance hash + name
+    local player = Players:GetPlayerFromCharacter(character)
+    if player then
+        return "Player_" .. player.UserId
+    else
+        -- For NPCs/create unique ID from folder path and name
+        return folder and (folder.Name .. "_" .. character.Name) or "NPC_" .. character.Name .. "_" .. tostring(character:GetHashCode())
+    end
+end
+
+-- Main GUI
+local function CreateMenu()
+    local menu = {
+        Elements = {},
+        Size = V2New(240, 160),
+        Position = CONFIG.Position
+    }
+    
+    -- Main background
+    menu.Main = Drawings:New("Square", {
+        Size = menu.Size,
+        Position = menu.Position,
+        Color = Color3.fromRGB(25, 25, 25),
+        Filled = true,
+        Transparency = 0.9,
+        Thickness = 2,
+        Visible = false
+    })
+    
+    -- Title bar
+    menu.TitleBar = Drawings:New("Square", {
+        Size = V2New(menu.Size.X, 30),
+        Position = menu.Position,
+        Color = Color3.fromRGB(15, 15, 15),
+        Filled = true,
+        Transparency = 1,
+        Visible = false
+    })
+    
+    menu.TitleText = Drawings:New("Text", {
+        Text = "Universal Health & Posture",
+        Position = menu.Position + V2New(10, 5),
+        Size = 18,
+        Color = Color3.fromRGB(255, 255, 255),
+        Outline = true,
+        OutlineOpacity = 0.5,
+        Visible = false
+    })
+    
+    -- Toggle button
+    menu.ToggleBg = Drawings:New("Square", {
+        Size = V2New(menu.Size.X - 20, 35),
+        Position = menu.Position + V2New(10, 40),
+        Color = Color3.fromRGB(50, 50, 50),
+        Filled = true,
+        Transparency = 1,
+        Visible = false
+    })
+    
+    menu.ToggleText = Drawings:New("Text", {
+        Text = "ENABLE BARS",
+        Position = menu.Position + V2New(menu.Size.X/2, 57),
+        Size = 16,
+        Color = Color3.fromRGB(255, 255, 255),
+        Center = true,
+        Outline = true,
+        OutlineOpacity = 0.5,
+        Visible = false
+    })
+    
+    -- Status indicator
+    menu.StatusDot = Drawings:New("Circle", {
+        Position = menu.Position + V2New(15, 95),
+        Radius = 5,
+        Color = Color3.fromRGB(255, 0, 0),
+        Filled = true,
+        NumSides = 20,
+        Visible = false
+    })
+    
+    menu.StatusText = Drawings:New("Text", {
+        Text = "Status: Disabled",
+        Position = menu.Position + V2New(30, 87),
+        Size = 14,
+        Color = Color3.fromRGB(200, 200, 200),
+        Visible = false
+    })
+    
+    menu.StatsText = Drawings:New("Text", {
+        Text = "Characters: 0",
+        Position = menu.Position + V2New(10, 115),
+        Size = 13,
+        Color = Color3.fromRGB(150, 150, 150),
+        Visible = false
+    })
+    
+    menu.DamageText = Drawings:New("Text", {
+        Text = "Universal Mode: ON",
+        Position = menu.Position + V2New(10, 135),
+        Size = 12,
+        Color = Color3.fromRGB(100, 200, 255),
+        Visible = false
+    })
+    
+    return menu
+end
+
+-- Create bars for ANY character (player or NPC)
+local function CreateCharacterBars(character, folder)
+    if not character then 
+        print("[DEBUG] CreateCharacterBars called with nil character")
+        return 
+    end
+    
+    print(string.format("[DEBUG] Creating bars for character: %s, Folder: %s", character.Name, folder and folder.Name or "NIL"))
+    
+    local id = GetCharacterId(character, folder)
+    if not id then 
+        print("[DEBUG] Failed to get character ID")
+        return 
+    end
+    
+    print(string.format("[DEBUG] Character ID: %s", id))
+    
+    -- Clean up old bars if they exist
+    if HealthSystem.CharacterBars[id] then
+        for _, obj in pairs(HealthSystem.CharacterBars[id].Objects) do
+            pcall(function() obj:Remove() end)
+        end
+        HealthSystem.CharacterBars[id] = nil
+    end
+    
+    -- Get display name
+    local displayName = character.Name
+    local player = Players:GetPlayerFromCharacter(character)
+    if player then
+        displayName = player.Name
+    else
+        -- Clean up NPC names if they have prefixes
+        displayName = displayName:gsub("^NPC_", "")
+        displayName = displayName:gsub("^Enemy_", "")
+        -- Truncate long names
+        if #displayName > 15 then
+            displayName = displayName:sub(1, 12) .. "..."
+        end
+    end
+    
+    local bars = {
+        Character = character,
+        Folder = folder,
+        DisplayName = displayName,
+        IsPlayer = player ~= nil,
+        LastCharacter = character,
+        CurrentHealth = 100,
+        CurrentPosture = 100,
+        TargetHealth = 100,
+        TargetPosture = 100,
+        
+        Objects = {},
+        Visible = true
+    }
+    
+    -- Fixed length bars
+    bars.Container = {
+        -- Character name
+        NameText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 255),
+            Size = 14,
+            Center = true,
+            Outline = true,
+            OutlineOpacity = 0.5,
+            Visible = false
+        }),
+        
+        -- Posture bar (top - yellow)
+        PostureBarBg = Drawings:New("Square", {
+            Color = Color3.fromRGB(30, 30, 30),
+            Filled = true,
+            Transparency = 0.8,
+            Visible = false
+        }),
+        PostureBar = Drawings:New("Square", {
+            Color = Color3.fromRGB(255, 255, 70),
+            Filled = true,
+            Transparency = 0.9,
+            Visible = false
+        }),
+        PostureText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 70),
+            Size = 12,
+            Outline = true,
+            OutlineOpacity = 0.5,
+            Visible = false
+        }),
+        
+        -- Health bar (bottom - red)
+        HealthBarBg = Drawings:New("Square", {
+            Color = Color3.fromRGB(30, 30, 30),
+            Filled = true,
+            Transparency = 0.8,
+            Visible = false
+        }),
+        HealthBar = Drawings:New("Square", {
+            Color = Color3.fromRGB(255, 70, 70),
+            Filled = true,
+            Transparency = 0.9,
+            Visible = false
+        }),
+        HealthText = Drawings:New("Text", {
+            Color = Color3.fromRGB(255, 255, 255),
+            Size = 12,
+            Outline = true,
+            OutlineOpacity = 0.5,
+            Visible = false
+        })
+    }
+    
+    -- Store objects for easy cleanup
+    for _, obj in pairs(bars.Container) do
+        table.insert(bars.Objects, obj)
+    end
+    
+    HealthSystem.CharacterBars[id] = bars
+    return bars
+end
+
+-- Update health bar positions and values
+local function UpdateBars()
+    if not HealthSystem.Enabled then return end
+    
+    local activeCharacters = 0
+    
+    -- Iterate through all character bars
+    for id, bars in pairs(HealthSystem.CharacterBars) do
+        -- Safely check if character still exists
+        local success, character = pcall(function() return bars.Character end)
+        if not success or not character or not character.Parent then
+            -- Clean up if character no longer exists
+            pcall(function()
+                for _, obj in pairs(bars.Objects) do
+                    obj:Remove()
+                end
+            end)
+            HealthSystem.CharacterBars[id] = nil
+            continue
+        end
+        
+        -- Get required parts safely - they should be IN the character model
+        local humanoid = character:FindFirstChild("Humanoid")
+        local head = character:FindFirstChild("Head")
+        
+        print(string.format("[DEBUG] Character %s - Checking for Humanoid: %s, Head: %s", bars.DisplayName, humanoid and "YES" or "NO", head and "YES" or "NO"))
+        
+        local lifeforce, posture
+        
+        -- Lifeforce and Posture are in the FOLDER, not in the character model
+        if bars.Folder then
+            lifeforce = bars.Folder:FindFirstChild("Lifeforce")
+            posture = bars.Folder:FindFirstChild("Posture")
+            print(string.format("[DEBUG] Folder lookup for %s - Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
+        end
+        
+        -- If not found in folder, try character itself as fallback
+        if not lifeforce then 
+            lifeforce = character:FindFirstChild("Lifeforce")
+        end
+        if not posture then 
+            posture = character:FindFirstChild("Posture")
+        end
+        
+        -- Determine required components: NPCs may rely on Humanoid properties instead of Lifeforce/Posture
+        local isNPCModel = false
+        if character and character.Name then
+            isNPCModel = tostring(character.Name):match("^NPC_") and true or false
+        end
+
+        local haveComponents = false
+        if isNPCModel then
+            -- For NPC models we require a humanoid and head, and humanoid should expose Health/MaxHealth properties
+            haveComponents = humanoid and head and (humanoid.Health ~= nil) and (humanoid.MaxHealth ~= nil)
+        else
+            haveComponents = humanoid and head and lifeforce and posture
+        end
+
+        if not haveComponents then
+            for _, obj in pairs(bars.Container) do
+                pcall(function() obj.Visible = false end)
+            end
+            continue
+        end
+        
+        -- Check distance
+        local headPos = head.Position
+        local distance = (Camera.CFrame.Position - headPos).Magnitude
+        if distance > CONFIG.MaxDistance then
+            for _, obj in pairs(bars.Container) do
+                pcall(function() obj.Visible = false end)
+            end
+            continue
+        end
+        
+        -- Get screen position
+        local screenPos, visible = Camera:WorldToViewportPoint(headPos)
+        if not visible or screenPos.Z < 0 then
+            for _, obj in pairs(bars.Container) do
+                pcall(function() obj.Visible = false end)
+            end
+            continue
+        end
+        
+        activeCharacters = activeCharacters + 1
+        
+        -- Safely get MaxValue and MinValue
+        local healthMax = 100
+        local healthMin = 0
+        local postureMax = 100
+        local postureMin = 0
+        
+        if lifeforce then
+            pcall(function()
+                healthMax = lifeforce:GetAttribute("MaxValue") or 100
+                healthMin = lifeforce:GetAttribute("MinValue") or 0
+                print(string.format("[DEBUG] Lifeforce %s attributes - Max: %s, Min: %s", bars.DisplayName, healthMax, healthMin))
+            end)
+        else
+            print(string.format("[DEBUG] WARNING: Lifeforce is NIL for %s", bars.DisplayName))
+        end
+        if posture then
+            pcall(function()
+                postureMax = posture:GetAttribute("MaxValue") or 100
+                postureMin = posture:GetAttribute("MinValue") or 0
+                print(string.format("[DEBUG] Posture %s attributes - Max: %s, Min: %s", bars.DisplayName, postureMax, postureMin))
+            end)
+        else
+            print(string.format("[DEBUG] WARNING: Posture is NIL for %s", bars.DisplayName))
+        end
+        
+        -- Ensure valid numbers
+        healthMax = (type(healthMax) == "number" and healthMax > 0) and healthMax or 100
+        healthMin = (type(healthMin) == "number") and healthMin or 0
+        postureMax = (type(postureMax) == "number" and postureMax > 0) and postureMax or 100
+        postureMin = (type(postureMin) == "number") and postureMin or 0
+        
+        -- Safely get current values
+        local currentHealth = 100
+        local currentPosture = 100
+
+        -- If this is an NPC model, prefer Humanoid.Health/MaxHealth instead of Lifeforce
+        if isNPCModel and humanoid then
+            pcall(function() currentHealth = humanoid.Health end)
+            pcall(function() healthMax = humanoid.MaxHealth or healthMax end)
+        else
+            if lifeforce then pcall(function() currentHealth = lifeforce.Value end) end
+        end
+        if posture then pcall(function() currentPosture = posture.Value end) end
+        
+        -- Update target values
+        bars.TargetHealth = currentHealth
+        bars.TargetPosture = currentPosture
+        
+        -- Smooth interpolation
+        bars.CurrentHealth = bars.CurrentHealth + (bars.TargetHealth - bars.CurrentHealth) * 0.3
+        bars.CurrentPosture = bars.CurrentPosture + (bars.TargetPosture - bars.CurrentPosture) * 0.3
+        
+        -- Clamp values using actual Min/Max
+        bars.CurrentHealth = math.clamp(bars.CurrentHealth, healthMin, healthMax)
+        bars.CurrentPosture = math.clamp(bars.CurrentPosture, postureMin, postureMax)
+        
+        -- Calculate fill percentages
+        local healthRange = healthMax - healthMin
+        local postureRange = postureMax - postureMin
+        
+        local healthFillPercent = healthRange > 0 and ((bars.CurrentHealth - healthMin) / healthRange) or 0
+        local postureFillPercent = postureRange > 0 and ((bars.CurrentPosture - postureMin) / postureRange) or 0
+        
+        -- Position bars above head
+        local baseX = screenPos.X - CONFIG.BarWidth / 2
+        local baseY = screenPos.Y - 85 - (distance / 100)
+        
+        -- Character name
+        local nameText = bars.Container.NameText
+        pcall(function()
+            nameText.Text = bars.DisplayName
+            nameText.Position = V2New(screenPos.X, baseY - 20)
+            nameText.Visible = true
+            nameText.Transparency = math.clamp(1 - (500 / distance), 0.5, 1)
+        end)
+        
+        -- POSTURE BAR (Top - Yellow)
+        local postureBg = bars.Container.PostureBarBg
+        pcall(function()
+            postureBg.Position = V2New(baseX, baseY)
+            postureBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+            postureBg.Visible = true
+            postureBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        end)
+        
+        local postureFill = bars.Container.PostureBar
+        pcall(function()
+            postureFill.Position = V2New(baseX, baseY)
+            postureFill.Size = V2New(CONFIG.BarWidth * postureFillPercent, CONFIG.BarHeight)
+            postureFill.Visible = true
+            postureFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+            postureFill.Color = Color3.fromRGB(255, 255, 70)
+        end)
+        
+        -- Posture text
+        local postureText = bars.Container.PostureText
+        pcall(function()
+            postureText.Text = string.format("%.0f/%.0f", bars.CurrentPosture, postureMax)
+            postureText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY - 2)
+            postureText.Visible = true
+            postureText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        end)
+        
+        -- HEALTH BAR (Bottom - Red for players, green for NPCs)
+        local healthBg = bars.Container.HealthBarBg
+        pcall(function()
+            healthBg.Position = V2New(baseX, baseY + CONFIG.Spacing)
+            healthBg.Size = V2New(CONFIG.BarWidth, CONFIG.BarHeight)
+            healthBg.Visible = true
+            healthBg.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        end)
+        
+        local healthFill = bars.Container.HealthBar
+        pcall(function()
+            healthFill.Position = V2New(baseX, baseY + CONFIG.Spacing)
+            healthFill.Size = V2New(CONFIG.BarWidth * healthFillPercent, CONFIG.BarHeight)
+            healthFill.Visible = true
+            healthFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+            if isNPCModel then
+                healthFill.Color = Color3.fromRGB(100, 255, 100)
+            else
+                healthFill.Color = Color3.fromRGB(255, 70, 70)
+            end
+        end)
+        
+        -- Health text
+        local healthText = bars.Container.HealthText
+        pcall(function()
+            healthText.Text = string.format("%.0f/%.0f", bars.CurrentHealth, healthMax)
+            healthText.Position = V2New(baseX + CONFIG.BarWidth + 5, baseY + CONFIG.Spacing - 2)
+            healthText.Visible = true
+            healthText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
+        end)
+        
+        -- Set humanoid display type for players only (NPCs use the custom lifeline)
+        if bars.IsPlayer then
+            pcall(function()
+                if humanoid then
+                    print(string.format("[DEBUG] Setting HealthDisplayType for player %s", bars.DisplayName))
+                    humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                    print(string.format("[DEBUG] HealthDisplayType set to: %s", humanoid.HealthDisplayType))
+                else
+                    print(string.format("[DEBUG] WARNING: Humanoid is NIL for player %s, cannot set HealthDisplayType", bars.DisplayName))
+                end
+            end)
+        end
+    end
+    
+    -- Update menu stats
+    if HealthSystem.MenuOpen and HealthSystem.Menu then
+        pcall(function()
+            HealthSystem.Menu.StatsText.Text = string.format("Characters: %d | Distance: %dm", activeCharacters, CONFIG.MaxDistance)
+        end)
+    end
+end
+
+-- Scan for ALL characters in the Live folder
+local function ScanForCharacters()
+    local basePath = workspace:FindFirstChild("Live")
+    if not basePath then 
+        print("[DEBUG] ERROR: 'Live' folder not found in workspace")
+        return 
+    end
+    print("[DEBUG] Scanning 'Live' folder for characters...")
+    for _, folder in pairs(basePath:GetChildren()) do
+        print(string.format("[DEBUG] Found folder: %s", folder.Name))
+        local character = nil
+        -- Search recursively: some setups nest the character model deeper inside the folder
+        for _, descendant in pairs(folder:GetDescendants()) do
+            if descendant:IsA("Model") then
+                local humanoid = descendant:FindFirstChildWhichIsA("Humanoid", false) or descendant:FindFirstChild("Humanoid")
+                local head = descendant:FindFirstChild("Head")
+                if humanoid and head then
+                    character = descendant
+                    print(string.format("[DEBUG] Found character model (descendant) with Humanoid and Head: %s", descendant.Name))
+                    break
+                else
+                    print(string.format("[DEBUG] Ignored descendant model %s (Humanoid: %s, Head: %s)", descendant.Name, humanoid and "YES" or "NO", head and "YES" or "NO"))
+                end
+            end
+        end
+        if character then
+            print(string.format("[DEBUG] Creating bars for character in folder %s", folder.Name))
+            CreateCharacterBars(character, folder)
+        else
+            print(string.format("[DEBUG] No valid character model found in folder %s", folder.Name))
+        end
+    end
+end
+
+-- Toggle system
+local function ToggleSystem()
+    HealthSystem.Enabled = not HealthSystem.Enabled
+    
+    if HealthSystem.Menu then
+        pcall(function()
+            if HealthSystem.Enabled then
+                HealthSystem.Menu.ToggleText.Text = "DISABLE BARS"
+                HealthSystem.Menu.ToggleBg.Color = Color3.fromRGB(200, 50, 50)
+                HealthSystem.Menu.StatusDot.Color = Color3.fromRGB(0, 255, 0)
+                HealthSystem.Menu.StatusText.Text = "Status: Enabled"
+                HealthSystem.Menu.DamageText.Visible = true
+                
+                -- Rescan for characters when enabling
+                ScanForCharacters()
+            else
+                HealthSystem.Menu.ToggleText.Text = "ENABLE BARS"
+                HealthSystem.Menu.ToggleBg.Color = Color3.fromRGB(50, 150, 50)
+                HealthSystem.Menu.StatusDot.Color = Color3.fromRGB(255, 0, 0)
+                HealthSystem.Menu.StatusText.Text = "Status: Disabled"
+                HealthSystem.Menu.DamageText.Visible = false
+                
+                -- Hide all bars
+                for _, bars in pairs(HealthSystem.CharacterBars) do
+                    for _, obj in pairs(bars.Container) do
+                        pcall(function() obj.Visible = false end)
+                    end
+                end
+            end
+        end)
+    end
+    
+    print("[HealthSystem] " .. (HealthSystem.Enabled and "Enabled" or "Disabled"))
+end
+
+-- Toggle menu
+local function ToggleMenu()
+    HealthSystem.MenuOpen = not HealthSystem.MenuOpen
+    
+    if HealthSystem.Menu then
+        for _, element in pairs(HealthSystem.Menu) do
+            if type(element) == "table" and element.Visible ~= nil then
+                pcall(function() element.Visible = HealthSystem.MenuOpen end)
+            end
+        end
+    end
+end
+
+-- Initialize
+local function Initialize()
+    -- Create menu
+    HealthSystem.Menu = CreateMenu()
+    print("[DEBUG] Initialize() called")
+    print(string.format("[DEBUG] Checking workspace structure..."))
+    
+    local basePath = workspace:FindFirstChild("Live")
+    if basePath then
+        print(string.format("[DEBUG] 'Live' folder EXISTS with %d children", #basePath:GetChildren()))
+        for _, child in pairs(basePath:GetChildren()) do
+            print(string.format("[DEBUG]   - Child: %s", child.Name))
+        end
+    else
+        print("[DEBUG] ERROR: 'Live' folder NOT FOUND in workspace!")
+    end
+    
+    -- Setup input handling
+    local inputBegan = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        
+        if input.KeyCode == CONFIG.ToggleKey then
+            ToggleSystem()
+        elseif input.KeyCode == Enum.KeyCode.F4 then
+            ToggleMenu()
+        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and HealthSystem.MenuOpen then
+            pcall(function()
+                -- Check if dragging menu
+                local mousePos = UserInputService:GetMouseLocation()
+                local titleBar = HealthSystem.Menu.TitleBar
+                if mousePos.X >= titleBar.Position.X and mousePos.X <= titleBar.Position.X + titleBar.Size.X and
+                   mousePos.Y >= titleBar.Position.Y and mousePos.Y <= titleBar.Position.Y + titleBar.Size.Y then
+                    HealthSystem.Dragging = true
+                    HealthSystem.DragOffset = titleBar.Position - mousePos
+                end
+                
+                -- Check toggle button
+                local toggle = HealthSystem.Menu.ToggleBg
+                if mousePos.X >= toggle.Position.X and mousePos.X <= toggle.Position.X + toggle.Size.X and
+                   mousePos.Y >= toggle.Position.Y and mousePos.Y <= toggle.Position.Y + toggle.Size.Y then
+                    ToggleSystem()
+                end
+            end)
+        end
+    end)
+    table.insert(HealthSystem.Connections, inputBegan)
+    
+    local inputEnded = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            HealthSystem.Dragging = false
+        end
+    end)
+    table.insert(HealthSystem.Connections, inputEnded)
+    
+    local inputChanged = UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and HealthSystem.Dragging and HealthSystem.Menu then
+            pcall(function()
+                local mousePos = UserInputService:GetMouseLocation()
+                local newPos = mousePos + HealthSystem.DragOffset
+                
+                -- Clamp to screen
+                newPos = V2New(
+                    math.clamp(newPos.X, 0, Camera.ViewportSize.X - HealthSystem.Menu.Size.X),
+                    math.clamp(newPos.Y, 0, Camera.ViewportSize.Y - HealthSystem.Menu.Size.Y)
+                )
+                
+                -- Update menu position
+                HealthSystem.Menu.Main.Position = newPos
+                HealthSystem.Menu.TitleBar.Position = newPos
+                HealthSystem.Menu.TitleText.Position = newPos + V2New(10, 5)
+                HealthSystem.Menu.ToggleBg.Position = newPos + V2New(10, 40)
+                HealthSystem.Menu.ToggleText.Position = newPos + V2New(HealthSystem.Menu.Size.X/2, 57)
+                HealthSystem.Menu.StatusDot.Position = newPos + V2New(15, 95)
+                HealthSystem.Menu.StatusText.Position = newPos + V2New(30, 87)
+                HealthSystem.Menu.StatsText.Position = newPos + V2New(10, 115)
+                HealthSystem.Menu.DamageText.Position = newPos + V2New(10, 135)
+            end)
+        end
+    end)
+    table.insert(HealthSystem.Connections, inputChanged)
+    
+    -- Watch for new characters in Live folder
+    local basePath = workspace:FindFirstChild("Live")
+    if basePath then
+        local childAdded = basePath.ChildAdded:Connect(function(folder)
+            task.wait(0.5) -- Wait for character to load
+            pcall(function()
+                local character = folder:FindFirstChildWhichIsA("Model", true)
+                if character then
+                    CreateCharacterBars(character, folder)
+                end
+            end)
+        end)
+        table.insert(HealthSystem.Connections, childAdded)
+        
+        local childRemoved = basePath.ChildRemoved:Connect(function(folder)
+            -- Clean up when folder is removed
+            for id, bars in pairs(HealthSystem.CharacterBars) do
+                if bars.Folder == folder then
+                    pcall(function()
+                        for _, obj in pairs(bars.Objects) do
+                            obj:Remove()
+                        end
+                    end)
+                    HealthSystem.CharacterBars[id] = nil
+                    break
+                end
+            end
+        end)
+        table.insert(HealthSystem.Connections, childRemoved)
+    end
+    
+    -- Initial scan for existing characters
+    ScanForCharacters()
+    
+    -- Render loop
+    RunService.RenderStepped:Connect(UpdateBars)
+    
+    -- Camera change handler
+    local cameraChanged = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        Camera = workspace.CurrentCamera
+        WorldToViewport = function(...) return Camera:WorldToViewportPoint(...) end
+    end)
+    table.insert(HealthSystem.Connections, cameraChanged)
+    
+    print("[HealthSystem] Initialized successfully - UNIVERSAL MODE")
+    print("[HealthSystem] Press F3 to toggle bars, F4 to toggle menu")
+    print("[HealthSystem] Showing bars for ALL characters with Lifeforce/Posture")
+    print("[HealthSystem] Players: colored name | NPCs: cleaned/truncated name")
+end
+
+-- Start the system
+local success, err = pcall(Initialize)
+if not success then
+    warn("[HealthSystem] Failed to initialize: " .. tostring(err))
+else
+    -- Initial menu state
+    HealthSystem.MenuOpen = true
+    ToggleMenu()
+end
+
+-- Cleanup on script unload
+game:GetService("CoreGui").ChildRemoved:Connect(function(child)
+    if child.Name == "HealthBarController" then
+        Drawings:Clear()
+        for _, conn in pairs(HealthSystem.Connections) do
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+end)

@@ -336,8 +336,21 @@ local function UpdateBars()
             posture = character:FindFirstChild("Posture")
         end
         
-        -- Hide bars if missing required components
-        if not (humanoid and head and lifeforce and posture) then
+        -- Determine required components: NPCs may rely on Humanoid properties instead of Lifeforce/Posture
+        local isNPCModel = false
+        if character and character.Name then
+            isNPCModel = tostring(character.Name):match("^NPC_") and true or false
+        end
+
+        local haveComponents = false
+        if isNPCModel then
+            -- For NPC models we require a humanoid and head, and humanoid should expose Health/MaxHealth properties
+            haveComponents = humanoid and head and (humanoid.Health ~= nil) and (humanoid.MaxHealth ~= nil)
+        else
+            haveComponents = humanoid and head and lifeforce and posture
+        end
+
+        if not haveComponents then
             for _, obj in pairs(bars.Container) do
                 pcall(function() obj.Visible = false end)
             end
@@ -399,8 +412,15 @@ local function UpdateBars()
         -- Safely get current values
         local currentHealth = 100
         local currentPosture = 100
-        pcall(function() currentHealth = lifeforce.Value end)
-        pcall(function() currentPosture = posture.Value end)
+
+        -- If this is an NPC model, prefer Humanoid.Health/MaxHealth instead of Lifeforce
+        if isNPCModel and humanoid then
+            pcall(function() currentHealth = humanoid.Health end)
+            pcall(function() healthMax = humanoid.MaxHealth or healthMax end)
+        else
+            if lifeforce then pcall(function() currentHealth = lifeforce.Value end) end
+        end
+        if posture then pcall(function() currentPosture = posture.Value end) end
         
         -- Update target values
         bars.TargetHealth = currentHealth
@@ -461,7 +481,7 @@ local function UpdateBars()
             postureText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         end)
         
-        -- HEALTH BAR (Bottom - Red)
+        -- HEALTH BAR (Bottom - Red for players, green for NPCs)
         local healthBg = bars.Container.HealthBarBg
         pcall(function()
             healthBg.Position = V2New(baseX, baseY + CONFIG.Spacing)
@@ -476,7 +496,11 @@ local function UpdateBars()
             healthFill.Size = V2New(CONFIG.BarWidth * healthFillPercent, CONFIG.BarHeight)
             healthFill.Visible = true
             healthFill.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
-            healthFill.Color = Color3.fromRGB(255, 70, 70)
+            if isNPCModel then
+                healthFill.Color = Color3.fromRGB(100, 255, 100)
+            else
+                healthFill.Color = Color3.fromRGB(255, 70, 70)
+            end
         end)
         
         -- Health text
@@ -488,7 +512,7 @@ local function UpdateBars()
             healthText.Transparency = math.clamp(distance / 1000, 0.5, 0.9)
         end)
         
-        -- Set humanoid display type for players only (NPCs might not support this)
+        -- Set humanoid display type for players only (NPCs use the custom lifeline)
         if bars.IsPlayer then
             pcall(function()
                 if humanoid then
