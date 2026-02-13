@@ -517,30 +517,28 @@ local function ScanForCharacters()
         print("[DEBUG] ERROR: 'Live' folder not found in workspace")
         return 
     end
-    
-    print(string.format("[DEBUG] Scanning 'Live' folder for characters..."))
-    
+    print("[DEBUG] Scanning 'Live' folder for characters...")
     for _, folder in pairs(basePath:GetChildren()) do
         print(string.format("[DEBUG] Found folder: %s", folder.Name))
-        
-        -- Look for a Model that has a Humanoid (the actual character, not weapons/tools)
         local character = nil
         for _, child in pairs(folder:GetChildren()) do
             if child:IsA("Model") then
                 local humanoid = child:FindFirstChild("Humanoid")
-                if humanoid then
+                local head = child:FindFirstChild("Head")
+                if humanoid and head then
                     character = child
-                    print(string.format("[DEBUG] Found character model with Humanoid: %s", child.Name))
+                    print(string.format("[DEBUG] Found character model with Humanoid and Head: %s", child.Name))
                     break
+                else
+                    print(string.format("[DEBUG] Ignored model %s (Humanoid: %s, Head: %s)", child.Name, humanoid and "YES" or "NO", head and "YES" or "NO"))
                 end
             end
         end
-        
         if character then
             print(string.format("[DEBUG] Creating bars for character in folder %s", folder.Name))
             CreateCharacterBars(character, folder)
         else
-            print(string.format("[DEBUG] No character model with Humanoid found in folder %s", folder.Name))
+            print(string.format("[DEBUG] No valid character model found in folder %s", folder.Name))
         end
     end
 end
