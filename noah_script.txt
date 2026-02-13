@@ -1,5 +1,5 @@
 -- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health Bar (AlwaysOn) | NPCs = Custom Green Bar
+-- Logic: Players = Red Health (Lifeforce) + Yellow Posture | NPCs = Green Health
 -- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
@@ -13,7 +13,7 @@ local LocalPlayer = Players.LocalPlayer
 local Config = {
     Enabled = true,
     ShowNames = true,
-    ShowNPCBars = true,
+    ShowBars = true, -- Master toggle for all bars
     MaxDistance = 1500,
     TextSize = 14,
     BarWidth = 100,
@@ -33,7 +33,6 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MissionHunterESP"
 ScreenGui.ResetOnSpawn = false
 
--- Attempt to put in CoreGui (secure) or PlayerGui
 if gethui then
     ScreenGui.Parent = gethui()
 elseif game:GetService("RunService"):IsStudio() then
@@ -114,7 +113,7 @@ Pad.BackgroundTransparency = 1
 Pad.LayoutOrder = 0
 Pad.Parent = ContentArea
 
--- Helper Functions for GUI Elements
+-- Helper Functions
 local function CreateToggle(text, configKey)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
@@ -209,7 +208,7 @@ end
 -- Create GUI Items
 CreateToggle("Master Enabled", "Enabled")
 CreateToggle("Show Names (All)", "ShowNames")
-CreateToggle("Show NPC Bars", "ShowNPCBars")
+CreateToggle("Show All Bars", "ShowBars")
 CreateSlider("Max Distance", "MaxDistance", 100, 5000)
 
 --------------------------------------------------------------------------------
@@ -247,33 +246,26 @@ RunService.RenderStepped:Connect(function()
         local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
         
         -- IGNORE LOCAL PLAYER FOR DRAWINGS
-        if model then
+        if model and model ~= LocalPlayer.Character then
             
             local head = model:FindFirstChild("Head")
             local humanoid = model:FindFirstChild("Humanoid")
 
-            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
-            local player = Players:GetPlayerFromCharacter(model)
-            
-            -- CRITICAL: CHECK IF HUMAN EXIST AND SET DISPLAY TYPE
-            if player and humanoid then
-                pcall(function()
-                     humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
-                end)
-            end
-
-            -- === DRAWING LOGIC (Name + NPC Bars) ===
-            -- Skip Local Player for Drawing entirely
-            if model ~= LocalPlayer.Character and head and humanoid then
+            if head and humanoid then
                 
                 if not ESP_Cache[model] then
                     ESP_Cache[model] = {
                         Seen = true,
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
-                            -- NPC Bar Elements
-                            BarBg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
-                            BarFill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            
+                            -- Health Bar (Bottom)
+                            Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            
+                            -- Posture Bar (Top)
+                            Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                         }
                     }
                 end
@@ -286,41 +278,87 @@ RunService.RenderStepped:Connect(function()
                 local distance = (Camera.CFrame.Position - head.Position).Magnitude
 
                 if onScreen and distance <= Config.MaxDistance then
-                    local isNPC = not player -- If not a player, it's an NPC
+                    local isNPC = model.Name:match("^NPC_")
+                    
+                    local val1, max1, color1 = 0, 100, Color3.new(1, 0, 0) -- Default Red (Health)
+                    local val2, max2, color2 = 0, 100, Color3.new(1, 1, 0) -- Default Yellow (Posture)
+                    local showBar2 = false
+
+                    if isNPC then
+                        -- NPC LOGIC: Green Bar, uses Humanoid Health
+                        val1 = humanoid.Health
+                        max1 = humanoid.MaxHealth
+                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
+                        showBar2 = false -- NPCs don't show posture here
+                    else
+                        -- PLAYER LOGIC: Red Bar + Yellow Posture (Custom Values)
+                        -- Try to find Lifeforce/Posture in folder or model
+                        local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
+                        local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
+                        
+                        if lf then 
+                            val1 = lf.Value 
+                            max1 = lf:GetAttribute("MaxValue") or 100
+                        end
+                        if pos then 
+                            val2 = pos.Value 
+                            max2 = pos:GetAttribute("MaxValue") or 100
+                            showBar2 = true
+                        end
+                        
+                        color1 = Color3.new(0.9, 0.2, 0.2) -- Red
+                    end
+
+                    -- Clamping
+                    local pct1 = math.clamp(val1 / max1, 0, 1)
+                    local pct2 = math.clamp(val2 / max2, 0, 1)
                     
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
-                    -- 1. NAME (Players + NPCs)
+                    -- 1. NAME
                     if Config.ShowNames then
                         d.Name.Visible = true
-                        local cleanName = model.Name
-                        if isNPC then cleanName = cleanName:gsub("^NPC_", "") end
+                        local cleanName = isNPC and model.Name:gsub("^NPC_", "") or model.Name
                         d.Name.Text = cleanName
                         d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
                     else
                         d.Name.Visible = false
                     end
 
-                    -- 2. HEALTH BAR (NPCs ONLY)
-                    -- Players use Native, so we hide these drawings for them
-                    if isNPC and Config.ShowNPCBars then
+                    -- 2. BARS
+                    if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
-                        local hp = humanoid.Health
-                        local max = humanoid.MaxHealth
-                        local pct = math.clamp(hp / max, 0, 1)
+                        
+                        -- Health Bar (Red/Green)
+                        d.Bar1Bg.Visible = true
+                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                        d.Bar1Bg.Position = barPos
+                        d.Bar1Fill.Visible = true
+                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
+                        d.Bar1Fill.Position = barPos
+                        d.Bar1Fill.Color = color1
 
-                        d.BarBg.Visible = true
-                        d.BarBg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
-                        d.BarBg.Position = barPos
-
-                        d.BarFill.Visible = true
-                        d.BarFill.Size = Vector2.new(Config.BarWidth * pct, Config.BarHeight)
-                        d.BarFill.Position = barPos
-                        d.BarFill.Color = Color3.new(0.2, 0.9, 0.2) -- Green for NPCs
+                        -- Posture Bar (Yellow) - Only for Players
+                        if showBar2 then
+                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 2) -- Stack on top
+                            
+                            d.Bar2Bg.Visible = true
+                            d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                            d.Bar2Bg.Position = bar2Pos
+                            d.Bar2Fill.Visible = true
+                            d.Bar2Fill.Size = Vector2.new(Config.BarWidth * pct2, Config.BarHeight)
+                            d.Bar2Fill.Position = bar2Pos
+                            d.Bar2Fill.Color = color2
+                        else
+                            d.Bar2Bg.Visible = false
+                            d.Bar2Fill.Visible = false
+                        end
                     else
-                        d.BarBg.Visible = false
-                        d.BarFill.Visible = false
+                        d.Bar1Bg.Visible = false
+                        d.Bar1Fill.Visible = false
+                        d.Bar2Bg.Visible = false
+                        d.Bar2Fill.Visible = false
                     end
                 else
                     for _, v in pairs(d) do v.Visible = false end
