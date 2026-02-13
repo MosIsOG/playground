@@ -175,10 +175,20 @@ end
 
 -- Create bars for ANY character (player or NPC)
 local function CreateCharacterBars(character, folder)
-    if not character then return end
+    if not character then 
+        print("[DEBUG] CreateCharacterBars called with nil character")
+        return 
+    end
+    
+    print(string.format("[DEBUG] Creating bars for character: %s, Folder: %s", character.Name, folder and folder.Name or "NIL"))
     
     local id = GetCharacterId(character, folder)
-    if not id then return end
+    if not id then 
+        print("[DEBUG] Failed to get character ID")
+        return 
+    end
+    
+    print(string.format("[DEBUG] Character ID: %s", id))
     
     -- Clean up old bars if they exist
     if HealthSystem.CharacterBars[id] then
@@ -308,19 +318,37 @@ local function UpdateBars()
         local head = character:FindFirstChild("Head")
         local lifeforce, posture
         
+        -- Debug: Log character details
+        if not lifeforce or not posture then
+            warn(string.format("[DEBUG] Character %s missing components - Humanoid: %s, Head: %s, Lifeforce: %s, Posture: %s", 
+                bars.DisplayName, 
+                humanoid and "YES" or "NO", 
+                head and "YES" or "NO",
+                lifeforce and "YES" or "NO",
+                posture and "YES" or "NO"))
+        end
+        
         -- Try to get Lifeforce and Posture from either the character or its folder
         if bars.Folder then
             lifeforce = bars.Folder:FindFirstChild("Lifeforce")
             posture = bars.Folder:FindFirstChild("Posture")
+            print(string.format("[DEBUG] Looking in Folder for %s - Found Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
         else
             -- Fallback: try direct path
             lifeforce = character:FindFirstChild("Lifeforce")
             posture = character:FindFirstChild("Posture")
+            print(string.format("[DEBUG] No folder, looking in character %s - Found Lifeforce: %s, Posture: %s", bars.DisplayName, lifeforce and "YES" or "NO", posture and "YES" or "NO"))
         end
         
         -- If not found in folder, try character
-        if not lifeforce then lifeforce = character:FindFirstChild("Lifeforce") end
-        if not posture then posture = character:FindFirstChild("Posture") end
+        if not lifeforce then 
+            lifeforce = character:FindFirstChild("Lifeforce")
+            print(string.format("[DEBUG] Fallback: Looking in character for Lifeforce - Found: %s", lifeforce and "YES" or "NO"))
+        end
+        if not posture then 
+            posture = character:FindFirstChild("Posture")
+            print(string.format("[DEBUG] Fallback: Looking in character for Posture - Found: %s", posture and "YES" or "NO"))
+        end
         
         -- Hide bars if missing required components
         if not (humanoid and head and lifeforce and posture) then
@@ -361,13 +389,19 @@ local function UpdateBars()
             pcall(function()
                 healthMax = lifeforce:GetAttribute("MaxValue") or 100
                 healthMin = lifeforce:GetAttribute("MinValue") or 0
+                print(string.format("[DEBUG] Lifeforce %s attributes - Max: %s, Min: %s", bars.DisplayName, healthMax, healthMin))
             end)
+        else
+            print(string.format("[DEBUG] WARNING: Lifeforce is NIL for %s", bars.DisplayName))
         end
         if posture then
             pcall(function()
                 postureMax = posture:GetAttribute("MaxValue") or 100
                 postureMin = posture:GetAttribute("MinValue") or 0
+                print(string.format("[DEBUG] Posture %s attributes - Max: %s, Min: %s", bars.DisplayName, postureMax, postureMin))
             end)
+        else
+            print(string.format("[DEBUG] WARNING: Posture is NIL for %s", bars.DisplayName))
         end
         
         -- Ensure valid numbers
@@ -470,7 +504,15 @@ local function UpdateBars()
         
         -- Set humanoid display type for players only (NPCs might not support this)
         if bars.IsPlayer then
-            pcall(function() humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn end)
+            pcall(function()
+                if humanoid then
+                    print(string.format("[DEBUG] Setting HealthDisplayType for player %s", bars.DisplayName))
+                    humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                    print(string.format("[DEBUG] HealthDisplayType set to: %s", humanoid.HealthDisplayType))
+                else
+                    print(string.format("[DEBUG] WARNING: Humanoid is NIL for player %s, cannot set HealthDisplayType", bars.DisplayName))
+                end
+            end)
         end
     end
     
@@ -485,13 +527,22 @@ end
 -- Scan for ALL characters in the Live folder
 local function ScanForCharacters()
     local basePath = workspace:FindFirstChild("Live")
-    if not basePath then return end
+    if not basePath then 
+        print("[DEBUG] ERROR: 'Live' folder not found in workspace")
+        return 
+    end
+    
+    print(string.format("[DEBUG] Scanning 'Live' folder for characters..."))
     
     for _, folder in pairs(basePath:GetChildren()) do
+        print(string.format("[DEBUG] Found folder: %s", folder.Name))
         -- Check if this folder has a character
         local character = folder:FindFirstChildWhichIsA("Model")
         if character then
+            print(string.format("[DEBUG] Found character model in %s: %s", folder.Name, character.Name))
             CreateCharacterBars(character, folder)
+        else
+            print(string.format("[DEBUG] No character model found in folder %s", folder.Name))
         end
     end
 end
@@ -548,6 +599,18 @@ end
 local function Initialize()
     -- Create menu
     HealthSystem.Menu = CreateMenu()
+    print("[DEBUG] Initialize() called")
+    print(string.format("[DEBUG] Checking workspace structure..."))
+    
+    local basePath = workspace:FindFirstChild("Live")
+    if basePath then
+        print(string.format("[DEBUG] 'Live' folder EXISTS with %d children", #basePath:GetChildren()))
+        for _, child in pairs(basePath:GetChildren()) do
+            print(string.format("[DEBUG]   - Child: %s", child.Name))
+        end
+    else
+        print("[DEBUG] ERROR: 'Live' folder NOT FOUND in workspace!")
+    end
     
     -- Setup input handling
     local inputBegan = UserInputService.InputBegan:Connect(function(input, processed)
