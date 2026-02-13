@@ -1,5 +1,6 @@
 -- Universal ESP with Mission Hunter GUI
--- Menu: F4 | Quick Toggle: F3
+-- Logic: Players = Native Health Bar | NPCs = Custom Green Bar
+-- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,12 +9,12 @@ local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- Settings (Linked to GUI)
+-- Configuration (Linked to GUI)
 local Config = {
     Enabled = true,
     ShowNames = true,
-    ShowBars = true,
-    MaxDistance = 1000,
+    ShowNPCBars = true,
+    MaxDistance = 1500,
     TextSize = 14,
     BarWidth = 100,
     BarHeight = 6,
@@ -32,7 +33,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MissionHunterESP"
 ScreenGui.ResetOnSpawn = false
 
--- Attempt to parent to CoreGui for security, fallback to PlayerGui
+-- Attempt to put in CoreGui (secure) or PlayerGui
 if gethui then
     ScreenGui.Parent = gethui()
 elseif game:GetService("RunService"):IsStudio() then
@@ -45,15 +46,15 @@ end
 -- Main Window
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+MainFrame.Size = UDim2.new(0, 420, 0, 340)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -170)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
 MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
-MainFrame.Visible = true -- Open by default
+MainFrame.Visible = true
 MainFrame.Parent = ScreenGui
 
--- Header (The ONLY draggable part)
+-- Header (Draggable)
 local Header = Instance.new("Frame")
 Header.Name = "Header"
 Header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -65,12 +66,34 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Text = "Mission Hunter ESP"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
-TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255) -- Blue Accent
+TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
 TitleLabel.Size = UDim2.new(1, -20, 1, 0)
 TitleLabel.Parent = Header
+
+-- Drag Logic
+local dragging, dragInput, dragStart, startPos
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+Header.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 
 -- Content Area
 local ContentArea = Instance.new("Frame")
@@ -91,34 +114,7 @@ Pad.BackgroundTransparency = 1
 Pad.LayoutOrder = 0
 Pad.Parent = ContentArea
 
--- Custom Drag Script (Attached to Header Only)
-local dragging, dragInput, dragStart, startPos
-Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-Header.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- UI Components
+-- Helper Functions for GUI Elements
 local function CreateToggle(text, configKey)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
@@ -149,8 +145,6 @@ local function CreateToggle(text, configKey)
         Config[configKey] = not Config[configKey]
         btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
     end)
-    
-    return btn -- Return for external updates if needed
 end
 
 local function CreateSlider(text, configKey, min, max)
@@ -196,58 +190,38 @@ local function CreateSlider(text, configKey, min, max)
     valueLbl.Parent = sliderBg
     
     local draggingSlider = false
-    
     local function Update(input)
         local pos = input.Position.X
         local boxPos = sliderBg.AbsolutePosition.X
         local boxSize = sliderBg.AbsoluteSize.X
         local relative = math.clamp((pos - boxPos) / boxSize, 0, 1)
-        
         local newVal = math.floor(min + (max - min) * relative)
         Config[configKey] = newVal
-        
         sliderFill.Size = UDim2.new(relative, 0, 1, 0)
         valueLbl.Text = tostring(newVal)
     end
     
-    sliderBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingSlider = true
-            Update(input)
-        end
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingSlider = false
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-            Update(input)
-        end
-    end)
+    sliderBg.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; Update(input) end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = false end end)
+    UserInputService.InputChanged:Connect(function(input) if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then Update(input) end end)
 end
 
--- Create Items
-local EnabledBtn = CreateToggle("Enabled", "Enabled")
-CreateToggle("Show Names", "ShowNames")
-CreateToggle("Show Health/Posture Bars", "ShowBars")
+-- Create GUI Items
+CreateToggle("Master Enabled", "Enabled")
+CreateToggle("Show Names (All)", "ShowNames")
+CreateToggle("Show NPC Bars", "ShowNPCBars")
 CreateSlider("Max Distance", "MaxDistance", 100, 5000)
 
 --------------------------------------------------------------------------------
--- 2. ESP SYSTEM (Your Specific Logic)
+-- 2. ESP SYSTEM
 --------------------------------------------------------------------------------
 
--- Drawing Helper
 local function CreateDrawing(type, props)
     local obj = Drawing.new(type)
     for k, v in pairs(props) do obj[k] = v end
     return obj
 end
 
--- Cleanup Function
 local function RemoveESP(model)
     if ESP_Cache[model] then
         for _, drawing in pairs(ESP_Cache[model].Drawings) do
@@ -257,45 +231,48 @@ local function RemoveESP(model)
     end
 end
 
--- Main Update Loop
 RunService.RenderStepped:Connect(function()
     if not Config.Enabled then 
         for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
         return 
     end
 
-    -- Validate Live folder exists
     if not LiveFolder then LiveFolder = workspace:FindFirstChild("Live") return end
 
-    -- 1. Mark all current cached items as "not seen" to handle cleanup later
+    -- Mark current items for potential cleanup
     for _, entry in pairs(ESP_Cache) do entry.Seen = false end
 
-    -- 2. Scan Folder
+    -- Scan Live Folder
     for _, folder in ipairs(LiveFolder:GetChildren()) do
-        -- Find the actual character model (could be the folder itself or inside it)
         local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
         
-        -- EXCLUDE LOCAL PLAYER
-        if model and model ~= LocalPlayer.Character then
+        -- IGNORE LOCAL PLAYER FOR DRAWINGS (We only want the humanoid logic)
+        if model then
             
             local head = model:FindFirstChild("Head")
-            local humanoid = model:FindFirstChild("Humanoid") -- Just check existence here
+            local humanoid = model:FindFirstChild("Humanoid")
 
-            if head and humanoid then
-                -- Initialize Cache for new models
+            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
+            local player = Players:GetPlayerFromCharacter(model)
+            if player then
+                -- Force native health bar
+                if humanoid then
+                    humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                end
+            end
+
+            -- === DRAWING LOGIC (Name + NPC Bars) ===
+            -- Skip Local Player for Drawing entirely
+            if model ~= LocalPlayer.Character and head and humanoid then
+                
                 if not ESP_Cache[model] then
                     ESP_Cache[model] = {
                         Seen = true,
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
-                            
-                            -- Bar Backgrounds
-                            Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
-                            Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
-                            
-                            -- Actual Bars
-                            Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}), -- Health/Lifeforce
-                            Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}), -- Posture (if applicable)
+                            -- NPC Bar Elements
+                            BarBg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            BarFill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                         }
                     }
                 end
@@ -304,105 +281,54 @@ RunService.RenderStepped:Connect(function()
                 entry.Seen = true
                 local d = entry.Drawings
 
-                -- CALCULATION LOGIC ------------------------------------------
                 local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
                 local distance = (Camera.CFrame.Position - head.Position).Magnitude
 
                 if onScreen and distance <= Config.MaxDistance then
-                    -- Identify Type
-                    local isNPC = model.Name:match("^NPC_")
+                    local isNPC = not player -- If not a player, it's an NPC
                     
-                    local val1, max1, color1 = 0, 100, Color3.new(1, 0, 0) -- Default Red
-                    local val2, max2, color2 = 0, 100, Color3.new(1, 1, 0) -- Default Yellow
-                    local showBar2 = false
-
-                    if isNPC then
-                        -- NPC LOGIC: Green Bar, uses Humanoid Health
-                        val1 = humanoid.Health
-                        max1 = humanoid.MaxHealth
-                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
-                        showBar2 = false -- NPCs don't show posture in this specific view
-                    else
-                        -- PLAYER/OTHER LOGIC: Red Bar + Yellow Posture, uses custom values
-                        -- Try to find Lifeforce/Posture in folder or model
-                        local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
-                        local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
-                        
-                        if lf then 
-                            val1 = lf.Value 
-                            max1 = lf:GetAttribute("MaxValue") or 100
-                        end
-                        if pos then 
-                            val2 = pos.Value 
-                            max2 = pos:GetAttribute("MaxValue") or 100
-                            showBar2 = true
-                        end
-                        
-                        color1 = Color3.new(0.9, 0.2, 0.2) -- Red
-                    end
-
-                    -- Clamping
-                    local pct1 = math.clamp(val1 / max1, 0, 1)
-                    local pct2 = math.clamp(val2 / max2, 0, 1)
-
-                    -- VISUAL UPDATES ----------------------------------------
                     local screenPos = Vector2.new(vector.X, vector.Y)
-                    local startY = screenPos.Y - Config.YOffset - (1000/distance) -- Scale height offset by distance
+                    local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
-                    -- 1. Name
+                    -- 1. NAME (Players + NPCs)
                     if Config.ShowNames then
                         d.Name.Visible = true
-                        d.Name.Text = isNPC and model.Name:gsub("^NPC_", "") or model.Name
+                        local cleanName = model.Name
+                        if isNPC then cleanName = cleanName:gsub("^NPC_", "") end
+                        d.Name.Text = cleanName
                         d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
                     else
                         d.Name.Visible = false
                     end
 
-                    -- 2. Health Bars
-                    if Config.ShowBars then
-                        -- Health Bar (Green for NPC, Red for Player)
+                    -- 2. HEALTH BAR (NPCs ONLY)
+                    -- Players use Native, so we hide these drawings for them
+                    if isNPC and Config.ShowNPCBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
-                        
-                        d.Bar1Bg.Visible = true
-                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
-                        d.Bar1Bg.Position = barPos
+                        local hp = humanoid.Health
+                        local max = humanoid.MaxHealth
+                        local pct = math.clamp(hp / max, 0, 1)
 
-                        d.Bar1Fill.Visible = true
-                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
-                        d.Bar1Fill.Position = barPos
-                        d.Bar1Fill.Color = color1
+                        d.BarBg.Visible = true
+                        d.BarBg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                        d.BarBg.Position = barPos
 
-                        -- Posture Bar (Only for Players)
-                        if showBar2 then
-                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 2) -- Stack on top
-                            
-                            d.Bar2Bg.Visible = true
-                            d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
-                            d.Bar2Bg.Position = bar2Pos
-
-                            d.Bar2Fill.Visible = true
-                            d.Bar2Fill.Size = Vector2.new(Config.BarWidth * pct2, Config.BarHeight)
-                            d.Bar2Fill.Position = bar2Pos
-                            d.Bar2Fill.Color = color2
-                        else
-                            d.Bar2Bg.Visible = false
-                            d.Bar2Fill.Visible = false
-                        end
+                        d.BarFill.Visible = true
+                        d.BarFill.Size = Vector2.new(Config.BarWidth * pct, Config.BarHeight)
+                        d.BarFill.Position = barPos
+                        d.BarFill.Color = Color3.new(0.2, 0.9, 0.2) -- Green for NPCs
                     else
-                        d.Bar1Bg.Visible = false
-                        d.Bar1Fill.Visible = false
-                        d.Bar2Bg.Visible = false
-                        d.Bar2Fill.Visible = false
+                        d.BarBg.Visible = false
+                        d.BarFill.Visible = false
                     end
                 else
-                    -- Offscreen or too far
                     for _, v in pairs(d) do v.Visible = false end
                 end
             end
         end
     end
 
-    -- 3. Cleanup items that no longer exist or were not seen this frame
+    -- Cleanup
     for model, entry in pairs(ESP_Cache) do
         if not entry.Seen or not model.Parent then
             RemoveESP(model)
@@ -410,19 +336,10 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Inputs
 UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed then
-        if input.KeyCode == Enum.KeyCode.F3 then
-            -- Quick Toggle
-            Config.Enabled = not Config.Enabled
-            -- Sync button color
-            EnabledBtn.BackgroundColor3 = Config.Enabled and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
-        elseif input.KeyCode == Enum.KeyCode.F4 then
-            -- Menu Toggle
-            MainFrame.Visible = not MainFrame.Visible
-        end
+    if not processed and input.KeyCode == Enum.KeyCode.F4 then
+        MainFrame.Visible = not MainFrame.Visible
     end
 end)
 
-print("ESP Loaded. F4 for Menu, F3 for Quick Toggle.")
+print("Mission Hunter ESP Loaded.")
