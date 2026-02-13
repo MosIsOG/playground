@@ -1,5 +1,6 @@
--- Universal ESP with "Mission Hunter" Style GUI
--- Press [INSERT] to Toggle Menu
+-- Universal ESP with "Mission Hunter" GUI
+-- Toggle Key: F4
+-- Visual Style: Horizontal Bars (Health + Posture)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,11 +12,13 @@ local LocalPlayer = Players.LocalPlayer
 -- Configuration
 local Config = {
     Enabled = true,
-    Box = true,
     Name = true,
-    Health = true,
+    Bars = true, -- Master toggle for bars
     MaxDistance = 2000,
-    TextSize = 14
+    TextSize = 14,
+    BarWidth = 100,
+    BarHeight = 6,
+    YOffset = 60
 }
 
 -- State
@@ -28,111 +31,97 @@ local LiveFolder = workspace:FindFirstChild("Live")
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MissionHunterESP"
--- Protect GUI from detection if possible, or put in PlayerGui
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+-- Try to put in CoreGui for safety, fallback to PlayerGui
+if gethui then
+    ScreenGui.Parent = gethui()
+elseif game:GetService("RunService"):IsStudio() then
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+else
+    pcall(function() ScreenGui.Parent = CoreGui end)
+    if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+end
 
 -- Main Window
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 450, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -225, 0.5, -175)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15) -- Very dark bg
-MainFrame.BorderSizePixel = 0
+MainFrame.Size = UDim2.new(0, 400, 0, 320)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -160)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 1
+MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
 MainFrame.Active = true
-MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
--- Title Bar (Just text, no distinct bar background in reference)
+-- Custom Drag Logic (Only drag by Header)
+local Header = Instance.new("Frame")
+Header.Name = "HeaderDrag"
+Header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Header.BorderSizePixel = 0
+Header.Size = UDim2.new(1, 0, 0, 30)
+Header.Parent = MainFrame
+
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Universal ESP"
+TitleLabel.Text = "Mission Hunter ESP"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
-TitleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255) -- Blue Title
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Position = UDim2.new(0, 10, 0, 5)
-TitleLabel.Size = UDim2.new(1, -20, 0, 20)
-TitleLabel.Parent = MainFrame
+TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.Size = UDim2.new(1, -20, 1, 0)
+TitleLabel.Parent = Header
 
--- Tab Container
-local TabFrame = Instance.new("Frame")
-TabFrame.Position = UDim2.new(0, 10, 0, 30)
-TabFrame.Size = UDim2.new(1, -20, 0, 25)
-TabFrame.BackgroundTransparency = 1
-TabFrame.Parent = MainFrame
-
-local function CreateTabButton(text, xOffset, isActive)
-    local btn = Instance.new("TextButton")
-    btn.Text = text
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
-    btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
-    btn.BackgroundTransparency = 1
-    btn.Size = UDim2.new(0, 80, 1, 0)
-    btn.Position = UDim2.new(0, xOffset, 0, 0)
-    btn.Parent = TabFrame
-    
-    -- Underline for active tab (Simulated)
-    if isActive then
-        local line = Instance.new("Frame")
-        line.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        line.BorderSizePixel = 0
-        line.Size = UDim2.new(1, 0, 0, 2)
-        line.Position = UDim2.new(0, 0, 1, 0)
-        line.Parent = btn
+-- Drag Script
+local dragging, dragInput, dragStart, startPos
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
-    return btn
-end
+end)
+Header.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 
-CreateTabButton("Visuals", 0, true)
-CreateTabButton("Settings", 85, false)
-
--- Content Area (Darker container)
+-- Content Area
 local ContentArea = Instance.new("Frame")
 ContentArea.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-ContentArea.BorderSizePixel = 1
-ContentArea.BorderColor3 = Color3.fromRGB(30, 30, 30)
-ContentArea.Position = UDim2.new(0, 10, 0, 60)
-ContentArea.Size = UDim2.new(0.5, -15, 0.8, 0) -- Left side
+ContentArea.BorderSizePixel = 0
+ContentArea.Position = UDim2.new(0, 10, 0, 40)
+ContentArea.Size = UDim2.new(1, -20, 1, -50)
 ContentArea.Parent = MainFrame
 
--- Section Header "Main"
-local SectionHeader = Instance.new("TextLabel")
-SectionHeader.Text = "Main"
-SectionHeader.Font = Enum.Font.SourceSansBold
-SectionHeader.TextSize = 14
-SectionHeader.TextColor3 = Color3.fromRGB(200, 200, 200)
-SectionHeader.TextXAlignment = Enum.TextXAlignment.Left
-SectionHeader.BackgroundTransparency = 1
-SectionHeader.Position = UDim2.new(0, 10, 0, 5)
-SectionHeader.Size = UDim2.new(1, -20, 0, 20)
-SectionHeader.Parent = ContentArea
-
-local Separator = Instance.new("Frame")
-Separator.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Blue Accent Line
-Separator.BorderSizePixel = 0
-Separator.Size = UDim2.new(1, 0, 0, 1)
-Separator.Position = UDim2.new(0, 0, 1, 0)
-Separator.Parent = SectionHeader
-
--- UI Element Creators
 local UIListLayout = Instance.new("UIListLayout")
 UIListLayout.Parent = ContentArea
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.Padding = UDim.new(0, 8)
 
--- Padding for top
-local Pad = Instance.new("Frame")
-Pad.Size = UDim2.new(1,0,0,30)
+local Pad = Instance.new("Frame") -- Top Padding
+Pad.Size = UDim2.new(1,0,0,5)
 Pad.BackgroundTransparency = 1
 Pad.LayoutOrder = 0
 Pad.Parent = ContentArea
 
+-- Helper: Create Toggle
 local function CreateToggle(text, configKey)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 20)
+    container.Size = UDim2.new(1, 0, 0, 24)
     container.LayoutOrder = 1
     container.Parent = ContentArea
     
@@ -140,19 +129,19 @@ local function CreateToggle(text, configKey)
     btn.Text = ""
     btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
     btn.BorderSizePixel = 0
-    btn.Position = UDim2.new(0, 10, 0, 2)
+    btn.Position = UDim2.new(0, 5, 0, 4)
     btn.Size = UDim2.new(0, 16, 0, 16)
     btn.Parent = container
     
     local lbl = Instance.new("TextLabel")
     lbl.Text = text
-    lbl.Font = Enum.Font.Code
-    lbl.TextSize = 13
+    lbl.Font = Enum.Font.SourceSans
+    lbl.TextSize = 16
     lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 35, 0, 0)
-    lbl.Size = UDim2.new(1, -35, 1, 0)
+    lbl.Position = UDim2.new(0, 30, 0, 0)
+    lbl.Size = UDim2.new(1, -30, 1, 0)
     lbl.Parent = container
     
     btn.MouseButton1Click:Connect(function()
@@ -161,33 +150,35 @@ local function CreateToggle(text, configKey)
     end)
 end
 
+-- Helper: Create Slider
 local function CreateSlider(text, configKey, min, max)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 45)
+    container.Size = UDim2.new(1, 0, 0, 50)
     container.LayoutOrder = 2
     container.Parent = ContentArea
     
     local lbl = Instance.new("TextLabel")
     lbl.Text = text
-    lbl.Font = Enum.Font.Code
-    lbl.TextSize = 13
+    lbl.Font = Enum.Font.SourceSans
+    lbl.TextSize = 16
     lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 10, 0, 0)
-    lbl.Size = UDim2.new(1, -20, 0, 20)
+    lbl.Position = UDim2.new(0, 5, 0, 0)
+    lbl.Size = UDim2.new(1, -10, 0, 20)
     lbl.Parent = container
     
     local sliderBg = Instance.new("Frame")
-    sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Dark track
-    sliderBg.BorderSizePixel = 0
-    sliderBg.Position = UDim2.new(0, 10, 0, 22)
-    sliderBg.Size = UDim2.new(1, -20, 0, 18)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- Track
+    sliderBg.BorderColor3 = Color3.fromRGB(50, 50, 50)
+    sliderBg.BorderSizePixel = 1
+    sliderBg.Position = UDim2.new(0, 5, 0, 25)
+    sliderBg.Size = UDim2.new(1, -10, 0, 20)
     sliderBg.Parent = container
     
     local sliderFill = Instance.new("Frame")
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Blue Fill
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255) -- Fill
     sliderFill.BorderSizePixel = 0
     sliderFill.Size = UDim2.new((Config[configKey] - min) / (max - min), 0, 1, 0)
     sliderFill.Parent = sliderBg
@@ -195,13 +186,14 @@ local function CreateSlider(text, configKey, min, max)
     local valueLbl = Instance.new("TextLabel")
     valueLbl.Text = tostring(Config[configKey])
     valueLbl.Font = Enum.Font.Code
-    valueLbl.TextSize = 13
+    valueLbl.TextSize = 14
     valueLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
     valueLbl.BackgroundTransparency = 1
     valueLbl.Size = UDim2.new(1, 0, 1, 0)
+    valueLbl.ZIndex = 2
     valueLbl.Parent = sliderBg
     
-    local dragging = false
+    local draggingSlider = false
     
     local function Update(input)
         local pos = input.Position.X
@@ -218,41 +210,40 @@ local function CreateSlider(text, configKey, min, max)
     
     sliderBg.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
+            draggingSlider = true
             Update(input)
         end
     end)
     
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
+            draggingSlider = false
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
             Update(input)
         end
     end)
 end
 
 -- Add Widgets
-CreateToggle("Enabled", "Enabled")
-CreateToggle("Show Boxes", "Box")
+CreateToggle("Enable ESP", "Enabled")
 CreateToggle("Show Names", "Name")
-CreateToggle("Show Health", "Health")
-
--- Add a spacer/divider style for Slider section
-local Spacer = Instance.new("Frame")
-Spacer.BackgroundTransparency = 1
-Spacer.Size = UDim2.new(1,0,0,10)
-Spacer.LayoutOrder = 2
-Spacer.Parent = ContentArea
-
+CreateToggle("Show Health/Posture Bars", "Bars")
 CreateSlider("Max Distance", "MaxDistance", 100, 5000)
 
+local Info = Instance.new("TextLabel")
+Info.Text = "Press F4 to Toggle Menu"
+Info.Size = UDim2.new(1,0,0,20)
+Info.BackgroundTransparency = 1
+Info.TextColor3 = Color3.fromRGB(100,100,100)
+Info.LayoutOrder = 10
+Info.Parent = ContentArea
+
 --------------------------------------------------------------------------------
--- 2. ESP LOGIC (Integrated with UI Config)
+-- 2. ESP LOGIC (Horizontal Bars Style)
 --------------------------------------------------------------------------------
 
 local function CreateDrawing(type, props)
@@ -271,6 +262,7 @@ local function RemoveESP(model)
 end
 
 RunService.RenderStepped:Connect(function()
+    -- Global cleanup if disabled
     if not Config.Enabled then 
         for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
         return 
@@ -291,14 +283,20 @@ RunService.RenderStepped:Connect(function()
             local humanoid = model:FindFirstChild("Humanoid")
 
             if head and humanoid then
+                -- Initialize Drawings
                 if not ESP_Cache[model] then
                     ESP_Cache[model] = {
                         Seen = true,
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
-                            Box = CreateDrawing("Square", {Thickness = 1, Filled = false, Color = Color3.new(1,0,0)}),
-                            HealthBar = CreateDrawing("Square", {Filled = true}),
-                            HealthBarBg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0,0,0), Transparency = 0.5})
+                            
+                            -- Health Bar
+                            Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            
+                            -- Posture Bar
+                            Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                         }
                     }
                 end
@@ -307,64 +305,91 @@ RunService.RenderStepped:Connect(function()
                 entry.Seen = true
                 local d = entry.Drawings
 
+                -- Calc
                 local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
                 local distance = (Camera.CFrame.Position - head.Position).Magnitude
 
                 if onScreen and distance <= Config.MaxDistance then
                     local isNPC = model.Name:match("^NPC_")
-                    local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
                     
-                    if rootPart then
-                        local RootPos, _ = Camera:WorldToViewportPoint(rootPart.Position)
-                        local HeadPos = Vector2.new(vector.X, vector.Y)
-                        local LegPos = Vector2.new(RootPos.X, RootPos.Y + (vector.Y - RootPos.Y) * -1.5) -- Estimation
+                    local val1, max1, color1 = 0, 100, Color3.new(1, 0, 0) -- Red Default
+                    local val2, max2, color2 = 0, 100, Color3.new(1, 1, 0) -- Yellow Default
+                    local showBar2 = false
+
+                    if isNPC then
+                        -- NPC: Green Health
+                        val1 = humanoid.Health
+                        max1 = humanoid.MaxHealth
+                        color1 = Color3.new(0.2, 0.9, 0.2)
+                        showBar2 = false
+                    else
+                        -- PLAYER: Red Health + Yellow Posture
+                        local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
+                        local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
-                        local BoxHeight = math.abs(HeadPos.Y - LegPos.Y)
-                        local BoxWidth = BoxHeight * 0.6
-                        local BoxPos = Vector2.new(HeadPos.X - BoxWidth/2, HeadPos.Y - BoxHeight/5) -- Adjust slightly up
-                        
-                        -- Color Logic
-                        local color = isNPC and Color3.new(0.2, 1, 0.2) or Color3.new(1, 0.2, 0.2)
-
-                        -- 1. BOX
-                        if Config.Box then
-                            d.Box.Visible = true
-                            d.Box.Size = Vector2.new(BoxWidth, BoxHeight)
-                            d.Box.Position = BoxPos
-                            d.Box.Color = color
-                        else
-                            d.Box.Visible = false
+                        if lf then 
+                            val1 = lf.Value 
+                            max1 = lf:GetAttribute("MaxValue") or 100
                         end
-
-                        -- 2. NAME
-                        if Config.Name then
-                            d.Name.Visible = true
-                            d.Name.Text = (isNPC and model.Name:gsub("^NPC_", "") or model.Name) .. string.format(" [%.0f]", distance)
-                            d.Name.Position = Vector2.new(HeadPos.X, BoxPos.Y - 15)
-                            d.Name.Color = color
-                        else
-                            d.Name.Visible = false
+                        if pos then 
+                            val2 = pos.Value 
+                            max2 = pos:GetAttribute("MaxValue") or 100
+                            showBar2 = true
                         end
-
-                        -- 3. HEALTH (Simplified Left Bar)
-                        if Config.Health then
-                            local hp = humanoid.Health
-                            local maxhp = humanoid.MaxHealth
-                            local hpPct = math.clamp(hp/maxhp, 0, 1)
-                            
-                            d.HealthBarBg.Visible = true
-                            d.HealthBarBg.Size = Vector2.new(2, BoxHeight)
-                            d.HealthBarBg.Position = Vector2.new(BoxPos.X - 5, BoxPos.Y)
-                            
-                            d.HealthBar.Visible = true
-                            d.HealthBar.Size = Vector2.new(2, BoxHeight * hpPct)
-                            d.HealthBar.Position = Vector2.new(BoxPos.X - 5, BoxPos.Y + (BoxHeight * (1-hpPct)))
-                            d.HealthBar.Color = Color3.fromHSV(hpPct * 0.3, 1, 1) -- Red to Green
-                        else
-                            d.HealthBarBg.Visible = false
-                            d.HealthBar.Visible = false
-                        end
+                        color1 = Color3.new(0.9, 0.2, 0.2)
                     end
+
+                    local pct1 = math.clamp(val1 / max1, 0, 1)
+                    local pct2 = math.clamp(val2 / max2, 0, 1)
+
+                    -- Positioning
+                    local screenPos = Vector2.new(vector.X, vector.Y)
+                    local startY = screenPos.Y - Config.YOffset - (1000/distance)
+
+                    -- 1. Name
+                    if Config.Name then
+                        d.Name.Visible = true
+                        d.Name.Text = (isNPC and model.Name:gsub("^NPC_", "") or model.Name)
+                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
+                    else
+                        d.Name.Visible = false
+                    end
+
+                    -- 2. Bars
+                    if Config.Bars then
+                        local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
+                        
+                        -- Health Bar (Bottom)
+                        d.Bar1Bg.Visible = true
+                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                        d.Bar1Bg.Position = barPos
+                        d.Bar1Fill.Visible = true
+                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
+                        d.Bar1Fill.Position = barPos
+                        d.Bar1Fill.Color = color1
+
+                        -- Posture Bar (Top) - Only for players
+                        if showBar2 then
+                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 2) -- Stack on top
+                            
+                            d.Bar2Bg.Visible = true
+                            d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                            d.Bar2Bg.Position = bar2Pos
+                            d.Bar2Fill.Visible = true
+                            d.Bar2Fill.Size = Vector2.new(Config.BarWidth * pct2, Config.BarHeight)
+                            d.Bar2Fill.Position = bar2Pos
+                            d.Bar2Fill.Color = color2
+                        else
+                            d.Bar2Bg.Visible = false
+                            d.Bar2Fill.Visible = false
+                        end
+                    else
+                        d.Bar1Bg.Visible = false
+                        d.Bar1Fill.Visible = false
+                        d.Bar2Bg.Visible = false
+                        d.Bar2Fill.Visible = false
+                    end
+
                 else
                     for _, v in pairs(d) do v.Visible = false end
                 end
@@ -372,7 +397,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Cleanup
+    -- Cleanup unseen
     for model, entry in pairs(ESP_Cache) do
         if not entry.Seen or not model.Parent then
             RemoveESP(model)
@@ -380,11 +405,11 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Toggle Menu Input
+-- Toggle Menu Input (F4)
 UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode == Enum.KeyCode.Insert then
+    if not processed and input.KeyCode == Enum.KeyCode.F4 then
         MainFrame.Visible = not MainFrame.Visible
     end
 end)
 
-print("ESP Loaded. Press INSERT to toggle Menu.")
+print("ESP Loaded. Press F4 to toggle Menu.")
