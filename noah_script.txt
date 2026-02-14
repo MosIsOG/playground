@@ -13,7 +13,7 @@ local LocalPlayer = Players.LocalPlayer
 -- Configuration (Linked to GUI)
 local Config = {
     Enabled = true,
-    ShowNames = true,
+    ShowNames = false,
     ShowBars = true,     -- Master bar toggle
     ShowNPCs = false,     -- Toggle for NPC ESP
     ShowValues = true,   -- Toggle for text values (100/100)
@@ -48,7 +48,7 @@ end
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 380, 0, 340) -- Slightly taller for new options
-MainFrame.Position = UDim2.new(0, 20, 1, -20)
+MainFrame.Position = UDim2.new(0, 20, 1, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
 MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
