@@ -19,7 +19,7 @@ local Config = {
     ShowValues = true,   -- Toggle for text values (100/100)
     MaxDistance = 1500,
     TextSize = 14,
-    BarWidth = 180,      -- Wider bars as requested
+    BarWidth = 150,      -- Wider bars as requested
     BarHeight = 6,
     YOffset = 60
 }
