@@ -48,7 +48,7 @@ end
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 380, 0, 340) -- Slightly taller for new options
-MainFrame.Position = UDim2.new(0, 20, 1, 25)
+MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
 MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
@@ -339,7 +339,6 @@ RunService.RenderStepped:Connect(function()
                     -- 1. NAME
                     if Config.ShowNames then
                         d.Name.Visible = true
-                        local cleanName = isNPC and model.Name:gsub("^NPC_", "") or model.Name
                         d.Name.Text = cleanName
                         d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
                     else
