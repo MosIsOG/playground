@@ -88,7 +88,7 @@ local function LoadConfigs()
             Enabled = true,
             ShowNames = true,
             ShowBars = true,
-            ShowNPCs = true,
+            Shows = true,
             ShowValues = true,
             MaxDistance = 1500,
             TextSize = 14,
@@ -356,7 +356,7 @@ local function BuildMainTab()
     
     CreateToggle("Master Enabled", "Enabled")
     CreateToggle("Show Names", "ShowNames")
-    CreateToggle("Show NPCs", "ShowNPCs")
+    CreateToggle("Show s", "Shows")
     CreateToggle("Show Bars", "ShowBars")
     CreateToggle("Show Values", "ShowValues")
     CreateSlider("Max Distance", "MaxDistance", 100, 5000)
@@ -760,7 +760,6 @@ RunService.RenderStepped:Connect(function()
                         min1 = 0
                         color1 = Color3.new(0.2, 0.9, 0.2) -- Green
                         showBar2 = false
-                        cleanName = model.Name
                     else
                         -- PLAYER LOGIC: Red Bar + Yellow Posture (Dynamic Min/Max)
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
