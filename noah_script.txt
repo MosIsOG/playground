@@ -990,14 +990,6 @@ RunService.RenderStepped:Connect(function()
                             showBar2 = true
                         end
                         
-                        -- Walkspeed bar for players only (if enabled)
-                        if Config.ShowWalkspeed then
-                            showBar3 = true
-                        end
-                        
-                        color1 = Color3.new(0.9, 0.2, 0.2) -- Red
-                        cleanName = player and player.Name or ""
-                    end
 
                     -- Calculate Percentages
                     local range1 = max1 - min1
@@ -1029,36 +1021,6 @@ RunService.RenderStepped:Connect(function()
                         if showBar3 then barCount = barCount + 1 end
                         
                         local currentY = startY
-                        
-                        -- Walkspeed Bar (Top) - Players only
-                        if showBar3 and not isNPC then
-                            local baseSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                            local pct3 = math.clamp(humanoid.WalkSpeed / (baseSpeed * 3), 0, 1) -- Cap at 3x
-                            
-                            local bar3Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
-                            
-                            d.Bar3Bg.Visible = true
-                            d.Bar3Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
-                            d.Bar3Bg.Position = bar3Pos
-                            d.Bar3Fill.Visible = true
-                            d.Bar3Fill.Size = Vector2.new(Config.BarWidth * pct3, Config.BarHeight)
-                            d.Bar3Fill.Position = bar3Pos
-                            d.Bar3Fill.Color = Color3.new(0.2, 0.6, 1) -- Blue
-
-                            if Config.ShowValues then
-                                d.Bar3Text.Visible = true
-                                d.Bar3Text.Text = string.format("Spd: %.1f", humanoid.WalkSpeed)
-                                d.Bar3Text.Position = bar3Pos + Vector2.new(Config.BarWidth + 5, -3)
-                            else
-                                d.Bar3Text.Visible = false
-                            end
-                            
-                            currentY = currentY + Config.BarHeight + 2
-                        else
-                            d.Bar3Bg.Visible = false
-                            d.Bar3Fill.Visible = false
-                            d.Bar3Text.Visible = false
-                        end
                         
                         -- Posture Bar (Middle)
                         if showBar2 then
