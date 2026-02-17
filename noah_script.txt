@@ -1,8 +1,7 @@
--- Universal ESP with Mission Hunter GUI + AutoParry (Animation Fetch) + Anti-Anchor + Custom Keybinds
+-- Universal ESP with Mission Hunter GUI + AutoParry (Animation Fetch) + Custom Keybinds
 -- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Animation Fetch: Get animation IDs from nearest target
--- Anti-Anchor: Prevents being anchored by moves
 -- Custom Keybinds: Assign keys to toggle any feature
 -- Default Menu Key: F4
 
@@ -44,9 +43,6 @@ local Config = {
     FetchedAnimations = {},
     AutoAddFetched = false,
     
-    -- Anti-Anchor Settings
-    AntiAnchorEnabled = false,
-    
     -- Keybind Settings
     MenuKey = "F4",
     Keybinds = {
@@ -57,7 +53,6 @@ local Config = {
         ShowValues = "F9",
         ShowWalkspeed = "F10",
         AutoParryEnabled = "F11",
-        AntiAnchorEnabled = "Insert",
         FetchAnimationsEnabled = "Delete"
     }
 }
@@ -159,22 +154,6 @@ local function StartWalkspeedMonitoring()
             local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
             if math.abs(currentHumanoid.WalkSpeed - targetSpeed) > 0.1 then
                 currentHumanoid.WalkSpeed = targetSpeed
-            end
-        end
-        
-        -- Apply Anti-Anchor if enabled
-        if Config.AntiAnchorEnabled and currentChar then
-            if currentChar.Anchored then
-                currentChar.Anchored = false
-                print("⚓ Anti-Anchor: Freed from anchor")
-            end
-            
-            -- Check all parts in character
-            for _, part in ipairs(currentChar:GetDescendants()) do
-                if part:IsA("BasePart") and part.Anchored then
-                    part.Anchored = false
-                    print("⚓ Anti-Anchor: Freed part " .. part.Name)
-                end
             end
         end
     end)
@@ -382,7 +361,6 @@ local function LoadConfigs()
                 FetchFromTarget = true,
                 FetchedAnimations = {},
                 AutoAddFetched = false,
-                AntiAnchorEnabled = false,
                 MenuKey = "F4",
                 Keybinds = {
                     Enabled = "F5",
@@ -392,7 +370,6 @@ local function LoadConfigs()
                     ShowValues = "F9",
                     ShowWalkspeed = "F10",
                     AutoParryEnabled = "F11",
-                    AntiAnchorEnabled = "Insert",
                     FetchAnimationsEnabled = "Delete"
                 }
             }
@@ -511,7 +488,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 550, 0, 650)
+MainFrame.Size = UDim2.new(0, 550, 0, 600)
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -528,7 +505,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP + AutoParry + Anti-Anchor + Keybinds"
+TitleLabel.Text = "Mission Hunter ESP + AutoParry + Keybinds"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -577,7 +554,7 @@ MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
 MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainTabBtn.BorderSizePixel = 0
 MainTabBtn.Position = UDim2.new(0, 0, 0, 0)
-MainTabBtn.Size = UDim2.new(0, 90, 1, 0)
+MainTabBtn.Size = UDim2.new(0, 110, 1, 0)
 MainTabBtn.Parent = TabButtons
 
 local AutoParryTabBtn = Instance.new("TextButton")
@@ -587,8 +564,8 @@ AutoParryTabBtn.TextSize = 16
 AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 AutoParryTabBtn.BorderSizePixel = 0
-AutoParryTabBtn.Position = UDim2.new(0, 90, 0, 0)
-AutoParryTabBtn.Size = UDim2.new(0, 90, 1, 0)
+AutoParryTabBtn.Position = UDim2.new(0, 110, 0, 0)
+AutoParryTabBtn.Size = UDim2.new(0, 110, 1, 0)
 AutoParryTabBtn.Parent = TabButtons
 
 local FetchTabBtn = Instance.new("TextButton")
@@ -598,20 +575,9 @@ FetchTabBtn.TextSize = 16
 FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 FetchTabBtn.BorderSizePixel = 0
-FetchTabBtn.Position = UDim2.new(0, 180, 0, 0)
-FetchTabBtn.Size = UDim2.new(0, 90, 1, 0)
+FetchTabBtn.Position = UDim2.new(0, 220, 0, 0)
+FetchTabBtn.Size = UDim2.new(0, 110, 1, 0)
 FetchTabBtn.Parent = TabButtons
-
-local AntiAnchorTabBtn = Instance.new("TextButton")
-AntiAnchorTabBtn.Text = "AntiAnchor"
-AntiAnchorTabBtn.Font = Enum.Font.SourceSans
-AntiAnchorTabBtn.TextSize = 16
-AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-AntiAnchorTabBtn.BorderSizePixel = 0
-AntiAnchorTabBtn.Position = UDim2.new(0, 270, 0, 0)
-AntiAnchorTabBtn.Size = UDim2.new(0, 90, 1, 0)
-AntiAnchorTabBtn.Parent = TabButtons
 
 local KeybindsTabBtn = Instance.new("TextButton")
 KeybindsTabBtn.Text = "Keybinds"
@@ -620,8 +586,8 @@ KeybindsTabBtn.TextSize = 16
 KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 KeybindsTabBtn.BorderSizePixel = 0
-KeybindsTabBtn.Position = UDim2.new(0, 360, 0, 0)
-KeybindsTabBtn.Size = UDim2.new(0, 90, 1, 0)
+KeybindsTabBtn.Position = UDim2.new(0, 330, 0, 0)
+KeybindsTabBtn.Size = UDim2.new(0, 110, 1, 0)
 KeybindsTabBtn.Parent = TabButtons
 
 local ConfigTabBtn = Instance.new("TextButton")
@@ -631,8 +597,8 @@ ConfigTabBtn.TextSize = 16
 ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 ConfigTabBtn.BorderSizePixel = 0
-ConfigTabBtn.Position = UDim2.new(0, 450, 0, 0)
-ConfigTabBtn.Size = UDim2.new(0, 90, 1, 0)
+ConfigTabBtn.Position = UDim2.new(0, 440, 0, 0)
+ConfigTabBtn.Size = UDim2.new(0, 110, 1, 0)
 ConfigTabBtn.Parent = TabButtons
 
 -- Content Area
@@ -1340,101 +1306,6 @@ local function BuildFetchTab()
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
 
--- Build AntiAnchor Tab
-local function BuildAntiAnchorTab()
-    ClearContent()
-    
-    local pad = Instance.new("Frame")
-    pad.Size = UDim2.new(1,0,0,5)
-    pad.BackgroundTransparency = 1
-    pad.LayoutOrder = 0
-    pad.Parent = ContentArea
-    
-    CreateToggleWithKeybind("Enable Anti-Anchor", "AntiAnchorEnabled")
-    
-    -- Info text
-    local infoFrame = Instance.new("Frame")
-    infoFrame.BackgroundTransparency = 1
-    infoFrame.Size = UDim2.new(1, 0, 0, 80)
-    infoFrame.LayoutOrder = 1
-    infoFrame.Parent = ContentArea
-    
-    local infoLbl1 = Instance.new("TextLabel")
-    infoLbl1.Text = "⚓ Anti-Anchor prevents you from being"
-    infoLbl1.Font = Enum.Font.SourceSans
-    infoLbl1.TextSize = 16
-    infoLbl1.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLbl1.TextXAlignment = Enum.TextXAlignment.Left
-    infoLbl1.BackgroundTransparency = 1
-    infoLbl1.Position = UDim2.new(0, 5, 0, 0)
-    infoLbl1.Size = UDim2.new(1, -10, 0, 20)
-    infoLbl1.Parent = infoFrame
-    
-    local infoLbl2 = Instance.new("TextLabel")
-    infoLbl2.Text = "anchored by moves or abilities."
-    infoLbl2.Font = Enum.Font.SourceSans
-    infoLbl2.TextSize = 16
-    infoLbl2.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLbl2.TextXAlignment = Enum.TextXAlignment.Left
-    infoLbl2.BackgroundTransparency = 1
-    infoLbl2.Position = UDim2.new(0, 5, 0, 20)
-    infoLbl2.Size = UDim2.new(1, -10, 0, 20)
-    infoLbl2.Parent = infoFrame
-    
-    local infoLbl3 = Instance.new("TextLabel")
-    infoLbl3.Text = "Works with Walkspeed Multiplier!"
-    infoLbl3.Font = Enum.Font.SourceSans
-    infoLbl3.TextSize = 16
-    infoLbl3.TextColor3 = Color3.fromRGB(0, 200, 0)
-    infoLbl3.TextXAlignment = Enum.TextXAlignment.Left
-    infoLbl3.BackgroundTransparency = 1
-    infoLbl3.Position = UDim2.new(0, 5, 0, 40)
-    infoLbl3.Size = UDim2.new(1, -10, 0, 20)
-    infoLbl3.Parent = infoFrame
-    
-    -- Status display
-    local statusFrame = Instance.new("Frame")
-    statusFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    statusFrame.BorderSizePixel = 0
-    statusFrame.Size = UDim2.new(1, 0, 0, 60)
-    statusFrame.LayoutOrder = 2
-    statusFrame.Parent = ContentArea
-    
-    local statusLbl = Instance.new("TextLabel")
-    statusLbl.Text = "Current Status:"
-    statusLbl.Font = Enum.Font.SourceSans
-    statusLbl.TextSize = 16
-    statusLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-    statusLbl.BackgroundTransparency = 1
-    statusLbl.Position = UDim2.new(0, 5, 0, 5)
-    statusLbl.Size = UDim2.new(1, -10, 0, 20)
-    statusLbl.Parent = statusFrame
-    
-    local anchoredLbl = Instance.new("TextLabel")
-    anchoredLbl.Text = "Anchored: false"
-    anchoredLbl.Font = Enum.Font.SourceSans
-    anchoredLbl.TextSize = 14
-    anchoredLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-    anchoredLbl.TextXAlignment = Enum.TextXAlignment.Left
-    anchoredLbl.BackgroundTransparency = 1
-    anchoredLbl.Position = UDim2.new(0, 5, 0, 30)
-    anchoredLbl.Size = UDim2.new(1, -10, 0, 20)
-    anchoredLbl.Parent = statusFrame
-    
-    -- Update status display
-    local function UpdateStatus()
-        local character = LocalPlayer.Character
-        if character then
-            anchoredLbl.Text = "Anchored: " .. tostring(character.Anchored)
-        end
-    end
-    
-    RunService.Heartbeat:Connect(UpdateStatus)
-    
-    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
-end
-
 -- Build Keybinds Tab
 local function BuildKeybindsTab()
     ClearContent()
@@ -1662,8 +1533,6 @@ MainTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -1678,8 +1547,6 @@ AutoParryTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -1694,29 +1561,11 @@ FetchTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildFetchTab()
-end)
-
-AntiAnchorTabBtn.MouseButton1Click:Connect(function()
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    BuildAntiAnchorTab()
 end)
 
 KeybindsTabBtn.MouseButton1Click:Connect(function()
@@ -1728,8 +1577,6 @@ KeybindsTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildKeybindsTab()
@@ -1744,8 +1591,6 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildConfigTab()
@@ -1753,7 +1598,421 @@ end)
 
 BuildMainTab()
 
--- Rest of ESP and Moderator Detector code would go here...
--- (The ESP system and Moderator Detector from previous versions would be inserted here)
+--------------------------------------------------------------------------------
+-- 2. ESP SYSTEM (NPC Names Hidden)
+--------------------------------------------------------------------------------
 
-print("✅ Mission Hunter ESP + AutoParry + Anti-Anchor + Keybinds Loaded")
+local function CreateDrawing(type, props)
+    local obj = Drawing.new(type)
+    for k, v in pairs(props) do obj[k] = v end
+    return obj
+end
+
+local function RemoveESP(model)
+    if ESP_Cache[model] then
+        for _, drawing in pairs(ESP_Cache[model].Drawings) do
+            drawing:Remove()
+        end
+        ESP_Cache[model] = nil
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Config.Enabled then 
+        for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
+        return 
+    end
+
+    if not LiveFolder then LiveFolder = workspace:FindFirstChild("Live") return end
+
+    for _, entry in pairs(ESP_Cache) do entry.Seen = false end
+
+    for _, folder in ipairs(LiveFolder:GetChildren()) do
+        local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
+        
+        if model and model ~= LocalPlayer.Character then
+            
+            local head = model:FindFirstChild("Head")
+            local humanoid = model:FindFirstChild("Humanoid")
+            local player = Players:GetPlayerFromCharacter(model)
+
+            if player and humanoid then
+                pcall(function()
+                     humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+                end)
+            end
+
+            local isNPC = not player
+
+            if isNPC and not Config.ShowNPCs then
+                if ESP_Cache[model] then RemoveESP(model) end
+                continue
+            end
+
+            if head and humanoid then
+                if not ESP_Cache[model] then
+                    ESP_Cache[model] = {
+                        Seen = true,
+                        Drawings = {
+                            Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
+                            Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
+                            Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
+                            Bar3Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar3Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
+                        }
+                    }
+                end
+
+                local entry = ESP_Cache[model]
+                entry.Seen = true
+                local d = entry.Drawings
+
+                local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
+                local distance = (Camera.CFrame.Position - head.Position).Magnitude
+
+                if onScreen and distance <= Config.MaxDistance then
+                    
+                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0)
+                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0)
+                    local showBar2 = false
+                    local showBar3 = false
+                    local cleanName = ""
+
+                    if isNPC then
+                        val1 = humanoid.Health
+                        max1 = humanoid.MaxHealth
+                        min1 = 0
+                        color1 = Color3.new(0.2, 0.9, 0.2)
+                        showBar2 = false
+                        showBar3 = false
+                        cleanName = ""
+                    else
+                        local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
+                        local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
+                        
+                        if lf then 
+                            val1 = lf.Value 
+                            max1 = lf:GetAttribute("MaxValue") or lf.MaxValue or 100
+                            min1 = lf:GetAttribute("MinValue") or lf.MinValue or 0
+                        end
+                        if pos then 
+                            val2 = pos.Value 
+                            max2 = pos:GetAttribute("MaxValue") or pos.MaxValue or 100
+                            min2 = pos:GetAttribute("MinValue") or pos.MinValue or 0
+                            showBar2 = true
+                        end
+                        
+                        if Config.ShowWalkspeed then
+                            showBar3 = true
+                        end
+                        
+                        color1 = Color3.new(0.9, 0.2, 0.2)
+                        cleanName = player and player.Name or ""
+                    end
+
+                    local range1 = max1 - min1
+                    local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
+                    
+                    local range2 = max2 - min2
+                    local pct2 = range2 > 0 and math.clamp((val2 - min2) / range2, 0, 1) or 0
+
+                    local screenPos = Vector2.new(vector.X, vector.Y)
+                    local startY = screenPos.Y - Config.YOffset - (1000/distance)
+
+                    if Config.ShowNames and not isNPC and cleanName ~= "" then
+                        d.Name.Visible = true
+                        d.Name.Text = cleanName
+                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15 + (showBar3 and 20 or 0))
+                        d.Name.Size = Config.TextSize
+                    else
+                        d.Name.Visible = false
+                    end
+
+                    if Config.ShowBars then
+                        local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
+                        local currentY = startY
+                        
+                        if showBar3 and not isNPC then
+                            local baseSpeed = GetBaseWalkspeedFromAttribute(humanoid)
+                            local pct3 = math.clamp(humanoid.WalkSpeed / (baseSpeed * 3), 0, 1)
+                            
+                            local bar3Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
+                            
+                            d.Bar3Bg.Visible = true
+                            d.Bar3Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                            d.Bar3Bg.Position = bar3Pos
+                            d.Bar3Fill.Visible = true
+                            d.Bar3Fill.Size = Vector2.new(Config.BarWidth * pct3, Config.BarHeight)
+                            d.Bar3Fill.Position = bar3Pos
+                            d.Bar3Fill.Color = Color3.new(0.2, 0.6, 1)
+
+                            if Config.ShowValues then
+                                d.Bar3Text.Visible = true
+                                d.Bar3Text.Text = string.format("Spd: %.1f", humanoid.WalkSpeed)
+                                d.Bar3Text.Position = bar3Pos + Vector2.new(Config.BarWidth + 5, -3)
+                            else
+                                d.Bar3Text.Visible = false
+                            end
+                            
+                            currentY = currentY + Config.BarHeight + 2
+                        else
+                            d.Bar3Bg.Visible = false
+                            d.Bar3Fill.Visible = false
+                            d.Bar3Text.Visible = false
+                        end
+                        
+                        if showBar2 then
+                            local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
+                            
+                            d.Bar2Bg.Visible = true
+                            d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                            d.Bar2Bg.Position = bar2Pos
+                            d.Bar2Fill.Visible = true
+                            d.Bar2Fill.Size = Vector2.new(Config.BarWidth * pct2, Config.BarHeight)
+                            d.Bar2Fill.Position = bar2Pos
+                            d.Bar2Fill.Color = color2
+
+                            if Config.ShowValues then
+                                d.Bar2Text.Visible = true
+                                d.Bar2Text.Text = string.format("%.0f/%.0f", val2, max2)
+                                d.Bar2Text.Position = bar2Pos + Vector2.new(Config.BarWidth + 5, -3)
+                            else
+                                d.Bar2Text.Visible = false
+                            end
+                            
+                            currentY = currentY + Config.BarHeight + 2
+                        else
+                            d.Bar2Bg.Visible = false
+                            d.Bar2Fill.Visible = false
+                            d.Bar2Text.Visible = false
+                        end
+                        
+                        local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
+                        
+                        d.Bar1Bg.Visible = true
+                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                        d.Bar1Bg.Position = bar1Pos
+                        d.Bar1Fill.Visible = true
+                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
+                        d.Bar1Fill.Position = bar1Pos
+                        d.Bar1Fill.Color = color1
+
+                        if Config.ShowValues then
+                            d.Bar1Text.Visible = true
+                            d.Bar1Text.Text = string.format("%.0f/%.0f", val1, max1)
+                            d.Bar1Text.Position = bar1Pos + Vector2.new(Config.BarWidth + 5, -3)
+                        else
+                            d.Bar1Text.Visible = false
+                        end
+
+                    else
+                        d.Bar1Bg.Visible = false
+                        d.Bar1Fill.Visible = false
+                        d.Bar1Text.Visible = false
+                        d.Bar2Bg.Visible = false
+                        d.Bar2Fill.Visible = false
+                        d.Bar2Text.Visible = false
+                        d.Bar3Bg.Visible = false
+                        d.Bar3Fill.Visible = false
+                        d.Bar3Text.Visible = false
+                    end
+
+                else
+                    for _, v in pairs(d) do v.Visible = false end
+                end
+            end
+        end
+    end
+
+    for model, entry in pairs(ESP_Cache) do
+        if not entry.Seen or not model.Parent then
+            RemoveESP(model)
+        end
+    end
+end)
+
+-- Moderator Detector with Sound Notification
+-- Detects players with specific roles in Demon Corps North Branch (Group ID: 16346602)
+-- Plays Patrick WeeWoo sound when a moderator joins
+
+local MODERATOR_ROLES = {
+    ["tes"] = true,
+    ["admin"] = true,
+    ["Owner"] = true,
+}
+local ALERT_SOUND_ID = "rbxassetid://427090811"
+
+-- Track online moderators
+local OnlineModerators = {}
+
+-- Function to check if a player is a moderator
+local function IsModerator(player)
+    local success, role = pcall(function()
+        return player:GetRoleInGroup(16346602)
+    end)
+    
+    if success and role then
+        return MODERATOR_ROLES[role] == true, role
+    end
+    return false, nil
+end
+
+-- Function to play alert sound
+local function PlayAlertSound()
+    local sound = Instance.new("Sound")
+    sound.SoundId = ALERT_SOUND_ID
+    sound.Volume = 0.8
+    sound.PlayOnRemove = false
+    
+    local character = LocalPlayer.Character
+    if character then
+        sound.Parent = character
+    else
+        sound.Parent = SoundService
+    end
+    
+    sound:Play()
+    print("🔊 Playing alert sound: Patrick WeeWoo")
+    
+    game:GetService("Debris"):AddItem(sound, sound.TimeLength or 5)
+end
+
+-- Function to send notification
+local function SendNotification(title, text, duration, icon)
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = duration or 5,
+        Icon = icon or "rbxasset://textures/ui/GameSettings/GFX/icon_alert.png"
+    })
+end
+
+-- Function to check existing players
+local function CheckExistingPlayers()
+    local mods = {}
+    local modCount = 0
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local isMod, role = IsModerator(player)
+            if isMod then
+                mods[player] = role
+                OnlineModerators[player] = role
+                modCount = modCount + 1
+            end
+        end
+    end
+    
+    if modCount > 0 then
+        local modNames = {}
+        for player, role in pairs(mods) do
+            table.insert(modNames, player.Name .. " (" .. role .. ")")
+        end
+        
+        SendNotification(
+            "⚠️ Moderators Online",
+            table.concat(modNames, "\n"),
+            8
+        )
+        
+        PlayAlertSound()
+        
+        print("⚠️ " .. modCount .. " moderator(s) online at startup")
+    end
+end
+
+-- Monitor player joins
+Players.PlayerAdded:Connect(function(player)
+    task.wait(2)
+    
+    if player ~= LocalPlayer then
+        local isMod, role = IsModerator(player)
+        if isMod then
+            OnlineModerators[player] = role
+            
+            PlayAlertSound()
+            
+            SendNotification(
+                "⚠️ Moderator Joined",
+                player.Name .. " (" .. role .. ") has joined the game!",
+                6
+            )
+            
+            print("⚠️ MODERATOR JOINED: " .. player.Name .. " (" .. role .. ")")
+        end
+    end
+end)
+
+-- Monitor player leaves
+Players.PlayerRemoving:Connect(function(player)
+    if OnlineModerators[player] then
+        local role = OnlineModerators[player]
+        OnlineModerators[player] = nil
+        
+        SendNotification(
+            "ℹ️ Moderator Left",
+            player.Name .. " (" .. role .. ") has left the game.",
+            4,
+            "rbxasset://textures/ui/GameSettings/GFX/icon_info.png"
+        )
+        
+        print("ℹ️ MODERATOR LEFT: " .. player.Name .. " (" .. role .. ")")
+    end
+end)
+
+-- Periodic check for role changes
+task.spawn(function()
+    while task.wait(30) do
+        local currentMods = {}
+        
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local isMod, role = IsModerator(player)
+                if isMod then
+                    currentMods[player] = role
+                end
+            end
+        end
+        
+        for player, role in pairs(currentMods) do
+            if not OnlineModerators[player] then
+                OnlineModerators[player] = role
+                
+                PlayAlertSound()
+                
+                SendNotification(
+                    "⚠️ Moderator Detected",
+                    player.Name .. " (" .. role .. ") is now a moderator!",
+                    6
+                )
+                
+                print("⚠️ NEW MODERATOR DETECTED: " .. player.Name .. " (" .. role .. ")")
+            end
+        end
+        
+        for player in pairs(OnlineModerators) do
+            if not currentMods[player] then
+                OnlineModerators[player] = nil
+                SendNotification(
+                    "ℹ️ Moderator Removed",
+                    player.Name .. " is no longer a moderator.",
+                    4,
+                    "rbxasset://textures/ui/GameSettings/GFX/icon_info.png"
+                )
+                print("ℹ️ MODERATOR REMOVED: " .. player.Name)
+            end
+        end
+    end
+end)
+
+-- Initial check
+task.wait(3)
+CheckExistingPlayers()
+
+print("✅ Mission Hunter ESP + AutoParry + Keybinds Loaded")
+print("🔊 Moderator Alert Sound: Patrick WeeWoo (ID: 427090811)")
