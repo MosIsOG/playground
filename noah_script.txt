@@ -1131,12 +1131,13 @@ end)
 
 -- Moderator Detector with Sound Notification
 -- Detects players with specific roles in Demon Corps North Branch (Group ID: 16346602)
--- Plays sound 427090811 when a moderator joins
+-- Plays Patrick WeeWoo sound when a moderator joins
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
 
 -- CONFIGURATION
 local GROUP_ID = 16346602  -- Demon Corps North Branch Group ID
@@ -1145,7 +1146,7 @@ local MODERATOR_ROLES = {
     ["admin"] = true,
     ["Owner"] = true,
 }
-local ALERT_SOUND_ID = "rbxassetid://427090811"  -- Sound to play when mod joins
+local ALERT_SOUND_ID = "rbxassetid://427090811"  -- Patrick WeeWoo Loop
 
 -- Track online moderators
 local OnlineModerators = {}
@@ -1162,18 +1163,58 @@ local function IsModerator(player)
     return false, nil
 end
 
--- Function to play alert sound
+-- Function to play alert sound with better reliability
 local function PlayAlertSound()
+    -- Create a temporary sound object
     local sound = Instance.new("Sound")
     sound.SoundId = ALERT_SOUND_ID
-    sound.Volume = 1  -- Adjust volume as needed (0-1)
-    sound.Parent = game:GetService("SoundService") or workspace
+    sound.Volume = 0.8
+    sound.PlayOnRemove = false  -- Don't play when removed
     
-    -- Play and clean up
+    -- Parent to something that always exists and can play sounds
+    -- Try SoundService first, then workspace as fallback
+    if SoundService then
+        sound.Parent = SoundService
+    else
+        sound.Parent = workspace
+    end
+    
+    -- Play the sound
     sound:Play()
     
-    -- Destroy sound after it finishes playing
-    game:GetService("Debris"):AddItem(sound, sound.TimeLength or 5)
+    -- Print confirmation
+    print("🔊 Playing alert sound: Patrick WeeWoo")
+    
+    -- Clean up after sound finishes (plus a small buffer)
+    local duration = sound.TimeLength or 5
+    task.wait(duration + 1)
+    
+    -- Safe removal
+    if sound and sound.Parent then
+        sound:Destroy()
+    end
+end
+
+-- Alternative method using Instance.new with different parenting
+local function PlayAlertSoundAlt()
+    -- Try using a different approach - attach to player's character
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("Humanoid") then
+        local sound = Instance.new("Sound")
+        sound.SoundId = ALERT_SOUND_ID
+        sound.Volume = 0.8
+        sound.Parent = character
+        
+        sound:Play()
+        print("🔊 Playing alert sound (attached to character)")
+        
+        -- Clean up
+        task.wait(sound.TimeLength or 5)
+        sound:Destroy()
+    else
+        -- Fall back to original method
+        PlayAlertSound()
+    end
 end
 
 -- Function to send Roblox-style notification
@@ -1216,10 +1257,8 @@ local function CheckExistingPlayers()
             "rbxasset://textures/ui/GameSettings/GFX/icon_alert.png"
         )
         
-        -- Play sound for existing moderators (optional)
-        if modCount > 0 then
-            PlayAlertSound()
-        end
+        -- Play sound for existing moderators
+        PlayAlertSoundAlt()
         
         -- Print to console
         print("⚠️ " .. modCount .. " moderator(s) online at startup")
@@ -1236,8 +1275,8 @@ Players.PlayerAdded:Connect(function(player)
         if isMod then
             OnlineModerators[player] = role
             
-            -- Play the alert sound!
-            PlayAlertSound()
+            -- Play the alert sound using the more reliable method
+            PlayAlertSoundAlt()
             
             -- Send notification
             SendNotification(
@@ -1249,7 +1288,6 @@ Players.PlayerAdded:Connect(function(player)
             
             -- Also print to chat/debug
             print("⚠️ MODERATOR JOINED: " .. player.Name .. " (" .. role .. ")")
-            print("▶️ Playing alert sound: 427090811")
         end
     end
 end)
@@ -1274,9 +1312,8 @@ end)
 
 -- Periodic check (in case role changes during gameplay)
 task.spawn(function()
-    while task.wait(30) do -- Check every 30 seconds
+    while task.wait(30) do
         local currentMods = {}
-        local newModFound = false
         
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
@@ -1291,10 +1328,9 @@ task.spawn(function()
         for player, role in pairs(currentMods) do
             if not OnlineModerators[player] then
                 OnlineModerators[player] = role
-                newModFound = true
                 
                 -- Play sound for role change detection
-                PlayAlertSound()
+                PlayAlertSoundAlt()
                 
                 SendNotification(
                     "⚠️ Moderator Detected",
@@ -1324,11 +1360,11 @@ task.spawn(function()
 end)
 
 -- Initial check
-task.wait(3) -- Wait for game to load
+task.wait(3)
 CheckExistingPlayers()
 
 print("✅ Moderator Detector Loaded - Monitoring group " .. GROUP_ID)
-print("🔊 Alert sound ID: 427090811")
+print("🔊 Alert sound: Patrick WeeWoo (ID: 427090811)")
 
 
 
