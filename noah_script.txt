@@ -1,5 +1,5 @@
 -- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values
+-- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Blue Walkspeed Bar
 -- NPCs = Custom Green Bar (Toggleable)
 -- Keybind: F4 to Toggle Menu
 
@@ -18,11 +18,13 @@ local Config = {
     ShowBars = true,
     ShowNPCs = true,
     ShowValues = true,
+    ShowWalkspeed = true, -- NEW: Walkspeed bar toggle
     MaxDistance = 1500,
     TextSize = 14,
     BarWidth = 150,
     BarHeight = 6,
-    YOffset = 60
+    YOffset = 60,
+    BaseWalkspeed = 16 -- Default Roblox walkspeed
 }
 
 -- State
@@ -32,7 +34,7 @@ local Configs = {} -- Stores saved configurations
 local CurrentConfig = "Default"
 
 -- Config file path
-local ConfigFolder = "NoahHunterESP"
+local ConfigFolder = "MissionHunterESP"
 local ConfigFile = "configs.json"
 
 -- Function to save configs to file
@@ -71,11 +73,13 @@ local function LoadConfigs()
                 ShowBars = true,
                 ShowNPCs = true,
                 ShowValues = true,
+                ShowWalkspeed = true,
                 MaxDistance = 1500,
                 TextSize = 14,
                 BarWidth = 150,
                 BarHeight = 6,
-                YOffset = 60
+                YOffset = 60,
+                BaseWalkspeed = 16
             }
             CurrentConfig = "Default"
             SaveConfigs()
@@ -88,13 +92,15 @@ local function LoadConfigs()
             Enabled = true,
             ShowNames = true,
             ShowBars = true,
-            Shows = true,
+            ShowNPCs = true,
             ShowValues = true,
+            ShowWalkspeed = true,
             MaxDistance = 1500,
             TextSize = 14,
             BarWidth = 150,
             BarHeight = 6,
-            YOffset = 60
+            YOffset = 60,
+            BaseWalkspeed = 16
         }
         CurrentConfig = "Default"
     end
@@ -108,7 +114,7 @@ LoadConfigs()
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NoahHunterESP"
+ScreenGui.Name = "MissionHunterESP"
 ScreenGui.ResetOnSpawn = false
 
 if gethui then
@@ -123,7 +129,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 400)
+MainFrame.Size = UDim2.new(0, 400, 0, 450) -- Taller for new option
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -140,7 +146,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "نوح Hunter ESP"
+TitleLabel.Text = "Mission Hunter ESP"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -266,7 +272,7 @@ local function CreateToggle(text, configKey, container)
 end
 
 -- Helper function to create sliders
-local function CreateSlider(text, configKey, min, max, container)
+local function CreateSlider(text, configKey, min, max, container, isFloat)
     local container = container or ContentArea
     
     local sliderFrame = Instance.new("Frame")
@@ -301,7 +307,7 @@ local function CreateSlider(text, configKey, min, max, container)
     sliderFill.Parent = sliderBg
     
     local valueLbl = Instance.new("TextLabel")
-    valueLbl.Text = tostring(Config[configKey])
+    valueLbl.Text = isFloat and string.format("%.1f", Config[configKey]) or tostring(Config[configKey])
     valueLbl.Font = Enum.Font.Code
     valueLbl.TextSize = 14
     valueLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -316,10 +322,15 @@ local function CreateSlider(text, configKey, min, max, container)
         local boxPos = sliderBg.AbsolutePosition.X
         local boxSize = sliderBg.AbsoluteSize.X
         local relative = math.clamp((pos - boxPos) / boxSize, 0, 1)
-        local newVal = math.floor(min + (max - min) * relative)
+        local newVal = min + (max - min) * relative
+        
+        if not isFloat then
+            newVal = math.floor(newVal)
+        end
+        
         Config[configKey] = newVal
         sliderFill.Size = UDim2.new(relative, 0, 1, 0)
-        valueLbl.Text = tostring(newVal)
+        valueLbl.Text = isFloat and string.format("%.1f", newVal) or tostring(math.floor(newVal))
         SaveConfigs() -- Auto-save when slider changes
     end
     
@@ -356,10 +367,12 @@ local function BuildMainTab()
     
     CreateToggle("Master Enabled", "Enabled")
     CreateToggle("Show Names", "ShowNames")
-    CreateToggle("Show s", "Shows")
+    CreateToggle("Show NPCs", "ShowNPCs")
     CreateToggle("Show Bars", "ShowBars")
     CreateToggle("Show Values", "ShowValues")
+    CreateToggle("Show Walkspeed Bar", "ShowWalkspeed") -- NEW toggle
     CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+    CreateSlider("Base Walkspeed", "BaseWalkspeed", 1, 100, nil, true) -- Float slider
     
     -- Update UIListLayout for proper spacing
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
@@ -666,7 +679,7 @@ end)
 BuildMainTab()
 
 --------------------------------------------------------------------------------
--- 2. ESP SYSTEM (Unchanged from your original)
+-- 2. ESP SYSTEM (Enhanced with Walkspeed Bar)
 --------------------------------------------------------------------------------
 
 local function CreateDrawing(type, props)
@@ -682,6 +695,16 @@ local function RemoveESP(model)
         end
         ESP_Cache[model] = nil
     end
+end
+
+-- Function to get walkspeed multiplier
+local function GetWalkspeedMultiplier(character)
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        local walkspeed = humanoid.WalkSpeed
+        return walkspeed / Config.BaseWalkspeed
+    end
+    return 1
 end
 
 RunService.RenderStepped:Connect(function()
@@ -735,6 +758,11 @@ RunService.RenderStepped:Connect(function()
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
+                            
+                            -- Walkspeed Bar (Bar3)
+                            Bar3Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
+                            Bar3Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
+                            Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
                         }
                     }
                 end
@@ -751,17 +779,21 @@ RunService.RenderStepped:Connect(function()
                     local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0) -- Red
                     local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0) -- Yellow
                     local showBar2 = false
+                    local showBar3 = false
+                    local val3, min3, max3, color3 = 1, 0, 3, Color3.new(0.2, 0.6, 1) -- Blue for walkspeed
                     local cleanName = ""
 
                     if isNPC then
-                        -- NPC LOGIC: Green Bar
+                        -- NPC LOGIC: Green Bar only
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
                         min1 = 0
                         color1 = Color3.new(0.2, 0.9, 0.2) -- Green
                         showBar2 = false
+                        showBar3 = false -- No walkspeed for NPCs
+                        cleanName = model.Name
                     else
-                        -- PLAYER LOGIC: Red Bar + Yellow Posture (Dynamic Min/Max)
+                        -- PLAYER LOGIC: Red Bar + Yellow Posture + Blue Walkspeed
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
@@ -778,16 +810,27 @@ RunService.RenderStepped:Connect(function()
                             showBar2 = true
                         end
                         
+                        -- Walkspeed multiplier
+                        if Config.ShowWalkspeed then
+                            val3 = GetWalkspeedMultiplier(model)
+                            min3 = 0.5 -- Minimum possible multiplier
+                            max3 = 3 -- Maximum possible multiplier
+                            showBar3 = true
+                        end
+                        
                         color1 = Color3.new(0.9, 0.2, 0.2) -- Red
                         cleanName = player and player.Name or model.Name
                     end
 
-                    -- Calculate Percentage (Respecting Min/Max)
+                    -- Calculate Percentages (Respecting Min/Max)
                     local range1 = max1 - min1
                     local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
                     local range2 = max2 - min2
                     local pct2 = range2 > 0 and math.clamp((val2 - min2) / range2, 0, 1) or 0
+                    
+                    local range3 = max3 - min3
+                    local pct3 = range3 > 0 and math.clamp((val3 - min3) / range3, 0, 1) or 0.5
 
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
@@ -796,7 +839,7 @@ RunService.RenderStepped:Connect(function()
                     if Config.ShowNames then
                         d.Name.Visible = true
                         d.Name.Text = cleanName
-                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
+                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15 + (showBar3 and 20 or 0)) -- Adjust for extra bar
                         d.Name.Size = Config.TextSize
                     else
                         d.Name.Visible = false
@@ -806,27 +849,44 @@ RunService.RenderStepped:Connect(function()
                     if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
                         
-                        -- Bar 1 (Health)
-                        d.Bar1Bg.Visible = true
-                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
-                        d.Bar1Bg.Position = barPos
-                        d.Bar1Fill.Visible = true
-                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
-                        d.Bar1Fill.Position = barPos
-                        d.Bar1Fill.Color = color1
+                        -- Determine how many bars to show and stack them
+                        local barCount = 1 -- Health always shows
+                        if showBar2 then barCount = barCount + 1 end
+                        if showBar3 then barCount = barCount + 1 end
+                        
+                        local totalBarHeight = (Config.BarHeight * barCount) + (2 * (barCount - 1))
+                        local currentY = startY
+                        
+                        -- Bar 3 (Walkspeed) - Top bar (Blue)
+                        if showBar3 then
+                            local bar3Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
+                            
+                            d.Bar3Bg.Visible = true
+                            d.Bar3Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                            d.Bar3Bg.Position = bar3Pos
+                            d.Bar3Fill.Visible = true
+                            d.Bar3Fill.Size = Vector2.new(Config.BarWidth * pct3, Config.BarHeight)
+                            d.Bar3Fill.Position = bar3Pos
+                            d.Bar3Fill.Color = color3
 
-                        -- Bar 1 Text (Value)
-                        if Config.ShowValues then
-                            d.Bar1Text.Visible = true
-                            d.Bar1Text.Text = string.format("%.0f/%.0f", val1, max1)
-                            d.Bar1Text.Position = barPos + Vector2.new(Config.BarWidth + 5, -3) -- Right side
+                            if Config.ShowValues then
+                                d.Bar3Text.Visible = true
+                                d.Bar3Text.Text = string.format("Spd: %.1fx", val3)
+                                d.Bar3Text.Position = bar3Pos + Vector2.new(Config.BarWidth + 5, -3)
+                            else
+                                d.Bar3Text.Visible = false
+                            end
+                            
+                            currentY = currentY + Config.BarHeight + 2
                         else
-                            d.Bar1Text.Visible = false
+                            d.Bar3Bg.Visible = false
+                            d.Bar3Fill.Visible = false
+                            d.Bar3Text.Visible = false
                         end
-
-                        -- Bar 2 (Posture)
+                        
+                        -- Bar 2 (Posture) - Middle bar (Yellow)
                         if showBar2 then
-                            local bar2Pos = barPos - Vector2.new(0, Config.BarHeight + 2) -- Stack on top
+                            local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
                             d.Bar2Bg.Visible = true
                             d.Bar2Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
@@ -836,7 +896,6 @@ RunService.RenderStepped:Connect(function()
                             d.Bar2Fill.Position = bar2Pos
                             d.Bar2Fill.Color = color2
 
-                            -- Bar 2 Text (Value)
                             if Config.ShowValues then
                                 d.Bar2Text.Visible = true
                                 d.Bar2Text.Text = string.format("%.0f/%.0f", val2, max2)
@@ -844,18 +903,44 @@ RunService.RenderStepped:Connect(function()
                             else
                                 d.Bar2Text.Visible = false
                             end
+                            
+                            currentY = currentY + Config.BarHeight + 2
                         else
                             d.Bar2Bg.Visible = false
                             d.Bar2Fill.Visible = false
                             d.Bar2Text.Visible = false
                         end
+                        
+                        -- Bar 1 (Health) - Bottom bar (Red/Green)
+                        local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
+                        
+                        d.Bar1Bg.Visible = true
+                        d.Bar1Bg.Size = Vector2.new(Config.BarWidth, Config.BarHeight)
+                        d.Bar1Bg.Position = bar1Pos
+                        d.Bar1Fill.Visible = true
+                        d.Bar1Fill.Size = Vector2.new(Config.BarWidth * pct1, Config.BarHeight)
+                        d.Bar1Fill.Position = bar1Pos
+                        d.Bar1Fill.Color = color1
+
+                        if Config.ShowValues then
+                            d.Bar1Text.Visible = true
+                            d.Bar1Text.Text = string.format("%.0f/%.0f", val1, max1)
+                            d.Bar1Text.Position = bar1Pos + Vector2.new(Config.BarWidth + 5, -3)
+                        else
+                            d.Bar1Text.Visible = false
+                        end
+
                     else
+                        -- Hide all bars
                         d.Bar1Bg.Visible = false
                         d.Bar1Fill.Visible = false
                         d.Bar1Text.Visible = false
                         d.Bar2Bg.Visible = false
                         d.Bar2Fill.Visible = false
                         d.Bar2Text.Visible = false
+                        d.Bar3Bg.Visible = false
+                        d.Bar3Fill.Visible = false
+                        d.Bar3Text.Visible = false
                     end
 
                 else
@@ -878,4 +963,4 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-print("نوح ESP Loaded with Config System.")
+print("Mission Hunter ESP Loaded with Config System and Walkspeed Bar.")
