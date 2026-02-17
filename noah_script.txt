@@ -1,6 +1,6 @@
 -- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Blue Walkspeed Bar
--- NPCs = Custom Green Bar (Toggleable)
+-- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
+-- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
@@ -18,24 +18,60 @@ local Config = {
     ShowBars = true,
     ShowNPCs = true,
     ShowValues = true,
-    ShowWalkspeed = true, -- NEW: Walkspeed bar toggle
+    ShowWalkspeed = true,
+    WalkspeedMultiplier = 1.0, -- Default multiplier
     MaxDistance = 1500,
     TextSize = 14,
     BarWidth = 150,
     BarHeight = 6,
-    YOffset = 60,
-    BaseWalkspeed = 16 -- Default Roblox walkspeed
+    YOffset = 60
 }
 
 -- State
 local ESP_Cache = {}
 local LiveFolder = workspace:FindFirstChild("Live")
-local Configs = {} -- Stores saved configurations
+local Configs = {}
 local CurrentConfig = "Default"
+local OriginalWalkspeed = 16 -- Will be set based on humanoid
 
 -- Config file path
 local ConfigFolder = "MissionHunterESP"
 local ConfigFile = "configs.json"
+
+-- Function to apply walkspeed multiplier to local player
+local function ApplyWalkspeedMultiplier()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            -- Store original walkspeed if not set
+            if OriginalWalkspeed == 16 then
+                OriginalWalkspeed = humanoid.WalkSpeed
+            end
+            -- Apply multiplier
+            humanoid.WalkSpeed = OriginalWalkspeed * Config.WalkspeedMultiplier
+        end
+    end
+end
+
+-- Monitor character changes
+LocalPlayer.CharacterAdded:Connect(function(character)
+    -- Wait for humanoid
+    local humanoid = character:WaitForChild("Humanoid")
+    -- Set original walkspeed
+    OriginalWalkspeed = humanoid.WalkSpeed
+    -- Apply multiplier
+    ApplyWalkspeedMultiplier()
+end)
+
+-- If character already exists
+if LocalPlayer.Character then
+    local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+    if humanoid then
+        OriginalWalkspeed = humanoid.WalkSpeed
+        ApplyWalkspeedMultiplier()
+    end
+end
 
 -- Function to save configs to file
 local function SaveConfigs()
@@ -74,12 +110,12 @@ local function LoadConfigs()
                 ShowNPCs = true,
                 ShowValues = true,
                 ShowWalkspeed = true,
+                WalkspeedMultiplier = 1.0,
                 MaxDistance = 1500,
                 TextSize = 14,
                 BarWidth = 150,
                 BarHeight = 6,
-                YOffset = 60,
-                BaseWalkspeed = 16
+                YOffset = 60
             }
             CurrentConfig = "Default"
             SaveConfigs()
@@ -87,7 +123,6 @@ local function LoadConfigs()
     end)
     if not success then
         warn("Failed to load configs: " .. tostring(err))
-        -- Create default configs if loading fails
         Configs["Default"] = {
             Enabled = true,
             ShowNames = true,
@@ -95,22 +130,23 @@ local function LoadConfigs()
             ShowNPCs = true,
             ShowValues = true,
             ShowWalkspeed = true,
+            WalkspeedMultiplier = 1.0,
             MaxDistance = 1500,
             TextSize = 14,
             BarWidth = 150,
             BarHeight = 6,
-            YOffset = 60,
-            BaseWalkspeed = 16
+            YOffset = 60
         }
         CurrentConfig = "Default"
     end
 end
 
--- Load configs at startup
+-- Load configs at startup and apply multiplier
 LoadConfigs()
+ApplyWalkspeedMultiplier()
 
 --------------------------------------------------------------------------------
--- 1. GUI CONSTRUCTION (Mission Hunter Style)
+-- 1. GUI CONSTRUCTION
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -129,7 +165,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 450) -- Taller for new option
+MainFrame.Size = UDim2.new(0, 400, 0, 450)
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -209,7 +245,7 @@ ConfigTabBtn.Position = UDim2.new(0, 100, 0, 0)
 ConfigTabBtn.Size = UDim2.new(0, 100, 1, 0)
 ConfigTabBtn.Parent = TabButtons
 
--- Content Area (changes based on tab)
+-- Content Area
 local ContentArea = Instance.new("ScrollingFrame")
 ContentArea.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 ContentArea.BorderSizePixel = 0
@@ -226,7 +262,7 @@ UIListLayout.Parent = ContentArea
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 8)
 
--- Helper function to clear content area
+-- Helper functions
 local function ClearContent()
     for _, child in pairs(ContentArea:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextLabel") then
@@ -235,7 +271,6 @@ local function ClearContent()
     end
 end
 
--- Helper function to create toggles
 local function CreateToggle(text, configKey, container)
     local container = container or ContentArea
     
@@ -267,12 +302,11 @@ local function CreateToggle(text, configKey, container)
     btn.MouseButton1Click:Connect(function()
         Config[configKey] = not Config[configKey]
         btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
-        SaveConfigs() -- Auto-save when toggling
+        SaveConfigs()
     end)
 end
 
--- Helper function to create sliders
-local function CreateSlider(text, configKey, min, max, container, isFloat)
+local function CreateSlider(text, configKey, min, max, container, isFloat, callback)
     local container = container or ContentArea
     
     local sliderFrame = Instance.new("Frame")
@@ -331,7 +365,13 @@ local function CreateSlider(text, configKey, min, max, container, isFloat)
         Config[configKey] = newVal
         sliderFill.Size = UDim2.new(relative, 0, 1, 0)
         valueLbl.Text = isFloat and string.format("%.1f", newVal) or tostring(math.floor(newVal))
-        SaveConfigs() -- Auto-save when slider changes
+        
+        -- Call callback if provided (for walkspeed multiplier)
+        if callback then
+            callback(newVal)
+        end
+        
+        SaveConfigs()
     end
     
     sliderBg.InputBegan:Connect(function(input) 
@@ -358,7 +398,6 @@ end
 local function BuildMainTab()
     ClearContent()
     
-    -- Padding at top
     local pad = Instance.new("Frame")
     pad.Size = UDim2.new(1,0,0,5)
     pad.BackgroundTransparency = 1
@@ -366,19 +405,23 @@ local function BuildMainTab()
     pad.Parent = ContentArea
     
     CreateToggle("Master Enabled", "Enabled")
-    CreateToggle("Show Names", "ShowNames")
-    CreateToggle("Show NPCs", "ShowNPCs")
+    CreateToggle("Show Player Names", "ShowNames")
+    CreateToggle("Show NPCs (No Names)", "ShowNPCs")
     CreateToggle("Show Bars", "ShowBars")
     CreateToggle("Show Values", "ShowValues")
-    CreateToggle("Show Walkspeed Bar", "ShowWalkspeed") -- NEW toggle
-    CreateSlider("Max Distance", "MaxDistance", 100, 5000)
-    CreateSlider("Base Walkspeed", "BaseWalkspeed", 1, 100, nil, true) -- Float slider
+    CreateToggle("Enable Walkspeed Multiplier", "ShowWalkspeed")
     
-    -- Update UIListLayout for proper spacing
+    -- Walkspeed multiplier slider with callback
+    CreateSlider("Walkspeed Multiplier", "WalkspeedMultiplier", 0.5, 5, nil, true, function(newVal)
+        ApplyWalkspeedMultiplier()
+    end)
+    
+    CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+    
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
 
--- Build Config Tab
+-- Build Config Tab (unchanged from before)
 local function BuildConfigTab()
     ClearContent()
     
@@ -453,6 +496,8 @@ local function BuildConfigTab()
                     end
                 end
                 
+                -- Apply walkspeed multiplier when loading config
+                ApplyWalkspeedMultiplier()
                 SaveConfigs()
             end)
         end
@@ -550,7 +595,6 @@ local function BuildConfigTab()
     
     -- Button functionality
     saveBtn.MouseButton1Click:Connect(function()
-        -- Save current settings to the current config
         local configCopy = {}
         for k, v in pairs(Config) do
             configCopy[k] = v
@@ -558,7 +602,6 @@ local function BuildConfigTab()
         Configs[CurrentConfig] = configCopy
         SaveConfigs()
         
-        -- Visual feedback
         saveBtn.Text = "Saved!"
         saveBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
         task.wait(1)
@@ -567,19 +610,17 @@ local function BuildConfigTab()
     end)
     
     loadBtn.MouseButton1Click:Connect(function()
-        -- Reload current config
         if Configs[CurrentConfig] then
             for k, v in pairs(Configs[CurrentConfig]) do
                 Config[k] = v
             end
+            ApplyWalkspeedMultiplier()
             SaveConfigs()
             
-            -- Refresh main tab colors if needed
             if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildMainTab() -- Rebuild main tab to update toggle colors
+                BuildMainTab()
             end
             
-            -- Visual feedback
             loadBtn.Text = "Loaded!"
             loadBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
             task.wait(1)
@@ -589,10 +630,9 @@ local function BuildConfigTab()
     end)
     
     createBtn.MouseButton1Click:Connect(function()
-        local newName = nameBox.Text:gsub("%s+", "") -- Remove spaces
+        local newName = nameBox.Text:gsub("%s+", "")
         if newName and newName ~= "" then
             if not Configs[newName] then
-                -- Create new config with current settings
                 local configCopy = {}
                 for k, v in pairs(Config) do
                     configCopy[k] = v
@@ -603,14 +643,12 @@ local function BuildConfigTab()
                 nameBox.Text = ""
                 SaveConfigs()
                 
-                -- Visual feedback
                 createBtn.Text = "Created!"
                 createBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
                 task.wait(1)
                 createBtn.Text = "Create New Config"
                 createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
             else
-                -- Config already exists
                 createBtn.Text = "Name exists!"
                 createBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
                 task.wait(1)
@@ -625,22 +663,20 @@ local function BuildConfigTab()
             Configs[CurrentConfig] = nil
             CurrentConfig = "Default"
             
-            -- Load default config
             if Configs["Default"] then
                 for k, v in pairs(Configs["Default"]) do
                     Config[k] = v
                 end
             end
             
+            ApplyWalkspeedMultiplier()
             configDropdown.Text = CurrentConfig .. " ▼"
             SaveConfigs()
             
-            -- Refresh main tab if needed
             if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
                 BuildMainTab()
             end
             
-            -- Visual feedback
             deleteBtn.Text = "Deleted!"
             deleteBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
             task.wait(1)
@@ -675,11 +711,10 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
     BuildConfigTab()
 end)
 
--- Build initial tab
 BuildMainTab()
 
 --------------------------------------------------------------------------------
--- 2. ESP SYSTEM (Enhanced with Walkspeed Bar)
+-- 2. ESP SYSTEM (NPC Names Hidden)
 --------------------------------------------------------------------------------
 
 local function CreateDrawing(type, props)
@@ -695,16 +730,6 @@ local function RemoveESP(model)
         end
         ESP_Cache[model] = nil
     end
-end
-
--- Function to get walkspeed multiplier
-local function GetWalkspeedMultiplier(character)
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid then
-        local walkspeed = humanoid.WalkSpeed
-        return walkspeed / Config.BaseWalkspeed
-    end
-    return 1
 end
 
 RunService.RenderStepped:Connect(function()
@@ -737,7 +762,6 @@ RunService.RenderStepped:Connect(function()
 
             -- Check if we should skip due to settings
             if isNPC and not Config.ShowNPCs then
-                -- Skip this loop iteration if NPC and NPCs disabled
                 if ESP_Cache[model] then RemoveESP(model) end
                 continue
             end
@@ -749,20 +773,20 @@ RunService.RenderStepped:Connect(function()
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
                             
-                            -- Health Bar (Bar1)
+                            -- Health Bar
                             Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
-                            Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
+                            Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
                             
-                            -- Posture Bar (Bar2)
+                            -- Posture Bar
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
-                            Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
+                            Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
                             
-                            -- Walkspeed Bar (Bar3)
+                            -- Walkspeed Bar (only for players)
                             Bar3Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar3Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
-                            Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}), -- Value Text
+                            Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
                         }
                     }
                 end
@@ -776,30 +800,28 @@ RunService.RenderStepped:Connect(function()
 
                 if onScreen and distance <= Config.MaxDistance then
                     
-                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0) -- Red
-                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0) -- Yellow
+                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0)
+                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0)
                     local showBar2 = false
                     local showBar3 = false
-                    local val3, min3, max3, color3 = 1, 0, 3, Color3.new(0.2, 0.6, 1) -- Blue for walkspeed
                     local cleanName = ""
 
                     if isNPC then
-                        -- NPC LOGIC: Green Bar only
+                        -- NPC LOGIC: Green Bar only, NO NAME
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
                         min1 = 0
                         color1 = Color3.new(0.2, 0.9, 0.2) -- Green
                         showBar2 = false
-                        showBar3 = false -- No walkspeed for NPCs
-                        cleanName = model.Name
+                        showBar3 = false
+                        cleanName = "" -- NO NAME FOR NPCs
                     else
-                        -- PLAYER LOGIC: Red Bar + Yellow Posture + Blue Walkspeed
+                        -- PLAYER LOGIC: Show name + all bars
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
                         if lf then 
                             val1 = lf.Value 
-                            -- Fetch Attributes or Properties for dynamic range
                             max1 = lf:GetAttribute("MaxValue") or lf.MaxValue or 100
                             min1 = lf:GetAttribute("MinValue") or lf.MinValue or 0
                         end
@@ -810,55 +832,51 @@ RunService.RenderStepped:Connect(function()
                             showBar2 = true
                         end
                         
-                        -- Walkspeed multiplier
+                        -- Walkspeed bar for players only (if enabled)
                         if Config.ShowWalkspeed then
-                            val3 = GetWalkspeedMultiplier(model)
-                            min3 = 0.5 -- Minimum possible multiplier
-                            max3 = 3 -- Maximum possible multiplier
                             showBar3 = true
                         end
                         
                         color1 = Color3.new(0.9, 0.2, 0.2) -- Red
-                        cleanName = player and player.Name or model.Name
+                        cleanName = player and player.Name or ""
                     end
 
-                    -- Calculate Percentages (Respecting Min/Max)
+                    -- Calculate Percentages
                     local range1 = max1 - min1
                     local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
                     local range2 = max2 - min2
                     local pct2 = range2 > 0 and math.clamp((val2 - min2) / range2, 0, 1) or 0
-                    
-                    local range3 = max3 - min3
-                    local pct3 = range3 > 0 and math.clamp((val3 - min3) / range3, 0, 1) or 0.5
 
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
-                    -- 1. NAME
-                    if Config.ShowNames then
+                    -- 1. NAME (Players only)
+                    if Config.ShowNames and not isNPC and cleanName ~= "" then
                         d.Name.Visible = true
                         d.Name.Text = cleanName
-                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15 + (showBar3 and 20 or 0)) -- Adjust for extra bar
+                        d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15 + (showBar3 and 20 or 0))
                         d.Name.Size = Config.TextSize
                     else
                         d.Name.Visible = false
                     end
 
-                    -- 2. BARS & VALUES
+                    -- 2. BARS
                     if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
                         
-                        -- Determine how many bars to show and stack them
+                        -- Determine how many bars to show
                         local barCount = 1 -- Health always shows
                         if showBar2 then barCount = barCount + 1 end
                         if showBar3 then barCount = barCount + 1 end
                         
-                        local totalBarHeight = (Config.BarHeight * barCount) + (2 * (barCount - 1))
                         local currentY = startY
                         
-                        -- Bar 3 (Walkspeed) - Top bar (Blue)
-                        if showBar3 then
+                        -- Walkspeed Bar (Top) - Players only
+                        if showBar3 and not isNPC then
+                            local walkspeed = humanoid.WalkSpeed
+                            local pct3 = math.clamp(walkspeed / (OriginalWalkspeed * 3), 0, 1) -- Cap at 3x
+                            
                             local bar3Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
                             d.Bar3Bg.Visible = true
@@ -867,11 +885,11 @@ RunService.RenderStepped:Connect(function()
                             d.Bar3Fill.Visible = true
                             d.Bar3Fill.Size = Vector2.new(Config.BarWidth * pct3, Config.BarHeight)
                             d.Bar3Fill.Position = bar3Pos
-                            d.Bar3Fill.Color = color3
+                            d.Bar3Fill.Color = Color3.new(0.2, 0.6, 1) -- Blue
 
                             if Config.ShowValues then
                                 d.Bar3Text.Visible = true
-                                d.Bar3Text.Text = string.format("Spd: %.1fx", val3)
+                                d.Bar3Text.Text = string.format("Spd: %.1f", walkspeed)
                                 d.Bar3Text.Position = bar3Pos + Vector2.new(Config.BarWidth + 5, -3)
                             else
                                 d.Bar3Text.Visible = false
@@ -884,7 +902,7 @@ RunService.RenderStepped:Connect(function()
                             d.Bar3Text.Visible = false
                         end
                         
-                        -- Bar 2 (Posture) - Middle bar (Yellow)
+                        -- Posture Bar (Middle)
                         if showBar2 then
                             local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
@@ -911,7 +929,7 @@ RunService.RenderStepped:Connect(function()
                             d.Bar2Text.Visible = false
                         end
                         
-                        -- Bar 1 (Health) - Bottom bar (Red/Green)
+                        -- Health Bar (Bottom)
                         local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                         
                         d.Bar1Bg.Visible = true
@@ -963,4 +981,4 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-print("Mission Hunter ESP Loaded with Config System and Walkspeed Bar.")
+print("Mission Hunter ESP Loaded with Walkspeed Multiplier (NPC Names Hidden)")
