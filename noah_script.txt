@@ -1,4 +1,4 @@
--- Universal ESP with Mission Hunter GUI
+-- Universal ESP with Mission Hunter GUI + AutoParry
 -- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Keybind: F4 to Toggle Menu
@@ -10,6 +10,9 @@ local CoreGui = game:GetService("CoreGui")
 local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
 
 -- Configuration (Default Settings)
 local Config = {
@@ -24,7 +27,13 @@ local Config = {
     TextSize = 14,
     BarWidth = 150,
     BarHeight = 6,
-    YOffset = 60
+    YOffset = 60,
+    
+    -- AutoParry Settings
+    AutoParryEnabled = false,
+    ParryAnimationId = "",
+    ParryDelay = 0.1,
+    ParryKey = "F"
 }
 
 -- State
@@ -32,8 +41,12 @@ local ESP_Cache = {}
 local LiveFolder = workspace:FindFirstChild("Live")
 local Configs = {}
 local CurrentConfig = "Default"
-local BaseWalkspeed = 16 -- This will be the attribute value
+local BaseWalkspeed = 16
 local WalkspeedUpdateConnection = nil
+
+-- AutoParry State
+local ParryConnection = nil
+local CurrentAnimation = nil
 
 -- Config file path
 local ConfigFolder = "MissionHunterESP"
@@ -41,12 +54,10 @@ local ConfigFile = "configs.json"
 
 -- Function to get the WalkSpeed attribute from humanoid
 local function GetBaseWalkspeedFromAttribute(humanoid)
-    -- Try to get WalkSpeed attribute
     local attrSpeed = humanoid:GetAttribute("WalkSpeed")
     if attrSpeed then
         return attrSpeed
     end
-    -- Fallback to humanoid.WalkSpeed
     return humanoid.WalkSpeed
 end
 
@@ -58,15 +69,10 @@ local function ApplyWalkspeedMultiplier()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Only apply if enabled
     if Config.ShowWalkspeed then
-        -- Get the base speed from attribute (or current if no attribute)
         local baseSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-        
-        -- Calculate target speed
         local targetSpeed = baseSpeed * Config.WalkspeedMultiplier
         
-        -- Apply if different
         if math.abs(humanoid.WalkSpeed - targetSpeed) > 0.1 then
             humanoid.WalkSpeed = targetSpeed
         end
@@ -81,13 +87,11 @@ local function UpdateBaseWalkspeed()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Get current base from attribute
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
 end
 
 -- Start monitoring walkspeed changes
 local function StartWalkspeedMonitoring()
-    -- Stop any existing connection
     if WalkspeedUpdateConnection then
         WalkspeedUpdateConnection:Disconnect()
         WalkspeedUpdateConnection = nil
@@ -99,20 +103,16 @@ local function StartWalkspeedMonitoring()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Get initial base speed
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
     
-    -- Monitor for attribute changes
     local attributeConnection = humanoid:GetAttributeChangedSignal("WalkSpeed"):Connect(function()
-        -- Attribute changed, update base speed and reapply multiplier
-        task.wait(0.1) -- Small delay to ensure attribute is fully updated
+        task.wait(0.1)
         BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
         if Config.ShowWalkspeed then
             ApplyWalkspeedMultiplier()
         end
     end)
     
-    -- Monitor for walkspeed changes every frame
     WalkspeedUpdateConnection = RunService.RenderStepped:Connect(function()
         if not Config.Enabled or not Config.ShowWalkspeed then return end
         
@@ -122,10 +122,8 @@ local function StartWalkspeedMonitoring()
         local currentHumanoid = currentChar:FindFirstChild("Humanoid")
         if not currentHumanoid then return end
         
-        -- Get current base (might have changed via attribute)
         local currentBase = GetBaseWalkspeedFromAttribute(currentHumanoid)
         
-        -- If base changed, update our stored value
         if math.abs(currentBase - BaseWalkspeed) > 0.1 then
             BaseWalkspeed = currentBase
         end
@@ -133,14 +131,11 @@ local function StartWalkspeedMonitoring()
         local currentSpeed = currentHumanoid.WalkSpeed
         local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
         
-        -- If speed changed and it's not our target, something else modified it
         if math.abs(currentSpeed - targetSpeed) > 0.1 then
-            -- Something changed the walkspeed, reapply our multiplier
             currentHumanoid.WalkSpeed = targetSpeed
         end
     end)
     
-    -- Clean up attribute connection when done
     character.AncestryChanged:Connect(function()
         if not character.Parent then
             if attributeConnection then
@@ -152,28 +147,21 @@ end
 
 -- Handle character respawns
 local function OnCharacterAdded(character)
-    -- Wait for humanoid
     local humanoid = character:WaitForChild("Humanoid")
     
-    -- Give it a moment to initialize
     task.wait(0.1)
     
-    -- Get base speed from attribute
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
     
-    -- Apply multiplier if enabled
     if Config.ShowWalkspeed then
         humanoid.WalkSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
     end
     
-    -- Start monitoring
     StartWalkspeedMonitoring()
     
-    -- Also monitor for humanoid changes
     humanoid.AncestryChanged:Connect(function()
         task.wait(0.1)
         if not humanoid.Parent then
-            -- Humanoid was removed, restart monitoring when new one appears
             task.wait(0.5)
             OnCharacterAdded(character)
         end
@@ -183,7 +171,6 @@ end
 -- Connect character events
 LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
--- If character already exists
 if LocalPlayer.Character then
     OnCharacterAdded(LocalPlayer.Character)
 end
@@ -210,14 +197,12 @@ local function LoadConfigs()
             CurrentConfig = data.CurrentConfig or "Default"
             Configs = data.Configs or {}
             
-            -- Load the current config if it exists
             if Configs[CurrentConfig] then
                 for k, v in pairs(Configs[CurrentConfig]) do
                     Config[k] = v
                 end
             end
         else
-            -- Create default config
             Configs["Default"] = {
                 Enabled = true,
                 ShowNames = true,
@@ -230,7 +215,11 @@ local function LoadConfigs()
                 TextSize = 14,
                 BarWidth = 150,
                 BarHeight = 6,
-                YOffset = 60
+                YOffset = 60,
+                AutoParryEnabled = false,
+                ParryAnimationId = "",
+                ParryDelay = 0.1,
+                ParryKey = "F"
             }
             CurrentConfig = "Default"
             SaveConfigs()
@@ -238,21 +227,6 @@ local function LoadConfigs()
     end)
     if not success then
         warn("Failed to load configs: " .. tostring(err))
-        Configs["Default"] = {
-            Enabled = true,
-            ShowNames = true,
-            ShowBars = true,
-            ShowNPCs = true,
-            ShowValues = true,
-            ShowWalkspeed = true,
-            WalkspeedMultiplier = 1.0,
-            MaxDistance = 1500,
-            TextSize = 14,
-            BarWidth = 150,
-            BarHeight = 6,
-            YOffset = 60
-        }
-        CurrentConfig = "Default"
     end
 end
 
@@ -280,7 +254,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 450)
+MainFrame.Size = UDim2.new(0, 400, 0, 500) -- Made taller for AutoParry
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -297,7 +271,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP"
+TitleLabel.Text = "Mission Hunter ESP + AutoParry"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -349,6 +323,17 @@ MainTabBtn.Position = UDim2.new(0, 0, 0, 0)
 MainTabBtn.Size = UDim2.new(0, 100, 1, 0)
 MainTabBtn.Parent = TabButtons
 
+local AutoParryTabBtn = Instance.new("TextButton")
+AutoParryTabBtn.Text = "AutoParry"
+AutoParryTabBtn.Font = Enum.Font.SourceSans
+AutoParryTabBtn.TextSize = 16
+AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+AutoParryTabBtn.BorderSizePixel = 0
+AutoParryTabBtn.Position = UDim2.new(0, 100, 0, 0)
+AutoParryTabBtn.Size = UDim2.new(0, 100, 1, 0)
+AutoParryTabBtn.Parent = TabButtons
+
 local ConfigTabBtn = Instance.new("TextButton")
 ConfigTabBtn.Text = "Config"
 ConfigTabBtn.Font = Enum.Font.SourceSans
@@ -356,7 +341,7 @@ ConfigTabBtn.TextSize = 16
 ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 ConfigTabBtn.BorderSizePixel = 0
-ConfigTabBtn.Position = UDim2.new(0, 100, 0, 0)
+ConfigTabBtn.Position = UDim2.new(0, 200, 0, 0)
 ConfigTabBtn.Size = UDim2.new(0, 100, 1, 0)
 ConfigTabBtn.Parent = TabButtons
 
@@ -380,7 +365,7 @@ UIListLayout.Padding = UDim.new(0, 8)
 -- Helper functions
 local function ClearContent()
     for _, child in pairs(ContentArea:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextLabel") then
+        if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
             child:Destroy()
         end
     end
@@ -418,13 +403,21 @@ local function CreateToggle(text, configKey, container)
         Config[configKey] = not Config[configKey]
         btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
         
+        -- Special handling for AutoParry toggle
+        if configKey == "AutoParryEnabled" then
+            if Config.AutoParryEnabled then
+                StartAutoParry()
+            else
+                StopAutoParry()
+            end
+        end
+        
         -- Special handling for walkspeed toggle
         if configKey == "ShowWalkspeed" then
             if Config.ShowWalkspeed then
                 ApplyWalkspeedMultiplier()
                 StartWalkspeedMonitoring()
             else
-                -- Reset to base speed when disabled
                 local character = LocalPlayer.Character
                 if character then
                     local humanoid = character:FindFirstChild("Humanoid")
@@ -432,7 +425,6 @@ local function CreateToggle(text, configKey, container)
                         humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
                     end
                 end
-                -- Stop monitoring
                 if WalkspeedUpdateConnection then
                     WalkspeedUpdateConnection:Disconnect()
                     WalkspeedUpdateConnection = nil
@@ -479,7 +471,7 @@ local function CreateSlider(text, configKey, min, max, container, isFloat, callb
     sliderFill.Parent = sliderBg
     
     local valueLbl = Instance.new("TextLabel")
-    valueLbl.Text = isFloat and string.format("%.1f", Config[configKey]) or tostring(Config[configKey])
+    valueLbl.Text = isFloat and string.format("%.2f", Config[configKey]) or tostring(Config[configKey])
     valueLbl.Font = Enum.Font.Code
     valueLbl.TextSize = 14
     valueLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -502,9 +494,8 @@ local function CreateSlider(text, configKey, min, max, container, isFloat, callb
         
         Config[configKey] = newVal
         sliderFill.Size = UDim2.new(relative, 0, 1, 0)
-        valueLbl.Text = isFloat and string.format("%.1f", newVal) or tostring(math.floor(newVal))
+        valueLbl.Text = isFloat and string.format("%.2f", newVal) or tostring(math.floor(newVal))
         
-        -- Call callback if provided
         if callback then
             callback(newVal)
         end
@@ -532,6 +523,125 @@ local function CreateSlider(text, configKey, min, max, container, isFloat, callb
     end)
 end
 
+local function CreateTextBox(text, configKey, placeholder, container)
+    local container = container or ContentArea
+    
+    local textFrame = Instance.new("Frame")
+    textFrame.BackgroundTransparency = 1
+    textFrame.Size = UDim2.new(1, 0, 0, 50)
+    textFrame.LayoutOrder = 3
+    textFrame.Parent = container
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Font = Enum.Font.SourceSans
+    lbl.TextSize = 16
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0, 5, 0, 0)
+    lbl.Size = UDim2.new(1, -10, 0, 20)
+    lbl.Parent = textFrame
+    
+    local box = Instance.new("TextBox")
+    box.Text = Config[configKey] or ""
+    box.PlaceholderText = placeholder
+    box.Font = Enum.Font.SourceSans
+    box.TextSize = 16
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    box.BorderSizePixel = 0
+    box.Position = UDim2.new(0, 5, 0, 25)
+    box.Size = UDim2.new(1, -10, 0, 20)
+    box.Parent = textFrame
+    
+    box.FocusLost:Connect(function()
+        Config[configKey] = box.Text
+        SaveConfigs()
+    end)
+end
+
+-- AutoParry Functions
+local function StopAutoParry()
+    if ParryConnection then
+        ParryConnection:Disconnect()
+        ParryConnection = nil
+    end
+    if CurrentAnimation then
+        CurrentAnimation:Stop()
+        CurrentAnimation = nil
+    end
+    print("🛑 AutoParry Stopped")
+end
+
+local function StartAutoParry()
+    StopAutoParry() -- Stop any existing connection
+    
+    if not Config.AutoParryEnabled then return end
+    if Config.ParryAnimationId == "" then
+        warn("⚠️ No Animation ID set for AutoParry")
+        return
+    end
+    
+    print("🔄 AutoParry Started - Animation ID: " .. Config.ParryAnimationId .. ", Delay: " .. Config.ParryDelay .. "s")
+    
+    -- Convert key string to KeyCode
+    local keyCode = Enum.KeyCode[Config.ParryKey:upper()]
+    if not keyCode then
+        keyCode = Enum.KeyCode.F -- Default to F
+    end
+    
+    -- Monitor for when to parry (you'll need to define the logic here)
+    -- This is where you'd detect when to trigger the parry
+    ParryConnection = RunService.Heartbeat:Connect(function()
+        -- Your parry detection logic here
+        -- For now, this is a placeholder - you need to define when to parry
+        -- Example: Check if an attack is coming, check ball direction, etc.
+    end)
+    
+    -- For demonstration, let's add a test with F key (you can remove this)
+    ParryConnection = UserInputService.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.F and Config.AutoParryEnabled then
+            ExecuteParry()
+        end
+    end)
+end
+
+local function ExecuteParry()
+    if not Config.AutoParryEnabled then return end
+    if Config.ParryAnimationId == "" then return end
+    
+    -- Play the parry animation
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            -- Load and play animation
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if not animator then
+                animator = Instance.new("Animator")
+                animator.Parent = humanoid
+            end
+            
+            local animation = Instance.new("Animation")
+            animation.AnimationId = Config.ParryAnimationId
+            
+            CurrentAnimation = animator:LoadAnimation(animation)
+            CurrentAnimation:Play()
+            
+            -- Press F key after delay
+            task.wait(Config.ParryDelay)
+            
+            -- Simulate F key press
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+            
+            print("⚔️ Parry Executed with delay: " .. Config.ParryDelay .. "s")
+        end
+    end
+end
+
 -- Build Main Tab
 local function BuildMainTab()
     ClearContent()
@@ -549,7 +659,6 @@ local function BuildMainTab()
     CreateToggle("Show Values", "ShowValues")
     CreateToggle("Enable Walkspeed Multiplier", "ShowWalkspeed")
     
-    -- Walkspeed multiplier slider with callback
     CreateSlider("Walkspeed Multiplier", "WalkspeedMultiplier", 0.5, 5, nil, true, function(newVal)
         if Config.ShowWalkspeed then
             ApplyWalkspeedMultiplier()
@@ -557,6 +666,93 @@ local function BuildMainTab()
     end)
     
     CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+    
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end
+
+-- Build AutoParry Tab
+local function BuildAutoParryTab()
+    ClearContent()
+    
+    local pad = Instance.new("Frame")
+    pad.Size = UDim2.new(1,0,0,5)
+    pad.BackgroundTransparency = 1
+    pad.LayoutOrder = 0
+    pad.Parent = ContentArea
+    
+    CreateToggle("Enable AutoParry", "AutoParryEnabled")
+    
+    CreateTextBox("Animation ID", "ParryAnimationId", "rbxassetid://123456789")
+    
+    CreateSlider("Parry Delay (seconds)", "ParryDelay", 0, 1, nil, true)
+    
+    -- Key Selection
+    local keyFrame = Instance.new("Frame")
+    keyFrame.BackgroundTransparency = 1
+    keyFrame.Size = UDim2.new(1, 0, 0, 50)
+    keyFrame.LayoutOrder = 3
+    keyFrame.Parent = ContentArea
+    
+    local keyLbl = Instance.new("TextLabel")
+    keyLbl.Text = "Parry Key"
+    keyLbl.Font = Enum.Font.SourceSans
+    keyLbl.TextSize = 16
+    keyLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    keyLbl.TextXAlignment = Enum.TextXAlignment.Left
+    keyLbl.BackgroundTransparency = 1
+    keyLbl.Position = UDim2.new(0, 5, 0, 0)
+    keyLbl.Size = UDim2.new(1, -10, 0, 20)
+    keyLbl.Parent = keyFrame
+    
+    local keyBox = Instance.new("TextBox")
+    keyBox.Text = Config.ParryKey
+    keyBox.PlaceholderText = "F"
+    keyBox.Font = Enum.Font.SourceSans
+    keyBox.TextSize = 16
+    keyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    keyBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    keyBox.BorderSizePixel = 0
+    keyBox.Position = UDim2.new(0, 5, 0, 25)
+    keyBox.Size = UDim2.new(1, -10, 0, 20)
+    keyBox.Parent = keyFrame
+    
+    keyBox.FocusLost:Connect(function()
+        Config.ParryKey = keyBox.Text:upper()
+        SaveConfigs()
+    end)
+    
+    -- Test Button
+    local testBtn = Instance.new("TextButton")
+    testBtn.Text = "Test Parry"
+    testBtn.Font = Enum.Font.SourceSans
+    testBtn.TextSize = 18
+    testBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    testBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    testBtn.BorderSizePixel = 0
+    testBtn.Size = UDim2.new(1, -10, 0, 40)
+    testBtn.Position = UDim2.new(0, 5, 0, 0)
+    testBtn.LayoutOrder = 4
+    testBtn.Parent = ContentArea
+    
+    testBtn.MouseButton1Click:Connect(function()
+        if Config.ParryAnimationId == "" then
+            SendNotification("Error", "Please enter an Animation ID first", 3)
+            return
+        end
+        ExecuteParry()
+    end)
+    
+    -- Info text
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.Text = "⚔️ AutoParry will play the animation, wait the delay, then press F"
+    infoLbl.Font = Enum.Font.SourceSans
+    infoLbl.TextSize = 14
+    infoLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.Size = UDim2.new(1, -10, 0, 40)
+    infoLbl.Position = UDim2.new(0, 5, 0, 0)
+    infoLbl.LayoutOrder = 5
+    infoLbl.Parent = ContentArea
     
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
@@ -605,7 +801,6 @@ local function BuildConfigTab()
     local dropdownLayout = Instance.new("UIListLayout")
     dropdownLayout.Parent = dropdownList
     
-    -- Update dropdown with configs
     local function UpdateDropdown()
         for _, child in pairs(dropdownList:GetChildren()) do
             if child:IsA("TextButton") then
@@ -629,24 +824,30 @@ local function BuildConfigTab()
                 configDropdown.Text = name .. " ▼"
                 dropdownList.Visible = false
                 
-                -- Load the selected config
                 if Configs[name] then
                     for k, v in pairs(Configs[name]) do
                         Config[k] = v
                     end
                 end
                 
-                -- Apply walkspeed multiplier when loading config
                 if Config.ShowWalkspeed then
                     ApplyWalkspeedMultiplier()
                     StartWalkspeedMonitoring()
                 end
                 
+                if Config.AutoParryEnabled then
+                    StartAutoParry()
+                else
+                    StopAutoParry()
+                end
+                
                 SaveConfigs()
                 
-                -- Refresh main tab if visible
+                -- Refresh current tab
                 if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
                     BuildMainTab()
+                elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                    BuildAutoParryTab()
                 end
             end)
         end
@@ -769,10 +970,19 @@ local function BuildConfigTab()
                 StartWalkspeedMonitoring()
             end
             
+            if Config.AutoParryEnabled then
+                StartAutoParry()
+            else
+                StopAutoParry()
+            end
+            
             SaveConfigs()
             
+            -- Refresh current tab
             if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
                 BuildMainTab()
+            elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                BuildAutoParryTab()
             end
             
             loadBtn.Text = "Loaded!"
@@ -828,11 +1038,20 @@ local function BuildConfigTab()
                 StartWalkspeedMonitoring()
             end
             
+            if Config.AutoParryEnabled then
+                StartAutoParry()
+            else
+                StopAutoParry()
+            end
+            
             configDropdown.Text = CurrentConfig .. " ▼"
             SaveConfigs()
             
+            -- Refresh current tab
             if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
                 BuildMainTab()
+            elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                BuildAutoParryTab()
             end
             
             deleteBtn.Text = "Deleted!"
@@ -856,9 +1075,21 @@ end
 MainTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildMainTab()
+end)
+
+AutoParryTabBtn.MouseButton1Click:Connect(function()
+    AutoParryTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    BuildAutoParryTab()
 end)
 
 ConfigTabBtn.MouseButton1Click:Connect(function()
@@ -866,6 +1097,8 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildConfigTab()
 end)
 
@@ -909,7 +1142,6 @@ RunService.RenderStepped:Connect(function()
             local humanoid = model:FindFirstChild("Humanoid")
             local player = Players:GetPlayerFromCharacter(model)
 
-            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
             if player and humanoid then
                 pcall(function()
                      humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
@@ -918,7 +1150,6 @@ RunService.RenderStepped:Connect(function()
 
             local isNPC = not player
 
-            -- Check if we should skip due to settings
             if isNPC and not Config.ShowNPCs then
                 if ESP_Cache[model] then RemoveESP(model) end
                 continue
@@ -930,18 +1161,12 @@ RunService.RenderStepped:Connect(function()
                         Seen = true,
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
-                            
-                            -- Health Bar
                             Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
-                            
-                            -- Posture Bar
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
-                            
-                            -- Walkspeed Bar (only for players)
                             Bar3Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar3Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
@@ -965,16 +1190,14 @@ RunService.RenderStepped:Connect(function()
                     local cleanName = ""
 
                     if isNPC then
-                        -- NPC LOGIC: Green Bar only, NO NAME
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
                         min1 = 0
-                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
+                        color1 = Color3.new(0.2, 0.9, 0.2)
                         showBar2 = false
                         showBar3 = false
-                        cleanName = "" -- NO NAME FOR NPCs
+                        cleanName = ""
                     else
-                        -- PLAYER LOGIC: Show name + all bars
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
@@ -990,16 +1213,14 @@ RunService.RenderStepped:Connect(function()
                             showBar2 = true
                         end
                         
-                        -- Walkspeed bar for players only (if enabled)
                         if Config.ShowWalkspeed then
                             showBar3 = true
                         end
                         
-                        color1 = Color3.new(0.9, 0.2, 0.2) -- Red
+                        color1 = Color3.new(0.9, 0.2, 0.2)
                         cleanName = player and player.Name or ""
                     end
 
-                    -- Calculate Percentages
                     local range1 = max1 - min1
                     local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
@@ -1009,7 +1230,6 @@ RunService.RenderStepped:Connect(function()
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
-                    -- 1. NAME (Players only)
                     if Config.ShowNames and not isNPC and cleanName ~= "" then
                         d.Name.Visible = true
                         d.Name.Text = cleanName
@@ -1019,17 +1239,13 @@ RunService.RenderStepped:Connect(function()
                         d.Name.Visible = false
                     end
 
-                    -- 2. BARS
                     if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
-                        
-                        -- Determine how many bars to show
                         local currentY = startY
                         
-                        -- Walkspeed Bar (Top) - Players only
                         if showBar3 and not isNPC then
                             local baseSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                            local pct3 = math.clamp(humanoid.WalkSpeed / (baseSpeed * 3), 0, 1) -- Cap at 3x
+                            local pct3 = math.clamp(humanoid.WalkSpeed / (baseSpeed * 3), 0, 1)
                             
                             local bar3Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
@@ -1039,7 +1255,7 @@ RunService.RenderStepped:Connect(function()
                             d.Bar3Fill.Visible = true
                             d.Bar3Fill.Size = Vector2.new(Config.BarWidth * pct3, Config.BarHeight)
                             d.Bar3Fill.Position = bar3Pos
-                            d.Bar3Fill.Color = Color3.new(0.2, 0.6, 1) -- Blue
+                            d.Bar3Fill.Color = Color3.new(0.2, 0.6, 1)
 
                             if Config.ShowValues then
                                 d.Bar3Text.Visible = true
@@ -1056,7 +1272,6 @@ RunService.RenderStepped:Connect(function()
                             d.Bar3Text.Visible = false
                         end
                         
-                        -- Posture Bar (Middle)
                         if showBar2 then
                             local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
@@ -1083,7 +1298,6 @@ RunService.RenderStepped:Connect(function()
                             d.Bar2Text.Visible = false
                         end
                         
-                        -- Health Bar (Bottom)
                         local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                         
                         d.Bar1Bg.Visible = true
@@ -1103,7 +1317,6 @@ RunService.RenderStepped:Connect(function()
                         end
 
                     else
-                        -- Hide all bars
                         d.Bar1Bg.Visible = false
                         d.Bar1Fill.Visible = false
                         d.Bar1Text.Visible = false
@@ -1133,12 +1346,6 @@ end)
 -- Detects players with specific roles in Demon Corps North Branch (Group ID: 16346602)
 -- Plays Patrick WeeWoo sound when a moderator joins
 
--- Use existing Players service (don't redeclare)
-local StarterGui = game:GetService("StarterGui")
-local SoundService = game:GetService("SoundService")
-
--- CONFIGURATION
-local GROUP_ID = 16346602  -- Demon Corps North Branch Group ID
 local MODERATOR_ROLES = {
     ["tes"] = true,
     ["admin"] = true,
@@ -1152,7 +1359,7 @@ local OnlineModerators = {}
 -- Function to check if a player is a moderator
 local function IsModerator(player)
     local success, role = pcall(function()
-        return player:GetRoleInGroup(GROUP_ID)
+        return player:GetRoleInGroup(16346602)
     end)
     
     if success and role then
@@ -1161,32 +1368,27 @@ local function IsModerator(player)
     return false, nil
 end
 
--- ✅ FIXED SOUND FUNCTION - This will work
+-- Function to play alert sound
 local function PlayAlertSound()
-    -- Create a sound in a safe location
     local sound = Instance.new("Sound")
     sound.SoundId = ALERT_SOUND_ID
     sound.Volume = 0.8
     sound.PlayOnRemove = false
     
-    -- Parent to the player's character (most reliable)
     local character = LocalPlayer.Character
     if character then
         sound.Parent = character
     else
-        -- Fallback to SoundService
         sound.Parent = SoundService
     end
     
-    -- Play the sound
     sound:Play()
     print("🔊 Playing alert sound: Patrick WeeWoo")
     
-    -- Automatically destroy after playing
     game:GetService("Debris"):AddItem(sound, sound.TimeLength or 5)
 end
 
--- Function to send Roblox-style notification
+-- Function to send notification
 local function SendNotification(title, text, duration, icon)
     StarterGui:SetCore("SendNotification", {
         Title = title,
@@ -1196,7 +1398,7 @@ local function SendNotification(title, text, duration, icon)
     })
 end
 
--- Function to check all players on startup
+-- Function to check existing players
 local function CheckExistingPlayers()
     local mods = {}
     local modCount = 0
@@ -1212,7 +1414,6 @@ local function CheckExistingPlayers()
         end
     end
     
-    -- Notify about existing moderators
     if modCount > 0 then
         local modNames = {}
         for player, role in pairs(mods) do
@@ -1226,16 +1427,14 @@ local function CheckExistingPlayers()
             "rbxasset://textures/ui/GameSettings/GFX/icon_alert.png"
         )
         
-        -- Play sound for existing moderators
         PlayAlertSound()
         
         print("⚠️ " .. modCount .. " moderator(s) online at startup")
     end
 end
 
--- Monitor when players join
+-- Monitor player joins
 Players.PlayerAdded:Connect(function(player)
-    -- Wait a bit for roles to load
     task.wait(2)
     
     if player ~= LocalPlayer then
@@ -1243,10 +1442,8 @@ Players.PlayerAdded:Connect(function(player)
         if isMod then
             OnlineModerators[player] = role
             
-            -- ✅ PLAY SOUND HERE
             PlayAlertSound()
             
-            -- Send notification
             SendNotification(
                 "⚠️ Moderator Joined",
                 player.Name .. " (" .. role .. ") has joined the game!",
@@ -1259,7 +1456,7 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
--- Monitor when players leave
+-- Monitor player leaves
 Players.PlayerRemoving:Connect(function(player)
     if OnlineModerators[player] then
         local role = OnlineModerators[player]
@@ -1276,7 +1473,7 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
--- Periodic check (in case role changes during gameplay)
+-- Periodic check for role changes
 task.spawn(function()
     while task.wait(30) do
         local currentMods = {}
@@ -1290,12 +1487,10 @@ task.spawn(function()
             end
         end
         
-        -- Check for new moderators (role changes)
         for player, role in pairs(currentMods) do
             if not OnlineModerators[player] then
                 OnlineModerators[player] = role
                 
-                -- ✅ PLAY SOUND FOR ROLE CHANGES
                 PlayAlertSound()
                 
                 SendNotification(
@@ -1309,7 +1504,6 @@ task.spawn(function()
             end
         end
         
-        -- Check for moderators who lost role
         for player in pairs(OnlineModerators) do
             if not currentMods[player] then
                 OnlineModerators[player] = nil
@@ -1329,13 +1523,11 @@ end)
 task.wait(3)
 CheckExistingPlayers()
 
-print("✅ Moderator Detector Loaded - Monitoring group " .. GROUP_ID)
-print("🔊 Alert sound: Patrick WeeWoo (ID: 427090811)")
-
 UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.F4 then
         MainFrame.Visible = not MainFrame.Visible
     end
 end)
 
-print("Mission Hunter ESP Loaded with Walkspeed Multiplier (Uses WalkSpeed Attribute)")
+print("✅ Mission Hunter ESP + AutoParry Loaded")
+print("🔊 Moderator Alert Sound: Patrick WeeWoo (ID: 427090811)")
