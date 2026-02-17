@@ -1,10 +1,10 @@
--- Universal ESP with Mission Hunter GUI + AutoParry (Animation Fetch) + No Stun + Anti-Anchor
+-- Universal ESP with Mission Hunter GUI + AutoParry (Animation Fetch) + Anti-Anchor + Custom Keybinds
 -- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
--- No Stun: Prevents walkspeed from dropping below base speed
 -- Animation Fetch: Get animation IDs from nearest target
 -- Anti-Anchor: Prevents being anchored by moves
--- Keybind: F4 to Toggle Menu
+-- Custom Keybinds: Assign keys to toggle any feature
+-- Default Menu Key: F4
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -44,12 +44,22 @@ local Config = {
     FetchedAnimations = {},
     AutoAddFetched = false,
     
-    -- No Stun Settings
-    NoStunEnabled = false,
-    MinWalkspeed = 16,
-    
     -- Anti-Anchor Settings
-    AntiAnchorEnabled = false
+    AntiAnchorEnabled = false,
+    
+    -- Keybind Settings
+    MenuKey = "F4",
+    Keybinds = {
+        Enabled = "F5",
+        ShowNames = "F6",
+        ShowNPCs = "F7",
+        ShowBars = "F8",
+        ShowValues = "F9",
+        ShowWalkspeed = "F10",
+        AutoParryEnabled = "F11",
+        AntiAnchorEnabled = "Insert",
+        FetchAnimationsEnabled = "Delete"
+    }
 }
 
 -- State
@@ -59,8 +69,6 @@ local Configs = {}
 local CurrentConfig = "Default"
 local BaseWalkspeed = 16
 local WalkspeedUpdateConnection = nil
-local NoStunConnection = nil
-local AntiAnchorConnection = nil
 
 -- AutoParry State
 local ParryConnection = nil
@@ -71,6 +79,11 @@ local DetectedAttacks = {}
 local CurrentTarget = nil
 local FetchConnection = nil
 local FetchedAnimationList = {}
+
+-- Keybind State
+local KeybindMode = false
+local AwaitingKeybind = nil
+local AwaitingKeybindLabel = nil
 
 -- Config file path
 local ConfigFolder = "MissionHunterESP"
@@ -146,18 +159,6 @@ local function StartWalkspeedMonitoring()
             local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
             if math.abs(currentHumanoid.WalkSpeed - targetSpeed) > 0.1 then
                 currentHumanoid.WalkSpeed = targetSpeed
-            end
-        end
-        
-        -- Apply No Stun if enabled
-        if Config.NoStunEnabled then
-            local minSpeed = Config.MinWalkspeed
-            if Config.ShowWalkspeed then
-                minSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
-            end
-            
-            if currentHumanoid.WalkSpeed < minSpeed - 0.1 then
-                currentHumanoid.WalkSpeed = minSpeed
             end
         end
         
@@ -381,9 +382,19 @@ local function LoadConfigs()
                 FetchFromTarget = true,
                 FetchedAnimations = {},
                 AutoAddFetched = false,
-                NoStunEnabled = false,
-                MinWalkspeed = 16,
-                AntiAnchorEnabled = false
+                AntiAnchorEnabled = false,
+                MenuKey = "F4",
+                Keybinds = {
+                    Enabled = "F5",
+                    ShowNames = "F6",
+                    ShowNPCs = "F7",
+                    ShowBars = "F8",
+                    ShowValues = "F9",
+                    ShowWalkspeed = "F10",
+                    AutoParryEnabled = "F11",
+                    AntiAnchorEnabled = "Insert",
+                    FetchAnimationsEnabled = "Delete"
+                }
             }
             CurrentConfig = "Default"
             SaveConfigs()
@@ -398,6 +409,87 @@ end
 LoadConfigs()
 ApplyWalkspeedMultiplier()
 StartAnimationFetching()
+
+-- Keybind handling function
+local function HandleKeybind(key)
+    if KeybindMode then
+        -- We're setting a keybind
+        if AwaitingKeybind and AwaitingKeybindLabel then
+            Config.Keybinds[AwaitingKeybind] = key
+            AwaitingKeybindLabel.Text = "Key: " .. key
+            KeybindMode = false
+            AwaitingKeybind = nil
+            AwaitingKeybindLabel = nil
+            SaveConfigs()
+            SendNotification("Keybind Set", AwaitingKeybind .. " bound to " .. key, 2)
+        end
+        return
+    end
+    
+    -- Check menu key
+    if key == Config.MenuKey then
+        MainFrame.Visible = not MainFrame.Visible
+        return
+    end
+    
+    -- Check other keybinds
+    for setting, boundKey in pairs(Config.Keybinds) do
+        if key == boundKey then
+            if Config[setting] ~= nil then
+                Config[setting] = not Config[setting]
+                
+                -- Handle special cases
+                if setting == "AutoParryEnabled" then
+                    if Config.AutoParryEnabled then
+                        StartAutoParry()
+                    else
+                        StopAutoParry()
+                    end
+                elseif setting == "FetchAnimationsEnabled" then
+                    if Config.FetchAnimationsEnabled then
+                        StartAnimationFetching()
+                    else
+                        if FetchConnection then
+                            FetchConnection:Disconnect()
+                            FetchConnection = nil
+                        end
+                    end
+                elseif setting == "ShowWalkspeed" then
+                    if Config.ShowWalkspeed then
+                        ApplyWalkspeedMultiplier()
+                        StartWalkspeedMonitoring()
+                    else
+                        local character = LocalPlayer.Character
+                        if character then
+                            local humanoid = character:FindFirstChild("Humanoid")
+                            if humanoid then
+                                humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
+                            end
+                        end
+                    end
+                end
+                
+                SendNotification("Toggled", setting .. ": " .. tostring(Config[setting]), 1)
+                SaveConfigs()
+                
+                -- Refresh UI if we're on the main tab
+                if MainTabBtn and MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                    BuildMainTab()
+                end
+            end
+            break
+        end
+    end
+end
+
+-- Connect keybind input
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        HandleKeybind(input.KeyCode.Name)
+    end
+end)
 
 --------------------------------------------------------------------------------
 -- 1. GUI CONSTRUCTION
@@ -419,7 +511,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 500, 0, 700) -- Made larger for new features
+MainFrame.Size = UDim2.new(0, 550, 0, 650)
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -436,7 +528,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP + AutoParry + No Stun + Animation Fetch"
+TitleLabel.Text = "Mission Hunter ESP + AutoParry + Anti-Anchor + Keybinds"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -485,7 +577,7 @@ MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
 MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainTabBtn.BorderSizePixel = 0
 MainTabBtn.Position = UDim2.new(0, 0, 0, 0)
-MainTabBtn.Size = UDim2.new(0, 80, 1, 0)
+MainTabBtn.Size = UDim2.new(0, 90, 1, 0)
 MainTabBtn.Parent = TabButtons
 
 local AutoParryTabBtn = Instance.new("TextButton")
@@ -495,8 +587,8 @@ AutoParryTabBtn.TextSize = 16
 AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 AutoParryTabBtn.BorderSizePixel = 0
-AutoParryTabBtn.Position = UDim2.new(0, 80, 0, 0)
-AutoParryTabBtn.Size = UDim2.new(0, 80, 1, 0)
+AutoParryTabBtn.Position = UDim2.new(0, 90, 0, 0)
+AutoParryTabBtn.Size = UDim2.new(0, 90, 1, 0)
 AutoParryTabBtn.Parent = TabButtons
 
 local FetchTabBtn = Instance.new("TextButton")
@@ -506,20 +598,31 @@ FetchTabBtn.TextSize = 16
 FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 FetchTabBtn.BorderSizePixel = 0
-FetchTabBtn.Position = UDim2.new(0, 160, 0, 0)
-FetchTabBtn.Size = UDim2.new(0, 80, 1, 0)
+FetchTabBtn.Position = UDim2.new(0, 180, 0, 0)
+FetchTabBtn.Size = UDim2.new(0, 90, 1, 0)
 FetchTabBtn.Parent = TabButtons
 
-local NoStunTabBtn = Instance.new("TextButton")
-NoStunTabBtn.Text = "No Stun"
-NoStunTabBtn.Font = Enum.Font.SourceSans
-NoStunTabBtn.TextSize = 16
-NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-NoStunTabBtn.BorderSizePixel = 0
-NoStunTabBtn.Position = UDim2.new(0, 240, 0, 0)
-NoStunTabBtn.Size = UDim2.new(0, 80, 1, 0)
-NoStunTabBtn.Parent = TabButtons
+local AntiAnchorTabBtn = Instance.new("TextButton")
+AntiAnchorTabBtn.Text = "AntiAnchor"
+AntiAnchorTabBtn.Font = Enum.Font.SourceSans
+AntiAnchorTabBtn.TextSize = 16
+AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+AntiAnchorTabBtn.BorderSizePixel = 0
+AntiAnchorTabBtn.Position = UDim2.new(0, 270, 0, 0)
+AntiAnchorTabBtn.Size = UDim2.new(0, 90, 1, 0)
+AntiAnchorTabBtn.Parent = TabButtons
+
+local KeybindsTabBtn = Instance.new("TextButton")
+KeybindsTabBtn.Text = "Keybinds"
+KeybindsTabBtn.Font = Enum.Font.SourceSans
+KeybindsTabBtn.TextSize = 16
+KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+KeybindsTabBtn.BorderSizePixel = 0
+KeybindsTabBtn.Position = UDim2.new(0, 360, 0, 0)
+KeybindsTabBtn.Size = UDim2.new(0, 90, 1, 0)
+KeybindsTabBtn.Parent = TabButtons
 
 local ConfigTabBtn = Instance.new("TextButton")
 ConfigTabBtn.Text = "Config"
@@ -528,8 +631,8 @@ ConfigTabBtn.TextSize = 16
 ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 ConfigTabBtn.BorderSizePixel = 0
-ConfigTabBtn.Position = UDim2.new(0, 320, 0, 0)
-ConfigTabBtn.Size = UDim2.new(0, 80, 1, 0)
+ConfigTabBtn.Position = UDim2.new(0, 450, 0, 0)
+ConfigTabBtn.Size = UDim2.new(0, 90, 1, 0)
 ConfigTabBtn.Parent = TabButtons
 
 -- Content Area
@@ -567,6 +670,120 @@ local function SendNotification(title, text, duration, icon)
     })
 end
 
+-- Enhanced toggle with keybind display
+local function CreateToggleWithKeybind(text, configKey, container)
+    local container = container or ContentArea
+    
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.BackgroundTransparency = 1
+    toggleFrame.Size = UDim2.new(1, 0, 0, 24)
+    toggleFrame.LayoutOrder = 1
+    toggleFrame.Parent = container
+    
+    -- Toggle button
+    local btn = Instance.new("TextButton")
+    btn.Text = ""
+    btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+    btn.BorderSizePixel = 0
+    btn.Position = UDim2.new(0, 5, 0, 4)
+    btn.Size = UDim2.new(0, 16, 0, 16)
+    btn.Parent = toggleFrame
+    
+    -- Label
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Font = Enum.Font.SourceSans
+    lbl.TextSize = 16
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0, 30, 0, 0)
+    lbl.Size = UDim2.new(0.6, -30, 1, 0)
+    lbl.Parent = toggleFrame
+    
+    -- Keybind display and setter
+    local keyFrame = Instance.new("Frame")
+    keyFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    keyFrame.BorderSizePixel = 0
+    keyFrame.Position = UDim2.new(0.6, 0, 0, 2)
+    keyFrame.Size = UDim2.new(0.4, -10, 0, 20)
+    keyFrame.Parent = toggleFrame
+    
+    local keyLbl = Instance.new("TextLabel")
+    keyLbl.Text = "Key: " .. (Config.Keybinds[configKey] or "None")
+    keyLbl.Font = Enum.Font.SourceSans
+    keyLbl.TextSize = 14
+    keyLbl.TextColor3 = Color3.fromRGB(255, 255, 0)
+    keyLbl.BackgroundTransparency = 1
+    keyLbl.Size = UDim2.new(0.7, -5, 1, 0)
+    keyLbl.Position = UDim2.new(0, 5, 0, 0)
+    keyLbl.TextXAlignment = Enum.TextXAlignment.Left
+    keyLbl.Parent = keyFrame
+    
+    local setKeyBtn = Instance.new("TextButton")
+    setKeyBtn.Text = "Set"
+    setKeyBtn.Font = Enum.Font.SourceSans
+    setKeyBtn.TextSize = 14
+    setKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    setKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    setKeyBtn.BorderSizePixel = 0
+    setKeyBtn.Position = UDim2.new(0.7, 0, 0, 0)
+    setKeyBtn.Size = UDim2.new(0.3, -5, 1, 0)
+    setKeyBtn.Parent = keyFrame
+    
+    -- Toggle functionality
+    btn.MouseButton1Click:Connect(function()
+        Config[configKey] = not Config[configKey]
+        btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+        
+        -- Handle special cases
+        if configKey == "AutoParryEnabled" then
+            if Config.AutoParryEnabled then
+                StartAutoParry()
+            else
+                StopAutoParry()
+            end
+        elseif configKey == "FetchAnimationsEnabled" then
+            if Config.FetchAnimationsEnabled then
+                StartAnimationFetching()
+            else
+                if FetchConnection then
+                    FetchConnection:Disconnect()
+                    FetchConnection = nil
+                end
+            end
+        elseif configKey == "ShowWalkspeed" then
+            if Config.ShowWalkspeed then
+                ApplyWalkspeedMultiplier()
+                StartWalkspeedMonitoring()
+            else
+                local character = LocalPlayer.Character
+                if character then
+                    local humanoid = character:FindFirstChild("Humanoid")
+                    if humanoid then
+                        humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
+                    end
+                end
+            end
+        end
+        
+        SaveConfigs()
+    end)
+    
+    -- Keybind setter functionality
+    setKeyBtn.MouseButton1Click:Connect(function()
+        KeybindMode = true
+        AwaitingKeybind = configKey
+        AwaitingKeybindLabel = keyLbl
+        setKeyBtn.Text = "..."
+        setKeyBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+        task.wait(0.1)
+        setKeyBtn.Text = "Set"
+        setKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    end)
+end
+
+-- Regular toggle without keybind
 local function CreateToggle(text, configKey, container)
     local container = container or ContentArea
     
@@ -598,38 +815,6 @@ local function CreateToggle(text, configKey, container)
     btn.MouseButton1Click:Connect(function()
         Config[configKey] = not Config[configKey]
         btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
-        
-        -- Special handling for toggles
-        if configKey == "AutoParryEnabled" then
-            if Config.AutoParryEnabled then
-                StartAutoParry()
-            else
-                StopAutoParry()
-            end
-        elseif configKey == "FetchAnimationsEnabled" then
-            if Config.FetchAnimationsEnabled then
-                StartAnimationFetching()
-            else
-                if FetchConnection then
-                    FetchConnection:Disconnect()
-                    FetchConnection = nil
-                end
-            end
-        elseif configKey == "ShowWalkspeed" then
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            else
-                local character = LocalPlayer.Character
-                if character then
-                    local humanoid = character:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                    end
-                end
-            end
-        end
-        
         SaveConfigs()
     end)
 end
@@ -731,12 +916,12 @@ local function BuildMainTab()
     pad.LayoutOrder = 0
     pad.Parent = ContentArea
     
-    CreateToggle("Master Enabled", "Enabled")
-    CreateToggle("Show Player Names", "ShowNames")
-    CreateToggle("Show NPCs (No Names)", "ShowNPCs")
-    CreateToggle("Show Bars", "ShowBars")
-    CreateToggle("Show Values", "ShowValues")
-    CreateToggle("Enable Walkspeed Multiplier", "ShowWalkspeed")
+    CreateToggleWithKeybind("Master Enabled", "Enabled")
+    CreateToggleWithKeybind("Show Player Names", "ShowNames")
+    CreateToggleWithKeybind("Show NPCs (No Names)", "ShowNPCs")
+    CreateToggleWithKeybind("Show Bars", "ShowBars")
+    CreateToggleWithKeybind("Show Values", "ShowValues")
+    CreateToggleWithKeybind("Enable Walkspeed Multiplier", "ShowWalkspeed")
     
     CreateSlider("Walkspeed Multiplier", "WalkspeedMultiplier", 0.5, 5, nil, true, function(newVal)
         if Config.ShowWalkspeed then
@@ -885,7 +1070,7 @@ local function BuildAutoParryTab()
     pad.LayoutOrder = 0
     pad.Parent = ContentArea
     
-    CreateToggle("Enable AutoParry", "AutoParryEnabled")
+    CreateToggleWithKeybind("Enable AutoParry", "AutoParryEnabled")
     
     -- Animation List
     local listFrame = Instance.new("Frame")
@@ -1048,7 +1233,7 @@ local function BuildFetchTab()
     pad.LayoutOrder = 0
     pad.Parent = ContentArea
     
-    CreateToggle("Enable Animation Fetch", "FetchAnimationsEnabled")
+    CreateToggleWithKeybind("Enable Animation Fetch", "FetchAnimationsEnabled")
     CreateToggle("Fetch from Nearest Target", "FetchFromTarget")
     CreateToggle("Auto-Add Fetched to Parry List", "AutoAddFetched")
     
@@ -1155,8 +1340,8 @@ local function BuildFetchTab()
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
 
--- Build No Stun Tab
-local function BuildNoStunTab()
+-- Build AntiAnchor Tab
+local function BuildAntiAnchorTab()
     ClearContent()
     
     local pad = Instance.new("Frame")
@@ -1165,18 +1350,17 @@ local function BuildNoStunTab()
     pad.LayoutOrder = 0
     pad.Parent = ContentArea
     
-    CreateToggle("Enable No Stun", "NoStunEnabled")
-    CreateToggle("Enable Anti-Anchor", "AntiAnchorEnabled")
+    CreateToggleWithKeybind("Enable Anti-Anchor", "AntiAnchorEnabled")
     
     -- Info text
     local infoFrame = Instance.new("Frame")
     infoFrame.BackgroundTransparency = 1
-    infoFrame.Size = UDim2.new(1, 0, 0, 100)
-    infoFrame.LayoutOrder = 2
+    infoFrame.Size = UDim2.new(1, 0, 0, 80)
+    infoFrame.LayoutOrder = 1
     infoFrame.Parent = ContentArea
     
     local infoLbl1 = Instance.new("TextLabel")
-    infoLbl1.Text = "⚡ No Stun: Prevents walkspeed from dropping"
+    infoLbl1.Text = "⚓ Anti-Anchor prevents you from being"
     infoLbl1.Font = Enum.Font.SourceSans
     infoLbl1.TextSize = 16
     infoLbl1.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -1187,35 +1371,33 @@ local function BuildNoStunTab()
     infoLbl1.Parent = infoFrame
     
     local infoLbl2 = Instance.new("TextLabel")
-    infoLbl2.Text = "⚓ Anti-Anchor: Prevents being anchored by moves"
+    infoLbl2.Text = "anchored by moves or abilities."
     infoLbl2.Font = Enum.Font.SourceSans
     infoLbl2.TextSize = 16
     infoLbl2.TextColor3 = Color3.fromRGB(200, 200, 200)
     infoLbl2.TextXAlignment = Enum.TextXAlignment.Left
     infoLbl2.BackgroundTransparency = 1
-    infoLbl2.Position = UDim2.new(0, 5, 0, 25)
+    infoLbl2.Position = UDim2.new(0, 5, 0, 20)
     infoLbl2.Size = UDim2.new(1, -10, 0, 20)
     infoLbl2.Parent = infoFrame
     
     local infoLbl3 = Instance.new("TextLabel")
-    infoLbl3.Text = "Both work with Walkspeed Multiplier!"
+    infoLbl3.Text = "Works with Walkspeed Multiplier!"
     infoLbl3.Font = Enum.Font.SourceSans
     infoLbl3.TextSize = 16
     infoLbl3.TextColor3 = Color3.fromRGB(0, 200, 0)
     infoLbl3.TextXAlignment = Enum.TextXAlignment.Left
     infoLbl3.BackgroundTransparency = 1
-    infoLbl3.Position = UDim2.new(0, 5, 0, 50)
+    infoLbl3.Position = UDim2.new(0, 5, 0, 40)
     infoLbl3.Size = UDim2.new(1, -10, 0, 20)
     infoLbl3.Parent = infoFrame
-    
-    CreateSlider("Minimum Walkspeed", "MinWalkspeed", 1, 100, nil, true)
     
     -- Status display
     local statusFrame = Instance.new("Frame")
     statusFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     statusFrame.BorderSizePixel = 0
     statusFrame.Size = UDim2.new(1, 0, 0, 60)
-    statusFrame.LayoutOrder = 4
+    statusFrame.LayoutOrder = 2
     statusFrame.Parent = ContentArea
     
     local statusLbl = Instance.new("TextLabel")
@@ -1229,41 +1411,153 @@ local function BuildNoStunTab()
     statusLbl.Size = UDim2.new(1, -10, 0, 20)
     statusLbl.Parent = statusFrame
     
-    local currentSpeedLbl = Instance.new("TextLabel")
-    currentSpeedLbl.Text = "Current Speed: --"
-    currentSpeedLbl.Font = Enum.Font.SourceSans
-    currentSpeedLbl.TextSize = 14
-    currentSpeedLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-    currentSpeedLbl.TextXAlignment = Enum.TextXAlignment.Left
-    currentSpeedLbl.BackgroundTransparency = 1
-    currentSpeedLbl.Position = UDim2.new(0, 5, 0, 30)
-    currentSpeedLbl.Size = UDim2.new(1, -10, 0, 20)
-    currentSpeedLbl.Parent = statusFrame
+    local anchoredLbl = Instance.new("TextLabel")
+    anchoredLbl.Text = "Anchored: false"
+    anchoredLbl.Font = Enum.Font.SourceSans
+    anchoredLbl.TextSize = 14
+    anchoredLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
+    anchoredLbl.TextXAlignment = Enum.TextXAlignment.Left
+    anchoredLbl.BackgroundTransparency = 1
+    anchoredLbl.Position = UDim2.new(0, 5, 0, 30)
+    anchoredLbl.Size = UDim2.new(1, -10, 0, 20)
+    anchoredLbl.Parent = statusFrame
     
-    -- Update speed display
-    local function UpdateSpeedDisplay()
+    -- Update status display
+    local function UpdateStatus()
         local character = LocalPlayer.Character
         if character then
-            local humanoid = character:FindFirstChild("Humanoid")
-            if humanoid then
-                local minSpeed = Config.MinWalkspeed
-                if Config.ShowWalkspeed then
-                    minSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
-                end
-                currentSpeedLbl.Text = string.format("Current: %.1f | Min: %.1f | Anchored: %s", 
-                    humanoid.WalkSpeed, 
-                    minSpeed,
-                    tostring(character.Anchored))
-            end
+            anchoredLbl.Text = "Anchored: " .. tostring(character.Anchored)
         end
     end
     
-    RunService.Heartbeat:Connect(UpdateSpeedDisplay)
+    RunService.Heartbeat:Connect(UpdateStatus)
     
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
 
--- Build Config Tab (simplified)
+-- Build Keybinds Tab
+local function BuildKeybindsTab()
+    ClearContent()
+    
+    local pad = Instance.new("Frame")
+    pad.Size = UDim2.new(1,0,0,5)
+    pad.BackgroundTransparency = 1
+    pad.LayoutOrder = 0
+    pad.Parent = ContentArea
+    
+    -- Menu Key
+    local menuFrame = Instance.new("Frame")
+    menuFrame.BackgroundTransparency = 1
+    menuFrame.Size = UDim2.new(1, 0, 0, 50)
+    menuFrame.LayoutOrder = 1
+    menuFrame.Parent = ContentArea
+    
+    local menuLbl = Instance.new("TextLabel")
+    menuLbl.Text = "Menu Toggle Key"
+    menuLbl.Font = Enum.Font.SourceSans
+    menuLbl.TextSize = 16
+    menuLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    menuLbl.TextXAlignment = Enum.TextXAlignment.Left
+    menuLbl.BackgroundTransparency = 1
+    menuLbl.Position = UDim2.new(0, 5, 0, 0)
+    menuLbl.Size = UDim2.new(0.5, -10, 0, 20)
+    menuLbl.Parent = menuFrame
+    
+    local menuKeyBox = Instance.new("TextBox")
+    menuKeyBox.Text = Config.MenuKey
+    menuKeyBox.Font = Enum.Font.SourceSans
+    menuKeyBox.TextSize = 16
+    menuKeyBox.TextColor3 = Color3.fromRGB(255, 255, 0)
+    menuKeyBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    menuKeyBox.BorderSizePixel = 0
+    menuKeyBox.Position = UDim2.new(0.5, 5, 0, 0)
+    menuKeyBox.Size = UDim2.new(0.5, -10, 0, 30)
+    menuKeyBox.Parent = menuFrame
+    
+    menuKeyBox.FocusLost:Connect(function()
+        Config.MenuKey = menuKeyBox.Text:upper()
+        SaveConfigs()
+    end)
+    
+    -- Info text
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.Text = "Click 'Set' next to any toggle to assign a keybind"
+    infoLbl.Font = Enum.Font.SourceSans
+    infoLbl.TextSize = 14
+    infoLbl.TextColor3 = Color3.fromRGB(255, 170, 0)
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.Size = UDim2.new(1, -10, 0, 30)
+    infoLbl.LayoutOrder = 2
+    infoLbl.Parent = ContentArea
+    
+    -- Keybind list
+    local keybindList = Instance.new("Frame")
+    keybindList.BackgroundTransparency = 1
+    keybindList.Size = UDim2.new(1, 0, 0, 400)
+    keybindList.LayoutOrder = 3
+    keybindList.Parent = ContentArea
+    
+    local yPos = 0
+    for setting, key in pairs(Config.Keybinds) do
+        local row = Instance.new("Frame")
+        row.BackgroundTransparency = 1
+        row.Size = UDim2.new(1, 0, 0, 30)
+        row.Position = UDim2.new(0, 0, 0, yPos)
+        row.Parent = keybindList
+        
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Text = setting
+        nameLbl.Font = Enum.Font.SourceSans
+        nameLbl.TextSize = 16
+        nameLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Position = UDim2.new(0, 5, 0, 5)
+        nameLbl.Size = UDim2.new(0.4, -10, 0, 20)
+        nameLbl.Parent = row
+        
+        local keyLbl = Instance.new("TextLabel")
+        keyLbl.Text = key
+        keyLbl.Font = Enum.Font.SourceSans
+        keyLbl.TextSize = 16
+        keyLbl.TextColor3 = Color3.fromRGB(255, 255, 0)
+        keyLbl.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        keyLbl.Position = UDim2.new(0.4, 5, 0, 5)
+        keyLbl.Size = UDim2.new(0.3, -10, 0, 20)
+        keyLbl.TextXAlignment = Enum.TextXAlignment.Center
+        keyLbl.Parent = row
+        
+        local setBtn = Instance.new("TextButton")
+        setBtn.Text = "Set"
+        setBtn.Font = Enum.Font.SourceSans
+        setBtn.TextSize = 16
+        setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        setBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+        setBtn.BorderSizePixel = 0
+        setBtn.Position = UDim2.new(0.7, 5, 0, 5)
+        setBtn.Size = UDim2.new(0.3, -10, 0, 20)
+        setBtn.Parent = row
+        
+        setBtn.MouseButton1Click:Connect(function()
+            KeybindMode = true
+            AwaitingKeybind = setting
+            AwaitingKeybindLabel = keyLbl
+            setBtn.Text = "..."
+            setBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+            task.wait(0.1)
+            setBtn.Text = "Set"
+            setBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+        end)
+        
+        yPos = yPos + 35
+    end
+    
+    keybindList.Size = UDim2.new(1, 0, 0, yPos)
+    
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end
+
+-- Build Config Tab
 local function BuildConfigTab()
     ClearContent()
     
@@ -1368,8 +1662,10 @@ MainTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildMainTab()
@@ -1382,8 +1678,10 @@ AutoParryTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildAutoParryTab()
@@ -1396,25 +1694,45 @@ FetchTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildFetchTab()
 end)
 
-NoStunTabBtn.MouseButton1Click:Connect(function()
-    NoStunTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
-    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+AntiAnchorTabBtn.MouseButton1Click:Connect(function()
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    BuildNoStunTab()
+    BuildAntiAnchorTab()
+end)
+
+KeybindsTabBtn.MouseButton1Click:Connect(function()
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    BuildKeybindsTab()
 end)
 
 ConfigTabBtn.MouseButton1Click:Connect(function()
@@ -1426,12 +1744,16 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     FetchTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     FetchTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AntiAnchorTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AntiAnchorTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    KeybindsTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    KeybindsTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildConfigTab()
 end)
 
 BuildMainTab()
 
--- Rest of ESP and Moderator Detector code remains the same...
--- (The ESP system and Moderator Detector from previous versions are still here)
+-- Rest of ESP and Moderator Detector code would go here...
+-- (The ESP system and Moderator Detector from previous versions would be inserted here)
+
+print("✅ Mission Hunter ESP + AutoParry + Anti-Anchor + Keybinds Loaded")
