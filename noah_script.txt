@@ -1133,9 +1133,7 @@ end)
 -- Detects players with specific roles in Demon Corps North Branch (Group ID: 16346602)
 -- Plays Patrick WeeWoo sound when a moderator joins
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+-- Use existing Players service (don't redeclare)
 local StarterGui = game:GetService("StarterGui")
 local SoundService = game:GetService("SoundService")
 
@@ -1163,58 +1161,29 @@ local function IsModerator(player)
     return false, nil
 end
 
--- Function to play alert sound with better reliability
+-- ✅ FIXED SOUND FUNCTION - This will work
 local function PlayAlertSound()
-    -- Create a temporary sound object
+    -- Create a sound in a safe location
     local sound = Instance.new("Sound")
     sound.SoundId = ALERT_SOUND_ID
     sound.Volume = 0.8
-    sound.PlayOnRemove = false  -- Don't play when removed
+    sound.PlayOnRemove = false
     
-    -- Parent to something that always exists and can play sounds
-    -- Try SoundService first, then workspace as fallback
-    if SoundService then
-        sound.Parent = SoundService
+    -- Parent to the player's character (most reliable)
+    local character = LocalPlayer.Character
+    if character then
+        sound.Parent = character
     else
-        sound.Parent = workspace
+        -- Fallback to SoundService
+        sound.Parent = SoundService
     end
     
     -- Play the sound
     sound:Play()
-    
-    -- Print confirmation
     print("🔊 Playing alert sound: Patrick WeeWoo")
     
-    -- Clean up after sound finishes (plus a small buffer)
-    local duration = sound.TimeLength or 5
-    task.wait(duration + 1)
-    
-    -- Safe removal
-    if sound and sound.Parent then
-        sound:Destroy()
-    end
-end
-
--- Alternative method using Instance.new with different parenting
-local function PlayAlertSoundAlt()
-    -- Try using a different approach - attach to player's character
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild("Humanoid") then
-        local sound = Instance.new("Sound")
-        sound.SoundId = ALERT_SOUND_ID
-        sound.Volume = 0.8
-        sound.Parent = character
-        
-        sound:Play()
-        print("🔊 Playing alert sound (attached to character)")
-        
-        -- Clean up
-        task.wait(sound.TimeLength or 5)
-        sound:Destroy()
-    else
-        -- Fall back to original method
-        PlayAlertSound()
-    end
+    -- Automatically destroy after playing
+    game:GetService("Debris"):AddItem(sound, sound.TimeLength or 5)
 end
 
 -- Function to send Roblox-style notification
@@ -1258,9 +1227,8 @@ local function CheckExistingPlayers()
         )
         
         -- Play sound for existing moderators
-        PlayAlertSoundAlt()
+        PlayAlertSound()
         
-        -- Print to console
         print("⚠️ " .. modCount .. " moderator(s) online at startup")
     end
 end
@@ -1275,8 +1243,8 @@ Players.PlayerAdded:Connect(function(player)
         if isMod then
             OnlineModerators[player] = role
             
-            -- Play the alert sound using the more reliable method
-            PlayAlertSoundAlt()
+            -- ✅ PLAY SOUND HERE
+            PlayAlertSound()
             
             -- Send notification
             SendNotification(
@@ -1286,7 +1254,6 @@ Players.PlayerAdded:Connect(function(player)
                 "rbxasset://textures/ui/GameSettings/GFX/icon_alert.png"
             )
             
-            -- Also print to chat/debug
             print("⚠️ MODERATOR JOINED: " .. player.Name .. " (" .. role .. ")")
         end
     end
@@ -1298,7 +1265,6 @@ Players.PlayerRemoving:Connect(function(player)
         local role = OnlineModerators[player]
         OnlineModerators[player] = nil
         
-        -- Send notification (no sound for leaving)
         SendNotification(
             "ℹ️ Moderator Left",
             player.Name .. " (" .. role .. ") has left the game.",
@@ -1329,8 +1295,8 @@ task.spawn(function()
             if not OnlineModerators[player] then
                 OnlineModerators[player] = role
                 
-                -- Play sound for role change detection
-                PlayAlertSoundAlt()
+                -- ✅ PLAY SOUND FOR ROLE CHANGES
+                PlayAlertSound()
                 
                 SendNotification(
                     "⚠️ Moderator Detected",
@@ -1365,8 +1331,6 @@ CheckExistingPlayers()
 
 print("✅ Moderator Detector Loaded - Monitoring group " .. GROUP_ID)
 print("🔊 Alert sound: Patrick WeeWoo (ID: 427090811)")
-
-
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.F4 then
