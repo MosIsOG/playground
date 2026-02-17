@@ -453,24 +453,6 @@ local function HandleKeybind(key)
     end
 end
 
--- Connect keybind input
-UserInputService.InputBegan:Connect(function(input, processed)
-    if input.UserInputType == Enum.UserInputType.Keyboard then
-        local keyName = input.KeyCode.Name
-        
-        -- Allow menu key even if GUI processed input
-        if keyName == Config.MenuKey then
-            MainFrame.Visible = not MainFrame.Visible
-            return
-        end
-        
-        -- For other keybinds, respect processed flag
-        if not processed then
-            HandleKeybind(keyName)
-        end
-    end
-end)
-
 --------------------------------------------------------------------------------
 -- 1. GUI CONSTRUCTION
 --------------------------------------------------------------------------------
@@ -1600,6 +1582,24 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
 end)
 
 BuildMainTab()
+
+-- Connect keybind input AFTER GUI is constructed
+UserInputService.InputBegan:Connect(function(input, processed)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        local keyName = input.KeyCode.Name
+        
+        -- Allow menu key even if GUI processed input
+        if keyName == Config.MenuKey then
+            MainFrame.Visible = not MainFrame.Visible
+            return
+        end
+        
+        -- For other keybinds, respect processed flag
+        if not processed then
+            HandleKeybind(keyName)
+        end
+    end
+end)
 
 --------------------------------------------------------------------------------
 -- 2. ESP SYSTEM (NPC Names Hidden)
