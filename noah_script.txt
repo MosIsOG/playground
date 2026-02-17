@@ -1,6 +1,7 @@
--- Universal ESP with Mission Hunter GUI + AutoParry
+-- Universal ESP with Mission Hunter GUI + AutoParry (Multi-Animation) + No Stun
 -- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
+-- No Stun: Prevents walkspeed from dropping below base speed
 -- Keybind: F4 to Toggle Menu
 
 local Players = game:GetService("Players")
@@ -31,9 +32,13 @@ local Config = {
     
     -- AutoParry Settings
     AutoParryEnabled = false,
-    ParryAnimationId = "",
+    ParryAnimations = {},
     ParryDelay = 0.1,
-    ParryKey = "F"
+    ParryKey = "F",
+    
+    -- No Stun Settings
+    NoStunEnabled = false,
+    MinWalkspeed = 16
 }
 
 -- State
@@ -43,10 +48,12 @@ local Configs = {}
 local CurrentConfig = "Default"
 local BaseWalkspeed = 16
 local WalkspeedUpdateConnection = nil
+local NoStunConnection = nil
 
 -- AutoParry State
 local ParryConnection = nil
-local CurrentAnimation = nil
+local CurrentAnimations = {}
+local DetectedAttacks = {}
 
 -- Config file path
 local ConfigFolder = "MissionHunterESP"
@@ -79,17 +86,6 @@ local function ApplyWalkspeedMultiplier()
     end
 end
 
--- Function to update base walkspeed from attribute
-local function UpdateBaseWalkspeed()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-    
-    BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
-end
-
 -- Start monitoring walkspeed changes
 local function StartWalkspeedMonitoring()
     if WalkspeedUpdateConnection then
@@ -114,7 +110,7 @@ local function StartWalkspeedMonitoring()
     end)
     
     WalkspeedUpdateConnection = RunService.RenderStepped:Connect(function()
-        if not Config.Enabled or not Config.ShowWalkspeed then return end
+        if not Config.Enabled then return end
         
         local currentChar = LocalPlayer.Character
         if not currentChar then return end
@@ -128,11 +124,25 @@ local function StartWalkspeedMonitoring()
             BaseWalkspeed = currentBase
         end
         
-        local currentSpeed = currentHumanoid.WalkSpeed
-        local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
+        -- Apply walkspeed multiplier if enabled
+        if Config.ShowWalkspeed then
+            local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
+            if math.abs(currentHumanoid.WalkSpeed - targetSpeed) > 0.1 then
+                currentHumanoid.WalkSpeed = targetSpeed
+            end
+        end
         
-        if math.abs(currentSpeed - targetSpeed) > 0.1 then
-            currentHumanoid.WalkSpeed = targetSpeed
+        -- Apply No Stun if enabled (prevents going below min speed)
+        if Config.NoStunEnabled then
+            local minSpeed = Config.MinWalkspeed
+            if Config.ShowWalkspeed then
+                minSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
+            end
+            
+            if currentHumanoid.WalkSpeed < minSpeed - 0.1 then
+                currentHumanoid.WalkSpeed = minSpeed
+                print("⚡ No Stun: Prevented speed drop to " .. currentHumanoid.WalkSpeed .. " (restored to " .. minSpeed .. ")")
+            end
         end
     end)
     
@@ -217,9 +227,11 @@ local function LoadConfigs()
                 BarHeight = 6,
                 YOffset = 60,
                 AutoParryEnabled = false,
-                ParryAnimationId = "",
+                ParryAnimations = {},
                 ParryDelay = 0.1,
-                ParryKey = "F"
+                ParryKey = "F",
+                NoStunEnabled = false,
+                MinWalkspeed = 16
             }
             CurrentConfig = "Default"
             SaveConfigs()
@@ -254,7 +266,7 @@ end
 -- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 500) -- Made taller for AutoParry
+MainFrame.Size = UDim2.new(0, 450, 0, 650) -- Made taller for No Stun
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -271,7 +283,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP + AutoParry"
+TitleLabel.Text = "Mission Hunter ESP + AutoParry + No Stun"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -334,6 +346,17 @@ AutoParryTabBtn.Position = UDim2.new(0, 100, 0, 0)
 AutoParryTabBtn.Size = UDim2.new(0, 100, 1, 0)
 AutoParryTabBtn.Parent = TabButtons
 
+local NoStunTabBtn = Instance.new("TextButton")
+NoStunTabBtn.Text = "No Stun"
+NoStunTabBtn.Font = Enum.Font.SourceSans
+NoStunTabBtn.TextSize = 16
+NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+NoStunTabBtn.BorderSizePixel = 0
+NoStunTabBtn.Position = UDim2.new(0, 200, 0, 0)
+NoStunTabBtn.Size = UDim2.new(0, 100, 1, 0)
+NoStunTabBtn.Parent = TabButtons
+
 local ConfigTabBtn = Instance.new("TextButton")
 ConfigTabBtn.Text = "Config"
 ConfigTabBtn.Font = Enum.Font.SourceSans
@@ -341,7 +364,7 @@ ConfigTabBtn.TextSize = 16
 ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 ConfigTabBtn.BorderSizePixel = 0
-ConfigTabBtn.Position = UDim2.new(0, 200, 0, 0)
+ConfigTabBtn.Position = UDim2.new(0, 300, 0, 0)
 ConfigTabBtn.Size = UDim2.new(0, 100, 1, 0)
 ConfigTabBtn.Parent = TabButtons
 
@@ -365,7 +388,7 @@ UIListLayout.Padding = UDim.new(0, 8)
 -- Helper functions
 local function ClearContent()
     for _, child in pairs(ContentArea:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
+        if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") or child:IsA("ScrollingFrame") then
             child:Destroy()
         end
     end
@@ -424,10 +447,6 @@ local function CreateToggle(text, configKey, container)
                     if humanoid then
                         humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
                     end
-                end
-                if WalkspeedUpdateConnection then
-                    WalkspeedUpdateConnection:Disconnect()
-                    WalkspeedUpdateConnection = nil
                 end
             end
         end
@@ -561,87 +580,6 @@ local function CreateTextBox(text, configKey, placeholder, container)
     end)
 end
 
--- AutoParry Functions
-local function StopAutoParry()
-    if ParryConnection then
-        ParryConnection:Disconnect()
-        ParryConnection = nil
-    end
-    if CurrentAnimation then
-        CurrentAnimation:Stop()
-        CurrentAnimation = nil
-    end
-    print("🛑 AutoParry Stopped")
-end
-
-local function StartAutoParry()
-    StopAutoParry() -- Stop any existing connection
-    
-    if not Config.AutoParryEnabled then return end
-    if Config.ParryAnimationId == "" then
-        warn("⚠️ No Animation ID set for AutoParry")
-        return
-    end
-    
-    print("🔄 AutoParry Started - Animation ID: " .. Config.ParryAnimationId .. ", Delay: " .. Config.ParryDelay .. "s")
-    
-    -- Convert key string to KeyCode
-    local keyCode = Enum.KeyCode[Config.ParryKey:upper()]
-    if not keyCode then
-        keyCode = Enum.KeyCode.F -- Default to F
-    end
-    
-    -- Monitor for when to parry (you'll need to define the logic here)
-    -- This is where you'd detect when to trigger the parry
-    ParryConnection = RunService.Heartbeat:Connect(function()
-        -- Your parry detection logic here
-        -- For now, this is a placeholder - you need to define when to parry
-        -- Example: Check if an attack is coming, check ball direction, etc.
-    end)
-    
-    -- For demonstration, let's add a test with F key (you can remove this)
-    ParryConnection = UserInputService.InputBegan:Connect(function(input)
-        if input.KeyCode == Enum.KeyCode.F and Config.AutoParryEnabled then
-            ExecuteParry()
-        end
-    end)
-end
-
-local function ExecuteParry()
-    if not Config.AutoParryEnabled then return end
-    if Config.ParryAnimationId == "" then return end
-    
-    -- Play the parry animation
-    local character = LocalPlayer.Character
-    if character then
-        local humanoid = character:FindFirstChild("Humanoid")
-        if humanoid then
-            -- Load and play animation
-            local animator = humanoid:FindFirstChildOfClass("Animator")
-            if not animator then
-                animator = Instance.new("Animator")
-                animator.Parent = humanoid
-            end
-            
-            local animation = Instance.new("Animation")
-            animation.AnimationId = Config.ParryAnimationId
-            
-            CurrentAnimation = animator:LoadAnimation(animation)
-            CurrentAnimation:Play()
-            
-            -- Press F key after delay
-            task.wait(Config.ParryDelay)
-            
-            -- Simulate F key press
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.05)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-            
-            print("⚔️ Parry Executed with delay: " .. Config.ParryDelay .. "s")
-        end
-    end
-end
-
 -- Build Main Tab
 local function BuildMainTab()
     ClearContent()
@@ -670,6 +608,104 @@ local function BuildMainTab()
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
 
+-- AutoParry Functions
+local function StopAutoParry()
+    if ParryConnection then
+        ParryConnection:Disconnect()
+        ParryConnection = nil
+    end
+    CurrentAnimations = {}
+    DetectedAttacks = {}
+    print("🛑 AutoParry Stopped")
+end
+
+local function PlayAnimationAndParry(animationId)
+    if not Config.AutoParryEnabled then return end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = humanoid
+    end
+    
+    local animation = Instance.new("Animation")
+    animation.AnimationId = animationId
+    
+    local animTrack = animator:LoadAnimation(animation)
+    animTrack:Play()
+    
+    table.insert(CurrentAnimations, animTrack)
+    
+    task.wait(Config.ParryDelay)
+    
+    local keyCode = Enum.KeyCode[Config.ParryKey:upper()]
+    if keyCode then
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+        print("⚔️ Parried animation: " .. animationId)
+    end
+    
+    task.wait(2)
+    for i, track in ipairs(CurrentAnimations) do
+        if track == animTrack then
+            table.remove(CurrentAnimations, i)
+            break
+        end
+    end
+end
+
+local function StartAutoParry()
+    StopAutoParry()
+    
+    if not Config.AutoParryEnabled then return end
+    if #Config.ParryAnimations == 0 then
+        warn("⚠️ No animations added to AutoParry")
+        return
+    end
+    
+    print("🔄 AutoParry Started - Monitoring " .. #Config.ParryAnimations .. " animations")
+    
+    ParryConnection = RunService.Heartbeat:Connect(function()
+        if not Config.AutoParryEnabled then return end
+        
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local character = player.Character
+                if character then
+                    local humanoid = character:FindFirstChild("Humanoid")
+                    if humanoid then
+                        local animator = humanoid:FindFirstChildOfClass("Animator")
+                        if animator then
+                            for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                local animId = track.Animation.AnimationId
+                                
+                                for _, savedAnim in ipairs(Config.ParryAnimations) do
+                                    if animId == savedAnim and not DetectedAttacks[animId .. player.Name] then
+                                        DetectedAttacks[animId .. player.Name] = true
+                                        print("⚠️ Attack detected from " .. player.Name .. ": " .. animId)
+                                        
+                                        PlayAnimationAndParry(savedAnim)
+                                        
+                                        task.wait(2)
+                                        DetectedAttacks[animId .. player.Name] = nil
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
 -- Build AutoParry Tab
 local function BuildAutoParryTab()
     ClearContent()
@@ -682,7 +718,95 @@ local function BuildAutoParryTab()
     
     CreateToggle("Enable AutoParry", "AutoParryEnabled")
     
-    CreateTextBox("Animation ID", "ParryAnimationId", "rbxassetid://123456789")
+    -- Animation List (simplified for this example)
+    local listFrame = Instance.new("Frame")
+    listFrame.BackgroundTransparency = 1
+    listFrame.Size = UDim2.new(1, 0, 0, 150)
+    listFrame.LayoutOrder = 1
+    listFrame.Parent = ContentArea
+    
+    local listLbl = Instance.new("TextLabel")
+    listLbl.Text = "Animation List (" .. #Config.ParryAnimations .. ")"
+    listLbl.Font = Enum.Font.SourceSans
+    listLbl.TextSize = 16
+    listLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    listLbl.TextXAlignment = Enum.TextXAlignment.Left
+    listLbl.BackgroundTransparency = 1
+    listLbl.Position = UDim2.new(0, 5, 0, 0)
+    listLbl.Size = UDim2.new(1, -10, 0, 20)
+    listLbl.Parent = listFrame
+    
+    -- Simple animation input (in a real script, you'd have add/remove buttons)
+    local animInput = Instance.new("TextBox")
+    animInput.Text = ""
+    animInput.PlaceholderText = "Enter Animation ID and press Enter"
+    animInput.Font = Enum.Font.SourceSans
+    animInput.TextSize = 16
+    animInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    animInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    animInput.BorderSizePixel = 0
+    animInput.Position = UDim2.new(0, 5, 0, 25)
+    animInput.Size = UDim2.new(1, -10, 0, 30)
+    animInput.Parent = listFrame
+    
+    animInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed and animInput.Text ~= "" then
+            table.insert(Config.ParryAnimations, animInput.Text)
+            animInput.Text = ""
+            SaveConfigs()
+            BuildAutoParryTab() -- Refresh
+        end
+    end)
+    
+    -- Show current animations
+    local animList = Instance.new("ScrollingFrame")
+    animList.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    animList.BorderSizePixel = 0
+    animList.Position = UDim2.new(0, 5, 0, 60)
+    animList.Size = UDim2.new(1, -10, 0, 80)
+    animList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    animList.ScrollBarThickness = 6
+    animList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    animList.Parent = listFrame
+    
+    local animListLayout = Instance.new("UIListLayout")
+    animListLayout.Parent = animList
+    animListLayout.Padding = UDim.new(0, 2)
+    
+    for i, animId in ipairs(Config.ParryAnimations) do
+        local animItem = Instance.new("Frame")
+        animItem.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        animItem.Size = UDim2.new(1, 0, 0, 25)
+        animItem.Parent = animList
+        
+        local animLabel = Instance.new("TextLabel")
+        animLabel.Text = i .. ". " .. animId
+        animLabel.Font = Enum.Font.SourceSans
+        animLabel.TextSize = 14
+        animLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        animLabel.TextXAlignment = Enum.TextXAlignment.Left
+        animLabel.BackgroundTransparency = 1
+        animLabel.Position = UDim2.new(0, 5, 0, 0)
+        animLabel.Size = UDim2.new(1, -35, 1, 0)
+        animLabel.Parent = animItem
+        
+        local removeBtn = Instance.new("TextButton")
+        removeBtn.Text = "X"
+        removeBtn.Font = Enum.Font.SourceSansBold
+        removeBtn.TextSize = 16
+        removeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+        removeBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+        removeBtn.BorderSizePixel = 0
+        removeBtn.Position = UDim2.new(1, -25, 0, 2)
+        removeBtn.Size = UDim2.new(0, 20, 0, 20)
+        removeBtn.Parent = animItem
+        
+        removeBtn.MouseButton1Click:Connect(function()
+            table.remove(Config.ParryAnimations, i)
+            SaveConfigs()
+            BuildAutoParryTab()
+        end)
+    end
     
     CreateSlider("Parry Delay (seconds)", "ParryDelay", 0, 1, nil, true)
     
@@ -690,7 +814,7 @@ local function BuildAutoParryTab()
     local keyFrame = Instance.new("Frame")
     keyFrame.BackgroundTransparency = 1
     keyFrame.Size = UDim2.new(1, 0, 0, 50)
-    keyFrame.LayoutOrder = 3
+    keyFrame.LayoutOrder = 4
     keyFrame.Parent = ContentArea
     
     local keyLbl = Instance.new("TextLabel")
@@ -731,28 +855,119 @@ local function BuildAutoParryTab()
     testBtn.BorderSizePixel = 0
     testBtn.Size = UDim2.new(1, -10, 0, 40)
     testBtn.Position = UDim2.new(0, 5, 0, 0)
-    testBtn.LayoutOrder = 4
+    testBtn.LayoutOrder = 5
     testBtn.Parent = ContentArea
     
     testBtn.MouseButton1Click:Connect(function()
-        if Config.ParryAnimationId == "" then
-            SendNotification("Error", "Please enter an Animation ID first", 3)
+        if #Config.ParryAnimations == 0 then
+            SendNotification("Error", "Please add animations first", 3)
             return
         end
-        ExecuteParry()
+        PlayAnimationAndParry(Config.ParryAnimations[1])
     end)
     
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end
+
+-- Build No Stun Tab
+local function BuildNoStunTab()
+    ClearContent()
+    
+    local pad = Instance.new("Frame")
+    pad.Size = UDim2.new(1,0,0,5)
+    pad.BackgroundTransparency = 1
+    pad.LayoutOrder = 0
+    pad.Parent = ContentArea
+    
+    CreateToggle("Enable No Stun", "NoStunEnabled")
+    
     -- Info text
-    local infoLbl = Instance.new("TextLabel")
-    infoLbl.Text = "⚔️ AutoParry will play the animation, wait the delay, then press F"
-    infoLbl.Font = Enum.Font.SourceSans
-    infoLbl.TextSize = 14
-    infoLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-    infoLbl.BackgroundTransparency = 1
-    infoLbl.Size = UDim2.new(1, -10, 0, 40)
-    infoLbl.Position = UDim2.new(0, 5, 0, 0)
-    infoLbl.LayoutOrder = 5
-    infoLbl.Parent = ContentArea
+    local infoFrame = Instance.new("Frame")
+    infoFrame.BackgroundTransparency = 1
+    infoFrame.Size = UDim2.new(1, 0, 0, 80)
+    infoFrame.LayoutOrder = 1
+    infoFrame.Parent = ContentArea
+    
+    local infoLbl1 = Instance.new("TextLabel")
+    infoLbl1.Text = "⚡ No Stun prevents your walkspeed"
+    infoLbl1.Font = Enum.Font.SourceSans
+    infoLbl1.TextSize = 16
+    infoLbl1.TextColor3 = Color3.fromRGB(200, 200, 200)
+    infoLbl1.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl1.BackgroundTransparency = 1
+    infoLbl1.Position = UDim2.new(0, 5, 0, 0)
+    infoLbl1.Size = UDim2.new(1, -10, 0, 20)
+    infoLbl1.Parent = infoFrame
+    
+    local infoLbl2 = Instance.new("TextLabel")
+    infoLbl2.Text = "from dropping below the minimum speed."
+    infoLbl2.Font = Enum.Font.SourceSans
+    infoLbl2.TextSize = 16
+    infoLbl2.TextColor3 = Color3.fromRGB(200, 200, 200)
+    infoLbl2.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl2.BackgroundTransparency = 1
+    infoLbl2.Position = UDim2.new(0, 5, 0, 20)
+    infoLbl2.Size = UDim2.new(1, -10, 0, 20)
+    infoLbl2.Parent = infoFrame
+    
+    local infoLbl3 = Instance.new("TextLabel")
+    infoLbl3.Text = "Works with Walkspeed Multiplier!"
+    infoLbl3.Font = Enum.Font.SourceSans
+    infoLbl3.TextSize = 16
+    infoLbl3.TextColor3 = Color3.fromRGB(0, 200, 0)
+    infoLbl3.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl3.BackgroundTransparency = 1
+    infoLbl3.Position = UDim2.new(0, 5, 0, 40)
+    infoLbl3.Size = UDim2.new(1, -10, 0, 20)
+    infoLbl3.Parent = infoFrame
+    
+    -- Minimum Speed Slider
+    CreateSlider("Minimum Walkspeed", "MinWalkspeed", 1, 100, nil, true)
+    
+    -- Status display
+    local statusFrame = Instance.new("Frame")
+    statusFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    statusFrame.BorderSizePixel = 0
+    statusFrame.Size = UDim2.new(1, 0, 0, 60)
+    statusFrame.LayoutOrder = 3
+    statusFrame.Parent = ContentArea
+    
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Text = "Current Status:"
+    statusLbl.Font = Enum.Font.SourceSans
+    statusLbl.TextSize = 16
+    statusLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Position = UDim2.new(0, 5, 0, 5)
+    statusLbl.Size = UDim2.new(1, -10, 0, 20)
+    statusLbl.Parent = statusFrame
+    
+    local currentSpeedLbl = Instance.new("TextLabel")
+    currentSpeedLbl.Text = "Current Speed: --"
+    currentSpeedLbl.Font = Enum.Font.SourceSans
+    currentSpeedLbl.TextSize = 14
+    currentSpeedLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
+    currentSpeedLbl.TextXAlignment = Enum.TextXAlignment.Left
+    currentSpeedLbl.BackgroundTransparency = 1
+    currentSpeedLbl.Position = UDim2.new(0, 5, 0, 30)
+    currentSpeedLbl.Size = UDim2.new(1, -10, 0, 20)
+    currentSpeedLbl.Parent = statusFrame
+    
+    -- Update speed display
+    local function UpdateSpeedDisplay()
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            if humanoid then
+                currentSpeedLbl.Text = string.format("Current Speed: %.1f | Min Speed: %.1f", 
+                    humanoid.WalkSpeed, 
+                    Config.MinWalkspeed)
+            end
+        end
+    end
+    
+    RunService.Heartbeat:Connect(UpdateSpeedDisplay)
     
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end
@@ -761,15 +976,15 @@ end
 local function BuildConfigTab()
     ClearContent()
     
-    -- Config Selection Frame
+    -- Config Selection Frame (simplified for this example)
     local selectFrame = Instance.new("Frame")
     selectFrame.BackgroundTransparency = 1
-    selectFrame.Size = UDim2.new(1, 0, 0, 80)
+    selectFrame.Size = UDim2.new(1, 0, 0, 50)
     selectFrame.LayoutOrder = 1
     selectFrame.Parent = ContentArea
     
     local selectLbl = Instance.new("TextLabel")
-    selectLbl.Text = "Current Config:"
+    selectLbl.Text = "Current Config: " .. CurrentConfig
     selectLbl.Font = Enum.Font.SourceSans
     selectLbl.TextSize = 16
     selectLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -779,90 +994,7 @@ local function BuildConfigTab()
     selectLbl.Size = UDim2.new(1, -10, 0, 20)
     selectLbl.Parent = selectFrame
     
-    local configDropdown = Instance.new("TextButton")
-    configDropdown.Text = CurrentConfig .. " ▼"
-    configDropdown.Font = Enum.Font.SourceSans
-    configDropdown.TextSize = 16
-    configDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
-    configDropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    configDropdown.BorderSizePixel = 0
-    configDropdown.Position = UDim2.new(0, 5, 0, 25)
-    configDropdown.Size = UDim2.new(1, -10, 0, 30)
-    configDropdown.Parent = selectFrame
-    
-    local dropdownList = Instance.new("Frame")
-    dropdownList.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    dropdownList.BorderSizePixel = 0
-    dropdownList.Position = UDim2.new(0, 5, 0, 55)
-    dropdownList.Size = UDim2.new(1, -10, 0, 0)
-    dropdownList.Visible = false
-    dropdownList.Parent = selectFrame
-    
-    local dropdownLayout = Instance.new("UIListLayout")
-    dropdownLayout.Parent = dropdownList
-    
-    local function UpdateDropdown()
-        for _, child in pairs(dropdownList:GetChildren()) do
-            if child:IsA("TextButton") then
-                child:Destroy()
-            end
-        end
-        
-        for name, _ in pairs(Configs) do
-            local btn = Instance.new("TextButton")
-            btn.Text = name
-            btn.Font = Enum.Font.SourceSans
-            btn.TextSize = 16
-            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-            btn.BorderSizePixel = 0
-            btn.Size = UDim2.new(1, 0, 0, 25)
-            btn.Parent = dropdownList
-            
-            btn.MouseButton1Click:Connect(function()
-                CurrentConfig = name
-                configDropdown.Text = name .. " ▼"
-                dropdownList.Visible = false
-                
-                if Configs[name] then
-                    for k, v in pairs(Configs[name]) do
-                        Config[k] = v
-                    end
-                end
-                
-                if Config.ShowWalkspeed then
-                    ApplyWalkspeedMultiplier()
-                    StartWalkspeedMonitoring()
-                end
-                
-                if Config.AutoParryEnabled then
-                    StartAutoParry()
-                else
-                    StopAutoParry()
-                end
-                
-                SaveConfigs()
-                
-                -- Refresh current tab
-                if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                    BuildMainTab()
-                elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                    BuildAutoParryTab()
-                end
-            end)
-        end
-        
-        dropdownList.Size = UDim2.new(1, -10, 0, dropdownLayout.AbsoluteContentSize.Y)
-    end
-    
-    configDropdown.MouseButton1Click:Connect(function()
-        dropdownList.Visible = not dropdownList.Visible
-        if dropdownList.Visible then
-            UpdateDropdown()
-        end
-    end)
-    
-    -- Config Management Buttons
+    -- Save/Load buttons
     local btnFrame = Instance.new("Frame")
     btnFrame.BackgroundTransparency = 1
     btnFrame.Size = UDim2.new(1, 0, 0, 40)
@@ -870,7 +1002,7 @@ local function BuildConfigTab()
     btnFrame.Parent = ContentArea
     
     local saveBtn = Instance.new("TextButton")
-    saveBtn.Text = "Save Current"
+    saveBtn.Text = "Save Config"
     saveBtn.Font = Enum.Font.SourceSans
     saveBtn.TextSize = 16
     saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -881,7 +1013,7 @@ local function BuildConfigTab()
     saveBtn.Parent = btnFrame
     
     local loadBtn = Instance.new("TextButton")
-    loadBtn.Text = "Load"
+    loadBtn.Text = "Load Default"
     loadBtn.Font = Enum.Font.SourceSans
     loadBtn.TextSize = 16
     loadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -891,59 +1023,6 @@ local function BuildConfigTab()
     loadBtn.Size = UDim2.new(0.5, -10, 0, 30)
     loadBtn.Parent = btnFrame
     
-    -- New Config Creation
-    local newFrame = Instance.new("Frame")
-    newFrame.BackgroundTransparency = 1
-    newFrame.Size = UDim2.new(1, 0, 0, 100)
-    newFrame.LayoutOrder = 3
-    newFrame.Parent = ContentArea
-    
-    local newLbl = Instance.new("TextLabel")
-    newLbl.Text = "Create New Config:"
-    newLbl.Font = Enum.Font.SourceSans
-    newLbl.TextSize = 16
-    newLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    newLbl.TextXAlignment = Enum.TextXAlignment.Left
-    newLbl.BackgroundTransparency = 1
-    newLbl.Position = UDim2.new(0, 5, 0, 0)
-    newLbl.Size = UDim2.new(1, -10, 0, 20)
-    newLbl.Parent = newFrame
-    
-    local nameBox = Instance.new("TextBox")
-    nameBox.Text = ""
-    nameBox.PlaceholderText = "Config Name"
-    nameBox.Font = Enum.Font.SourceSans
-    nameBox.TextSize = 16
-    nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    nameBox.BorderSizePixel = 0
-    nameBox.Position = UDim2.new(0, 5, 0, 25)
-    nameBox.Size = UDim2.new(1, -10, 0, 30)
-    nameBox.Parent = newFrame
-    
-    local createBtn = Instance.new("TextButton")
-    createBtn.Text = "Create New Config"
-    createBtn.Font = Enum.Font.SourceSans
-    createBtn.TextSize = 16
-    createBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-    createBtn.BorderSizePixel = 0
-    createBtn.Position = UDim2.new(0, 5, 0, 60)
-    createBtn.Size = UDim2.new(1, -10, 0, 30)
-    createBtn.Parent = newFrame
-    
-    local deleteBtn = Instance.new("TextButton")
-    deleteBtn.Text = "Delete Current Config"
-    deleteBtn.Font = Enum.Font.SourceSans
-    deleteBtn.TextSize = 16
-    deleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-    deleteBtn.BorderSizePixel = 0
-    deleteBtn.Position = UDim2.new(0, 5, 0, 95)
-    deleteBtn.Size = UDim2.new(1, -10, 0, 30)
-    deleteBtn.Parent = newFrame
-    
-    -- Button functionality
     saveBtn.MouseButton1Click:Connect(function()
         local configCopy = {}
         for k, v in pairs(Config) do
@@ -955,13 +1034,13 @@ local function BuildConfigTab()
         saveBtn.Text = "Saved!"
         saveBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
         task.wait(1)
-        saveBtn.Text = "Save Current"
+        saveBtn.Text = "Save Config"
         saveBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
     end)
     
     loadBtn.MouseButton1Click:Connect(function()
-        if Configs[CurrentConfig] then
-            for k, v in pairs(Configs[CurrentConfig]) do
+        if Configs["Default"] then
+            for k, v in pairs(Configs["Default"]) do
                 Config[k] = v
             end
             
@@ -978,93 +1057,11 @@ local function BuildConfigTab()
             
             SaveConfigs()
             
-            -- Refresh current tab
-            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildMainTab()
-            elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildAutoParryTab()
-            end
-            
             loadBtn.Text = "Loaded!"
             loadBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
             task.wait(1)
-            loadBtn.Text = "Load"
+            loadBtn.Text = "Load Default"
             loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-        end
-    end)
-    
-    createBtn.MouseButton1Click:Connect(function()
-        local newName = nameBox.Text:gsub("%s+", "")
-        if newName and newName ~= "" then
-            if not Configs[newName] then
-                local configCopy = {}
-                for k, v in pairs(Config) do
-                    configCopy[k] = v
-                end
-                Configs[newName] = configCopy
-                CurrentConfig = newName
-                configDropdown.Text = newName .. " ▼"
-                nameBox.Text = ""
-                SaveConfigs()
-                
-                createBtn.Text = "Created!"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-                task.wait(1)
-                createBtn.Text = "Create New Config"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-            else
-                createBtn.Text = "Name exists!"
-                createBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-                task.wait(1)
-                createBtn.Text = "Create New Config"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-            end
-        end
-    end)
-    
-    deleteBtn.MouseButton1Click:Connect(function()
-        if CurrentConfig ~= "Default" then
-            Configs[CurrentConfig] = nil
-            CurrentConfig = "Default"
-            
-            if Configs["Default"] then
-                for k, v in pairs(Configs["Default"]) do
-                    Config[k] = v
-                end
-            end
-            
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            end
-            
-            if Config.AutoParryEnabled then
-                StartAutoParry()
-            else
-                StopAutoParry()
-            end
-            
-            configDropdown.Text = CurrentConfig .. " ▼"
-            SaveConfigs()
-            
-            -- Refresh current tab
-            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildMainTab()
-            elseif AutoParryTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildAutoParryTab()
-            end
-            
-            deleteBtn.Text = "Deleted!"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-            task.wait(1)
-            deleteBtn.Text = "Delete Current Config"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-        else
-            deleteBtn.Text = "Can't delete Default!"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-            task.wait(1)
-            deleteBtn.Text = "Delete Current Config"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
         end
     end)
     
@@ -1077,6 +1074,8 @@ MainTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildMainTab()
@@ -1087,9 +1086,23 @@ AutoParryTabBtn.MouseButton1Click:Connect(function()
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildAutoParryTab()
+end)
+
+NoStunTabBtn.MouseButton1Click:Connect(function()
+    NoStunTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    BuildNoStunTab()
 end)
 
 ConfigTabBtn.MouseButton1Click:Connect(function()
@@ -1099,6 +1112,8 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
     MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     AutoParryTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
     AutoParryTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    NoStunTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    NoStunTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     BuildConfigTab()
 end)
 
@@ -1529,5 +1544,5 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-print("✅ Mission Hunter ESP + AutoParry Loaded")
+print("✅ Mission Hunter ESP + AutoParry + No Stun Loaded")
 print("🔊 Moderator Alert Sound: Patrick WeeWoo (ID: 427090811)")
