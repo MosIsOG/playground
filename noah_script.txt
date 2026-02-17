@@ -403,12 +403,6 @@ local function HandleKeybind(key)
         return
     end
     
-    -- Check menu key
-    if key == Config.MenuKey then
-        MainFrame.Visible = not MainFrame.Visible
-        return
-    end
-    
     -- Check other keybinds
     for setting, boundKey in pairs(Config.Keybinds) do
         if key == boundKey then
@@ -461,10 +455,19 @@ end
 
 -- Connect keybind input
 UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    
     if input.UserInputType == Enum.UserInputType.Keyboard then
-        HandleKeybind(input.KeyCode.Name)
+        local keyName = input.KeyCode.Name
+        
+        -- Allow menu key even if GUI processed input
+        if keyName == Config.MenuKey then
+            MainFrame.Visible = not MainFrame.Visible
+            return
+        end
+        
+        -- For other keybinds, respect processed flag
+        if not processed then
+            HandleKeybind(keyName)
+        end
     end
 end)
 
