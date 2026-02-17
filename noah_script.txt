@@ -7,19 +7,20 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- Configuration (Linked to GUI)
+-- Configuration (Default Settings)
 local Config = {
     Enabled = true,
     ShowNames = true,
-    ShowBars = true,     -- Master bar toggle
-    ShowNPCs = true,     -- Toggle for NPC ESP
-    ShowValues = true,   -- Toggle for text values (100/100)
+    ShowBars = true,
+    ShowNPCs = true,
+    ShowValues = true,
     MaxDistance = 1500,
     TextSize = 14,
-    BarWidth = 150,      -- Wider bars as requested
+    BarWidth = 150,
     BarHeight = 6,
     YOffset = 60
 }
@@ -27,13 +28,87 @@ local Config = {
 -- State
 local ESP_Cache = {}
 local LiveFolder = workspace:FindFirstChild("Live")
+local Configs = {} -- Stores saved configurations
+local CurrentConfig = "Default"
+
+-- Config file path
+local ConfigFolder = "NoahHunterESP"
+local ConfigFile = "configs.json"
+
+-- Function to save configs to file
+local function SaveConfigs()
+    local success, err = pcall(function()
+        local data = {
+            CurrentConfig = CurrentConfig,
+            Configs = Configs
+        }
+        writefile(ConfigFolder .. "/" .. ConfigFile, HttpService:JSONEncode(data))
+    end)
+    if not success then
+        warn("Failed to save configs: " .. tostring(err))
+    end
+end
+
+-- Function to load configs from file
+local function LoadConfigs()
+    local success, err = pcall(function()
+        if isfile(ConfigFolder .. "/" .. ConfigFile) then
+            local data = HttpService:JSONDecode(readfile(ConfigFolder .. "/" .. ConfigFile))
+            CurrentConfig = data.CurrentConfig or "Default"
+            Configs = data.Configs or {}
+            
+            -- Load the current config if it exists
+            if Configs[CurrentConfig] then
+                for k, v in pairs(Configs[CurrentConfig]) do
+                    Config[k] = v
+                end
+            end
+        else
+            -- Create default config
+            Configs["Default"] = {
+                Enabled = true,
+                ShowNames = true,
+                ShowBars = true,
+                ShowNPCs = true,
+                ShowValues = true,
+                MaxDistance = 1500,
+                TextSize = 14,
+                BarWidth = 150,
+                BarHeight = 6,
+                YOffset = 60
+            }
+            CurrentConfig = "Default"
+            SaveConfigs()
+        end
+    end)
+    if not success then
+        warn("Failed to load configs: " .. tostring(err))
+        -- Create default configs if loading fails
+        Configs["Default"] = {
+            Enabled = true,
+            ShowNames = true,
+            ShowBars = true,
+            ShowNPCs = true,
+            ShowValues = true,
+            MaxDistance = 1500,
+            TextSize = 14,
+            BarWidth = 150,
+            BarHeight = 6,
+            YOffset = 60
+        }
+        CurrentConfig = "Default"
+    end
+end
+
+-- Load configs at startup
+LoadConfigs()
 
 --------------------------------------------------------------------------------
 -- 1. GUI CONSTRUCTION (Mission Hunter Style)
 --------------------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MissionHunterESP"
+ScreenGui.Name = "NoahHunterESP"
 ScreenGui.ResetOnSpawn = false
 
 if gethui then
@@ -45,9 +120,10 @@ else
     if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 end
 
+-- Main Container
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 380, 0, 340) -- Slightly taller for new options
+MainFrame.Size = UDim2.new(0, 400, 0, 400)
 MainFrame.Position = UDim2.new(0, 20, 0, 25)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 1
@@ -55,6 +131,7 @@ MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
 MainFrame.Visible = true
 MainFrame.Parent = ScreenGui
 
+-- Header
 local Header = Instance.new("Frame")
 Header.Name = "Header"
 Header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -63,7 +140,7 @@ Header.Size = UDim2.new(1, 0, 0, 30)
 Header.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP"
+TitleLabel.Text = "نوح Hunter ESP"
 TitleLabel.Font = Enum.Font.Code
 TitleLabel.TextSize = 14
 TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
@@ -95,11 +172,47 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-local ContentArea = Instance.new("Frame")
+-- Tab Buttons
+local TabButtons = Instance.new("Frame")
+TabButtons.Name = "TabButtons"
+TabButtons.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+TabButtons.BorderSizePixel = 0
+TabButtons.Position = UDim2.new(0, 0, 0, 30)
+TabButtons.Size = UDim2.new(1, 0, 0, 25)
+TabButtons.Parent = MainFrame
+
+local MainTabBtn = Instance.new("TextButton")
+MainTabBtn.Text = "Main"
+MainTabBtn.Font = Enum.Font.SourceSans
+MainTabBtn.TextSize = 16
+MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainTabBtn.BorderSizePixel = 0
+MainTabBtn.Position = UDim2.new(0, 0, 0, 0)
+MainTabBtn.Size = UDim2.new(0, 100, 1, 0)
+MainTabBtn.Parent = TabButtons
+
+local ConfigTabBtn = Instance.new("TextButton")
+ConfigTabBtn.Text = "Config"
+ConfigTabBtn.Font = Enum.Font.SourceSans
+ConfigTabBtn.TextSize = 16
+ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ConfigTabBtn.BorderSizePixel = 0
+ConfigTabBtn.Position = UDim2.new(0, 100, 0, 0)
+ConfigTabBtn.Size = UDim2.new(0, 100, 1, 0)
+ConfigTabBtn.Parent = TabButtons
+
+-- Content Area (changes based on tab)
+local ContentArea = Instance.new("ScrollingFrame")
 ContentArea.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 ContentArea.BorderSizePixel = 0
-ContentArea.Position = UDim2.new(0, 10, 0, 40)
-ContentArea.Size = UDim2.new(1, -20, 1, -50)
+ContentArea.Position = UDim2.new(0, 10, 0, 65)
+ContentArea.Size = UDim2.new(1, -20, 1, -75)
+ContentArea.CanvasSize = UDim2.new(0, 0, 0, 0)
+ContentArea.ScrollBarThickness = 8
+ContentArea.ScrollBarImageColor3 = Color3.fromRGB(0, 120, 255)
+ContentArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ContentArea.Parent = MainFrame
 
 local UIListLayout = Instance.new("UIListLayout")
@@ -107,18 +220,24 @@ UIListLayout.Parent = ContentArea
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 8)
 
-local Pad = Instance.new("Frame")
-Pad.Size = UDim2.new(1,0,0,5)
-Pad.BackgroundTransparency = 1
-Pad.LayoutOrder = 0
-Pad.Parent = ContentArea
+-- Helper function to clear content area
+local function ClearContent()
+    for _, child in pairs(ContentArea:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+end
 
-local function CreateToggle(text, configKey)
-    local container = Instance.new("Frame")
-    container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 24)
-    container.LayoutOrder = 1
-    container.Parent = ContentArea
+-- Helper function to create toggles
+local function CreateToggle(text, configKey, container)
+    local container = container or ContentArea
+    
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.BackgroundTransparency = 1
+    toggleFrame.Size = UDim2.new(1, 0, 0, 24)
+    toggleFrame.LayoutOrder = 1
+    toggleFrame.Parent = container
     
     local btn = Instance.new("TextButton")
     btn.Text = ""
@@ -126,7 +245,7 @@ local function CreateToggle(text, configKey)
     btn.BorderSizePixel = 0
     btn.Position = UDim2.new(0, 5, 0, 4)
     btn.Size = UDim2.new(0, 16, 0, 16)
-    btn.Parent = container
+    btn.Parent = toggleFrame
     
     local lbl = Instance.new("TextLabel")
     lbl.Text = text
@@ -137,20 +256,24 @@ local function CreateToggle(text, configKey)
     lbl.BackgroundTransparency = 1
     lbl.Position = UDim2.new(0, 30, 0, 0)
     lbl.Size = UDim2.new(1, -30, 1, 0)
-    lbl.Parent = container
+    lbl.Parent = toggleFrame
     
     btn.MouseButton1Click:Connect(function()
         Config[configKey] = not Config[configKey]
         btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+        SaveConfigs() -- Auto-save when toggling
     end)
 end
 
-local function CreateSlider(text, configKey, min, max)
-    local container = Instance.new("Frame")
-    container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 50)
-    container.LayoutOrder = 2
-    container.Parent = ContentArea
+-- Helper function to create sliders
+local function CreateSlider(text, configKey, min, max, container)
+    local container = container or ContentArea
+    
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.Size = UDim2.new(1, 0, 0, 50)
+    sliderFrame.LayoutOrder = 2
+    sliderFrame.Parent = container
     
     local lbl = Instance.new("TextLabel")
     lbl.Text = text
@@ -161,7 +284,7 @@ local function CreateSlider(text, configKey, min, max)
     lbl.BackgroundTransparency = 1
     lbl.Position = UDim2.new(0, 5, 0, 0)
     lbl.Size = UDim2.new(1, -10, 0, 20)
-    lbl.Parent = container
+    lbl.Parent = sliderFrame
     
     local sliderBg = Instance.new("Frame")
     sliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -169,7 +292,7 @@ local function CreateSlider(text, configKey, min, max)
     sliderBg.BorderSizePixel = 1
     sliderBg.Position = UDim2.new(0, 5, 0, 25)
     sliderBg.Size = UDim2.new(1, -10, 0, 20)
-    sliderBg.Parent = container
+    sliderBg.Parent = sliderFrame
     
     local sliderFill = Instance.new("Frame")
     sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
@@ -197,22 +320,353 @@ local function CreateSlider(text, configKey, min, max)
         Config[configKey] = newVal
         sliderFill.Size = UDim2.new(relative, 0, 1, 0)
         valueLbl.Text = tostring(newVal)
+        SaveConfigs() -- Auto-save when slider changes
     end
     
-    sliderBg.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true; Update(input) end end)
-    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = false end end)
-    UserInputService.InputChanged:Connect(function(input) if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then Update(input) end end)
+    sliderBg.InputBegan:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            draggingSlider = true 
+            Update(input) 
+        end 
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input) 
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
+            draggingSlider = false 
+        end 
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input) 
+        if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then 
+            Update(input) 
+        end 
+    end)
 end
 
-CreateToggle("Master Enabled", "Enabled")
-CreateToggle("Show Names", "ShowNames")
-CreateToggle("Show NPCs", "ShowNPCs") -- NEW: NPC Toggle
-CreateToggle("Show Bars", "ShowBars")
-CreateToggle("Show Values", "ShowValues") -- NEW: Values Toggle
-CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+-- Build Main Tab
+local function BuildMainTab()
+    ClearContent()
+    
+    -- Padding at top
+    local pad = Instance.new("Frame")
+    pad.Size = UDim2.new(1,0,0,5)
+    pad.BackgroundTransparency = 1
+    pad.LayoutOrder = 0
+    pad.Parent = ContentArea
+    
+    CreateToggle("Master Enabled", "Enabled")
+    CreateToggle("Show Names", "ShowNames")
+    CreateToggle("Show NPCs", "ShowNPCs")
+    CreateToggle("Show Bars", "ShowBars")
+    CreateToggle("Show Values", "ShowValues")
+    CreateSlider("Max Distance", "MaxDistance", 100, 5000)
+    
+    -- Update UIListLayout for proper spacing
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end
+
+-- Build Config Tab
+local function BuildConfigTab()
+    ClearContent()
+    
+    -- Config Selection Frame
+    local selectFrame = Instance.new("Frame")
+    selectFrame.BackgroundTransparency = 1
+    selectFrame.Size = UDim2.new(1, 0, 0, 80)
+    selectFrame.LayoutOrder = 1
+    selectFrame.Parent = ContentArea
+    
+    local selectLbl = Instance.new("TextLabel")
+    selectLbl.Text = "Current Config:"
+    selectLbl.Font = Enum.Font.SourceSans
+    selectLbl.TextSize = 16
+    selectLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    selectLbl.TextXAlignment = Enum.TextXAlignment.Left
+    selectLbl.BackgroundTransparency = 1
+    selectLbl.Position = UDim2.new(0, 5, 0, 0)
+    selectLbl.Size = UDim2.new(1, -10, 0, 20)
+    selectLbl.Parent = selectFrame
+    
+    local configDropdown = Instance.new("TextButton")
+    configDropdown.Text = CurrentConfig .. " ▼"
+    configDropdown.Font = Enum.Font.SourceSans
+    configDropdown.TextSize = 16
+    configDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
+    configDropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    configDropdown.BorderSizePixel = 0
+    configDropdown.Position = UDim2.new(0, 5, 0, 25)
+    configDropdown.Size = UDim2.new(1, -10, 0, 30)
+    configDropdown.Parent = selectFrame
+    
+    local dropdownList = Instance.new("Frame")
+    dropdownList.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    dropdownList.BorderSizePixel = 0
+    dropdownList.Position = UDim2.new(0, 5, 0, 55)
+    dropdownList.Size = UDim2.new(1, -10, 0, 0)
+    dropdownList.Visible = false
+    dropdownList.Parent = selectFrame
+    
+    local dropdownLayout = Instance.new("UIListLayout")
+    dropdownLayout.Parent = dropdownList
+    
+    -- Update dropdown with configs
+    local function UpdateDropdown()
+        for _, child in pairs(dropdownList:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        
+        for name, _ in pairs(Configs) do
+            local btn = Instance.new("TextButton")
+            btn.Text = name
+            btn.Font = Enum.Font.SourceSans
+            btn.TextSize = 16
+            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            btn.BorderSizePixel = 0
+            btn.Size = UDim2.new(1, 0, 0, 25)
+            btn.Parent = dropdownList
+            
+            btn.MouseButton1Click:Connect(function()
+                CurrentConfig = name
+                configDropdown.Text = name .. " ▼"
+                dropdownList.Visible = false
+                
+                -- Load the selected config
+                if Configs[name] then
+                    for k, v in pairs(Configs[name]) do
+                        Config[k] = v
+                    end
+                end
+                
+                SaveConfigs()
+            end)
+        end
+        
+        dropdownList.Size = UDim2.new(1, -10, 0, dropdownLayout.AbsoluteContentSize.Y)
+    end
+    
+    configDropdown.MouseButton1Click:Connect(function()
+        dropdownList.Visible = not dropdownList.Visible
+        if dropdownList.Visible then
+            UpdateDropdown()
+        end
+    end)
+    
+    -- Config Management Buttons
+    local btnFrame = Instance.new("Frame")
+    btnFrame.BackgroundTransparency = 1
+    btnFrame.Size = UDim2.new(1, 0, 0, 40)
+    btnFrame.LayoutOrder = 2
+    btnFrame.Parent = ContentArea
+    
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Text = "Save Current"
+    saveBtn.Font = Enum.Font.SourceSans
+    saveBtn.TextSize = 16
+    saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Position = UDim2.new(0, 5, 0, 0)
+    saveBtn.Size = UDim2.new(0.5, -10, 0, 30)
+    saveBtn.Parent = btnFrame
+    
+    local loadBtn = Instance.new("TextButton")
+    loadBtn.Text = "Load"
+    loadBtn.Font = Enum.Font.SourceSans
+    loadBtn.TextSize = 16
+    loadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    loadBtn.BorderSizePixel = 0
+    loadBtn.Position = UDim2.new(0.5, 5, 0, 0)
+    loadBtn.Size = UDim2.new(0.5, -10, 0, 30)
+    loadBtn.Parent = btnFrame
+    
+    -- New Config Creation
+    local newFrame = Instance.new("Frame")
+    newFrame.BackgroundTransparency = 1
+    newFrame.Size = UDim2.new(1, 0, 0, 100)
+    newFrame.LayoutOrder = 3
+    newFrame.Parent = ContentArea
+    
+    local newLbl = Instance.new("TextLabel")
+    newLbl.Text = "Create New Config:"
+    newLbl.Font = Enum.Font.SourceSans
+    newLbl.TextSize = 16
+    newLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    newLbl.TextXAlignment = Enum.TextXAlignment.Left
+    newLbl.BackgroundTransparency = 1
+    newLbl.Position = UDim2.new(0, 5, 0, 0)
+    newLbl.Size = UDim2.new(1, -10, 0, 20)
+    newLbl.Parent = newFrame
+    
+    local nameBox = Instance.new("TextBox")
+    nameBox.Text = ""
+    nameBox.PlaceholderText = "Config Name"
+    nameBox.Font = Enum.Font.SourceSans
+    nameBox.TextSize = 16
+    nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    nameBox.BorderSizePixel = 0
+    nameBox.Position = UDim2.new(0, 5, 0, 25)
+    nameBox.Size = UDim2.new(1, -10, 0, 30)
+    nameBox.Parent = newFrame
+    
+    local createBtn = Instance.new("TextButton")
+    createBtn.Text = "Create New Config"
+    createBtn.Font = Enum.Font.SourceSans
+    createBtn.TextSize = 16
+    createBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    createBtn.BorderSizePixel = 0
+    createBtn.Position = UDim2.new(0, 5, 0, 60)
+    createBtn.Size = UDim2.new(1, -10, 0, 30)
+    createBtn.Parent = newFrame
+    
+    local deleteBtn = Instance.new("TextButton")
+    deleteBtn.Text = "Delete Current Config"
+    deleteBtn.Font = Enum.Font.SourceSans
+    deleteBtn.TextSize = 16
+    deleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+    deleteBtn.BorderSizePixel = 0
+    deleteBtn.Position = UDim2.new(0, 5, 0, 95)
+    deleteBtn.Size = UDim2.new(1, -10, 0, 30)
+    deleteBtn.Parent = newFrame
+    
+    -- Button functionality
+    saveBtn.MouseButton1Click:Connect(function()
+        -- Save current settings to the current config
+        local configCopy = {}
+        for k, v in pairs(Config) do
+            configCopy[k] = v
+        end
+        Configs[CurrentConfig] = configCopy
+        SaveConfigs()
+        
+        -- Visual feedback
+        saveBtn.Text = "Saved!"
+        saveBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        task.wait(1)
+        saveBtn.Text = "Save Current"
+        saveBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    end)
+    
+    loadBtn.MouseButton1Click:Connect(function()
+        -- Reload current config
+        if Configs[CurrentConfig] then
+            for k, v in pairs(Configs[CurrentConfig]) do
+                Config[k] = v
+            end
+            SaveConfigs()
+            
+            -- Refresh main tab colors if needed
+            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                BuildMainTab() -- Rebuild main tab to update toggle colors
+            end
+            
+            -- Visual feedback
+            loadBtn.Text = "Loaded!"
+            loadBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+            task.wait(1)
+            loadBtn.Text = "Load"
+            loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+        end
+    end)
+    
+    createBtn.MouseButton1Click:Connect(function()
+        local newName = nameBox.Text:gsub("%s+", "") -- Remove spaces
+        if newName and newName ~= "" then
+            if not Configs[newName] then
+                -- Create new config with current settings
+                local configCopy = {}
+                for k, v in pairs(Config) do
+                    configCopy[k] = v
+                end
+                Configs[newName] = configCopy
+                CurrentConfig = newName
+                configDropdown.Text = newName .. " ▼"
+                nameBox.Text = ""
+                SaveConfigs()
+                
+                -- Visual feedback
+                createBtn.Text = "Created!"
+                createBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+                task.wait(1)
+                createBtn.Text = "Create New Config"
+                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+            else
+                -- Config already exists
+                createBtn.Text = "Name exists!"
+                createBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+                task.wait(1)
+                createBtn.Text = "Create New Config"
+                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+            end
+        end
+    end)
+    
+    deleteBtn.MouseButton1Click:Connect(function()
+        if CurrentConfig ~= "Default" then
+            Configs[CurrentConfig] = nil
+            CurrentConfig = "Default"
+            
+            -- Load default config
+            if Configs["Default"] then
+                for k, v in pairs(Configs["Default"]) do
+                    Config[k] = v
+                end
+            end
+            
+            configDropdown.Text = CurrentConfig .. " ▼"
+            SaveConfigs()
+            
+            -- Refresh main tab if needed
+            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                BuildMainTab()
+            end
+            
+            -- Visual feedback
+            deleteBtn.Text = "Deleted!"
+            deleteBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+            task.wait(1)
+            deleteBtn.Text = "Delete Current Config"
+            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+        else
+            deleteBtn.Text = "Can't delete Default!"
+            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+            task.wait(1)
+            deleteBtn.Text = "Delete Current Config"
+            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+        end
+    end)
+    
+    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end
+
+-- Tab switching
+MainTabBtn.MouseButton1Click:Connect(function()
+    MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    BuildMainTab()
+end)
+
+ConfigTabBtn.MouseButton1Click:Connect(function()
+    ConfigTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
+    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    BuildConfigTab()
+end)
+
+-- Build initial tab
+BuildMainTab()
 
 --------------------------------------------------------------------------------
--- 2. ESP SYSTEM
+-- 2. ESP SYSTEM (Unchanged from your original)
 --------------------------------------------------------------------------------
 
 local function CreateDrawing(type, props)
@@ -297,6 +751,7 @@ RunService.RenderStepped:Connect(function()
                     local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0) -- Red
                     local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0) -- Yellow
                     local showBar2 = false
+                    local cleanName = ""
 
                     if isNPC then
                         -- NPC LOGIC: Green Bar
@@ -305,6 +760,7 @@ RunService.RenderStepped:Connect(function()
                         min1 = 0
                         color1 = Color3.new(0.2, 0.9, 0.2) -- Green
                         showBar2 = false
+                        cleanName = model.Name
                     else
                         -- PLAYER LOGIC: Red Bar + Yellow Posture (Dynamic Min/Max)
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
@@ -324,6 +780,7 @@ RunService.RenderStepped:Connect(function()
                         end
                         
                         color1 = Color3.new(0.9, 0.2, 0.2) -- Red
+                        cleanName = player and player.Name or model.Name
                     end
 
                     -- Calculate Percentage (Respecting Min/Max)
@@ -341,6 +798,7 @@ RunService.RenderStepped:Connect(function()
                         d.Name.Visible = true
                         d.Name.Text = cleanName
                         d.Name.Position = screenPos - Vector2.new(0, Config.YOffset + 15)
+                        d.Name.Size = Config.TextSize
                     else
                         d.Name.Visible = false
                     end
@@ -421,4 +879,4 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-print("Mission Hunter ESP Loaded.")
+print("نوح ESP Loaded with Config System.")
