@@ -3,7 +3,33 @@
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Keybind: F4 to Toggle Menu
 
-loadstring(game:HttpGet("https://github.com/MosIsOG/playground/blob/main/mod_detector.txt"))()
+-- Safely fetch and execute remote mod detector to avoid nil loadstring crashes
+local loader = loadstring or load
+local function safeRequire(url)
+    if not loader then
+        warn("Executor has no loadstring; skipping remote script: " .. url)
+        return
+    end
+
+    local okFetch, srcOrErr = pcall(game.HttpGet, game, url)
+    if not okFetch then
+        warn("Failed to fetch remote script: " .. tostring(srcOrErr))
+        return
+    end
+
+    local fn, compileErr = loader(srcOrErr)
+    if not fn then
+        warn("Failed to compile remote script: " .. tostring(compileErr))
+        return
+    end
+
+    local okRun, runErr = pcall(fn)
+    if not okRun then
+        warn("Remote script error: " .. tostring(runErr))
+    end
+end
+
+safeRequire("https://raw.githubusercontent.com/MosIsOG/playground/main/mod_detector.txt")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -991,7 +1017,8 @@ RunService.RenderStepped:Connect(function()
                             min2 = pos:GetAttribute("MinValue") or pos.MinValue or 0
                             showBar2 = true
                         end
-                        
+                    end
+                    
 
                     -- Calculate Percentages
                     local range1 = max1 - min1
