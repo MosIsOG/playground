@@ -36,8 +36,6 @@ local Config = {
     ParryAnimations = {},  -- Each entry: {Id = "animId", Delay = 0.1}
     DefaultParryDelay = 0.1,
     ParryKey = "F",
-    ParryRadius = 50,        -- Max distance (studs) to auto-parry
-    VisualizeParry = false,  -- Show parry radius circle
     
     -- Animation Fetch Settings
     FetchAnimationsEnabled = false,
@@ -69,8 +67,6 @@ local WalkspeedUpdateConnection = nil
 
 -- AutoParry State
 local ParryConnection = nil
-local ParryVisualizerConnection = nil
-local ParryRadiusCircle = nil
 local CurrentAnimations = {}
 local DetectedAttacks = {}
 
@@ -373,8 +369,6 @@ local function LoadConfigs()
                 ParryAnimations = {},
                 DefaultParryDelay = 0.1,
                 ParryKey = "F",
-                ParryRadius = 50,
-                VisualizeParry = false,
                 FetchAnimationsEnabled = false,
                 FetchFromTarget = true,
                 FetchedAnimations = {},
@@ -937,14 +931,6 @@ local function StopAutoParry()
         ParryConnection:Disconnect()
         ParryConnection = nil
     end
-    if ParryVisualizerConnection then
-        ParryVisualizerConnection:Disconnect()
-        ParryVisualizerConnection = nil
-    end
-    if ParryRadiusCircle then
-        pcall(function() ParryRadiusCircle:Remove() end)
-        ParryRadiusCircle = nil
-    end
     CurrentAnimations = {}
     DetectedAttacks = {}
     print("🛑 AutoParry Stopped")
@@ -1065,22 +1051,10 @@ local function StartAutoParry()
             end
         end
         
-        -- Check all characters (players + NPCs) within parry radius
-        local localChar = LocalPlayer.Character
-        local localRoot = localChar and (localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Torso") or localChar:FindFirstChild("UpperTorso"))
-        
-        if not localRoot then return end
-        
+        -- Check all characters (players + NPCs)
         for _, target in ipairs(GetAllTargetCharacters()) do
             local character = target.Character
             local targetName = target.Name
-            
-            -- Distance check: only parry targets within radius
-            local targetRoot = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
-            if not targetRoot then continue end
-            
-            local distance = (localRoot.Position - targetRoot.Position).Magnitude
-            if distance > Config.ParryRadius then continue end
             
             local humanoid = character:FindFirstChild("Humanoid")
             if humanoid and humanoid.Health > 0 then
@@ -1161,45 +1135,6 @@ local function StartAutoParry()
             end
         end
     end)
-    
-    -- Parry radius visualizer
-    if Config.VisualizeParry then
-        ParryRadiusCircle = Drawing.new("Circle")
-        ParryRadiusCircle.Color = Color3.fromRGB(0, 200, 255)
-        ParryRadiusCircle.Thickness = 1.5
-        ParryRadiusCircle.Filled = false
-        ParryRadiusCircle.NumSides = 60
-        ParryRadiusCircle.Transparency = 0.6
-        ParryRadiusCircle.Visible = true
-        
-        ParryVisualizerConnection = RunService.RenderStepped:Connect(function()
-            if not Config.AutoParryEnabled or not Config.VisualizeParry then
-                if ParryRadiusCircle then ParryRadiusCircle.Visible = false end
-                return
-            end
-            
-            local localChar = LocalPlayer.Character
-            local localRoot = localChar and (localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Torso") or localChar:FindFirstChild("UpperTorso"))
-            if not localRoot then
-                ParryRadiusCircle.Visible = false
-                return
-            end
-            
-            local pos, onScreen = Camera:WorldToViewportPoint(localRoot.Position)
-            if onScreen then
-                -- Calculate screen-space radius from world radius
-                local edgePoint = localRoot.Position + Camera.CFrame.RightVector * Config.ParryRadius
-                local edgePos = Camera:WorldToViewportPoint(edgePoint)
-                local screenRadius = math.abs(edgePos.X - pos.X)
-                
-                ParryRadiusCircle.Position = Vector2.new(pos.X, pos.Y)
-                ParryRadiusCircle.Radius = screenRadius
-                ParryRadiusCircle.Visible = true
-            else
-                ParryRadiusCircle.Visible = false
-            end
-        end)
-    end
 end
 
 -- Build AutoParry Tab
@@ -1213,8 +1148,6 @@ local function BuildAutoParryTab()
     pad.Parent = ContentArea
     
     CreateToggleWithKeybind("Enable AutoParry", "AutoParryEnabled")
-    CreateToggle("Visualize Parry Radius", "VisualizeParry")
-    CreateSlider("Parry Radius (studs)", "ParryRadius", 5, 200)
     
     -- Animation List
     local listFrame = Instance.new("Frame")
