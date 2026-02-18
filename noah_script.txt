@@ -544,7 +544,71 @@ LoadConfigs()
 ApplyWalkspeedMultiplier()
 StartAnimationFetching()
 
--- HandleKeybind is defined later (after all referenced functions exist)
+-- Keybind handling function
+local function HandleKeybind(key)
+    if KeybindMode then
+        -- We're setting a keybind
+        if AwaitingKeybind and AwaitingKeybindLabel then
+            Config.Keybinds[AwaitingKeybind] = key
+            AwaitingKeybindLabel.Text = "Key: " .. key
+            KeybindMode = false
+            AwaitingKeybind = nil
+            AwaitingKeybindLabel = nil
+            SaveConfigs()
+            SendNotification("Keybind Set", AwaitingKeybind .. " bound to " .. key, 2)
+        end
+        return
+    end
+    
+    -- Check other keybinds
+    for setting, boundKey in pairs(Config.Keybinds) do
+        if key == boundKey then
+            if Config[setting] ~= nil then
+                Config[setting] = not Config[setting]
+                
+                -- Handle special cases
+                if setting == "AutoParryEnabled" then
+                    if Config.AutoParryEnabled then
+                        StartAutoParry()
+                    else
+                        StopAutoParry()
+                    end
+                elseif setting == "FetchAnimationsEnabled" then
+                    if Config.FetchAnimationsEnabled then
+                        StartAnimationFetching()
+                    else
+                        if FetchConnection then
+                            FetchConnection:Disconnect()
+                            FetchConnection = nil
+                        end
+                    end
+                elseif setting == "ShowWalkspeed" then
+                    if Config.ShowWalkspeed then
+                        ApplyWalkspeedMultiplier()
+                        StartWalkspeedMonitoring()
+                    else
+                        local character = LocalPlayer.Character
+                        if character then
+                            local humanoid = character:FindFirstChild("Humanoid")
+                            if humanoid then
+                                humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
+                            end
+                        end
+                    end
+                end
+                
+                SendNotification("Toggled", setting .. ": " .. tostring(Config[setting]), 1)
+                SaveConfigs()
+                
+                -- Refresh UI if we're on the main tab
+                if MainTabBtn and MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
+                    BuildMainTab()
+                end
+            end
+            break
+        end
+    end
+end
 
 --------------------------------------------------------------------------------
 -- 1. GUI CONSTRUCTION
@@ -1007,8 +1071,6 @@ local function BuildMainTab()
 end
 
 -- AutoParry Functions
-local PARRY_COOLDOWN = 2 -- seconds between parries on same source
-
 local function StopAutoParry()
     if ParryConnection then
         ParryConnection:Disconnect()
@@ -1036,6 +1098,7 @@ local function StopAutoParry()
     print("🛑 AutoParry Stopped")
 end
 
+<<<<<<< HEAD
 local function ExecuteParry()
     if not Config.AutoParryEnabled then return end
     
@@ -1122,34 +1185,48 @@ local function PlayAnimationAndParry(animationId, delay)
     else
         ExecuteParry()
         print("⚔️ Parried animation: " .. animationId .. " (instant)")
-    end
-end
-
--- Helper: get all characters to monitor (players + NPCs)
-local function GetAllTargetCharacters()
-    local characters = {}
+=======
+local function PlayAnimationAndParry(animationId)
+    if not Config.AutoParryEnabled then return end
     
-    -- Add other players
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            table.insert(characters, {Character = player.Character, Name = player.Name})
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = humanoid
+    end
+    
+    local animation = Instance.new("Animation")
+    animation.AnimationId = animationId
+    
+    local animTrack = animator:LoadAnimation(animation)
+    animTrack:Play()
+    
+    table.insert(CurrentAnimations, animTrack)
+    
+    task.wait(Config.ParryDelay)
+    
+    local keyCode = Enum.KeyCode[Config.ParryKey:upper()]
+    if keyCode then
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+        print("⚔️ Parried animation: " .. animationId)
+>>>>>>> parent of 4a4bca9 (push this)
+    end
+    
+    task.wait(2)
+    for i, track in ipairs(CurrentAnimations) do
+        if track == animTrack then
+            table.remove(CurrentAnimations, i)
+            break
         end
     end
-    
-    -- Add NPCs from Live folder
-    if LiveFolder then
-        for _, folder in ipairs(LiveFolder:GetChildren()) do
-            local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
-            if model and model ~= LocalPlayer.Character then
-                local player = Players:GetPlayerFromCharacter(model)
-                if not player then -- it's an NPC
-                    table.insert(characters, {Character = model, Name = model.Name})
-                end
-            end
-        end
-    end
-    
-    return characters
 end
 
 local function StartAutoParry()
@@ -1170,6 +1247,7 @@ local function StartAutoParry()
     ParryConnection = RunService.Heartbeat:Connect(function()
         if not Config.AutoParryEnabled then return end
         
+<<<<<<< HEAD
         local now = tick()
         
         -- Rebuild lookup table every frame so newly added animations work immediately
@@ -1255,6 +1333,28 @@ local function StartAutoParry()
                                                 PlayAnimationAndParry("tool:" .. tool.Name, Config.DefaultParryDelay)
                                             end
                                         end
+=======
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local character = player.Character
+                if character then
+                    local humanoid = character:FindFirstChild("Humanoid")
+                    if humanoid then
+                        local animator = humanoid:FindFirstChildOfClass("Animator")
+                        if animator then
+                            for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                local animId = track.Animation.AnimationId
+                                
+                                for _, savedAnim in ipairs(Config.ParryAnimations) do
+                                    if animId == savedAnim and not DetectedAttacks[animId .. player.Name] then
+                                        DetectedAttacks[animId .. player.Name] = true
+                                        print("⚠️ Attack detected from " .. player.Name .. ": " .. animId)
+                                        
+                                        PlayAnimationAndParry(savedAnim)
+                                        
+                                        task.wait(2)
+                                        DetectedAttacks[animId .. player.Name] = nil
+>>>>>>> parent of 4a4bca9 (push this)
                                     end
                                 end
                             end
@@ -2015,73 +2115,6 @@ ConfigTabBtn.MouseButton1Click:Connect(function()
 end)
 
 BuildMainTab()
-
--- Keybind handling function (defined here so all referenced functions exist)
-local function HandleKeybind(key)
-    if KeybindMode then
-        -- We're setting a keybind
-        if AwaitingKeybind and AwaitingKeybindLabel then
-            local settingName = AwaitingKeybind -- save before clearing
-            Config.Keybinds[AwaitingKeybind] = key
-            AwaitingKeybindLabel.Text = "Key: " .. key
-            KeybindMode = false
-            AwaitingKeybind = nil
-            AwaitingKeybindLabel = nil
-            SaveConfigs()
-            SendNotification("Keybind Set", settingName .. " bound to " .. key, 2)
-        end
-        return
-    end
-    
-    -- Check other keybinds
-    for setting, boundKey in pairs(Config.Keybinds) do
-        if key == boundKey then
-            if Config[setting] ~= nil then
-                Config[setting] = not Config[setting]
-                
-                -- Handle special cases
-                if setting == "AutoParryEnabled" then
-                    if Config.AutoParryEnabled then
-                        StartAutoParry()
-                    else
-                        StopAutoParry()
-                    end
-                elseif setting == "FetchAnimationsEnabled" then
-                    if Config.FetchAnimationsEnabled then
-                        StartAnimationFetching()
-                    else
-                        if FetchConnection then
-                            FetchConnection:Disconnect()
-                            FetchConnection = nil
-                        end
-                    end
-                elseif setting == "ShowWalkspeed" then
-                    if Config.ShowWalkspeed then
-                        ApplyWalkspeedMultiplier()
-                        StartWalkspeedMonitoring()
-                    else
-                        local character = LocalPlayer.Character
-                        if character then
-                            local humanoid = character:FindFirstChild("Humanoid")
-                            if humanoid then
-                                humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                            end
-                        end
-                    end
-                end
-                
-                SendNotification("Toggled", setting .. ": " .. tostring(Config[setting]), 1)
-                SaveConfigs()
-                
-                -- Refresh UI if we're on the main tab
-                if MainTabBtn and MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                    BuildMainTab()
-                end
-            end
-            break
-        end
-    end
-end
 
 -- Connect keybind input AFTER GUI is constructed
 UserInputService.InputBegan:Connect(function(input, processed)
