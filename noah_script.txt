@@ -38,6 +38,7 @@ local Config = {
     ParryKey = "F",
     ParryRadius = 50,        -- Max distance (studs) to auto-parry
     VisualizeParry = false,  -- Show parry radius circle
+    DetectTools = true,      -- Also detect Tool .Activated (swing) as attacks
     
     -- Animation Fetch Settings
     FetchAnimationsEnabled = false,
@@ -69,6 +70,7 @@ local WalkspeedUpdateConnection = nil
 
 -- AutoParry State
 local ParryConnection = nil
+local ToolConnections = {}
 local ParryVisualizerConnection = nil
 local ParryRadiusCircle = nil
 local CurrentAnimations = {}
@@ -375,6 +377,7 @@ local function LoadConfigs()
                 ParryKey = "F",
                 ParryRadius = 50,
                 VisualizeParry = false,
+                DetectTools = true,
                 FetchAnimationsEnabled = false,
                 FetchFromTarget = true,
                 FetchedAnimations = {},
@@ -875,6 +878,10 @@ local function StopAutoParry()
         ParryConnection:Disconnect()
         ParryConnection = nil
     end
+    for _, conn in pairs(ToolConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    ToolConnections = {}
     if ParryVisualizerConnection then
         ParryVisualizerConnection:Disconnect()
         ParryVisualizerConnection = nil
@@ -894,13 +901,51 @@ local function ExecuteParry()
     local success, keyCode = pcall(function()
         return Enum.KeyCode[Config.ParryKey:upper()]
     end)
-    
-    if success and keyCode then
-        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-        task.delay(0.05, function()
-            VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-        end)
+    if not success or not keyCode then
+        warn("[AutoParry] Invalid parry key: " .. tostring(Config.ParryKey))
+        return
     end
+    
+    -- Method 1: VirtualInputManager (most common)
+    local vim_ok = pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    end)
+    if vim_ok then
+        task.delay(0.05, function()
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+            end)
+        end)
+        return
+    end
+    
+    -- Method 2: keypress/keyrelease (some executors)
+    if keypress and keyrelease then
+        pcall(function()
+            keypress(keyCode)
+            task.delay(0.05, function()
+                pcall(function() keyrelease(keyCode) end)
+            end)
+        end)
+        return
+    end
+    
+    -- Method 3: Input simulation via UserInputService (fallback)
+    pcall(function()
+        local uis = game:GetService("UserInputService")
+        local inputObject = Instance.new("InputObject")
+        inputObject.KeyCode = keyCode
+        inputObject.UserInputType = Enum.UserInputType.Keyboard
+        inputObject.UserInputState = Enum.UserInputState.Begin
+        -- Fire through any available method
+        if firesignal then
+            firesignal(uis.InputBegan, inputObject, false)
+            task.delay(0.05, function()
+                inputObject.UserInputState = Enum.UserInputState.End
+                pcall(function() firesignal(uis.InputEnded, inputObject, false) end)
+            end)
+        end
+    end)
 end
 
 local function PlayAnimationAndParry(animationId, delay)
@@ -1008,10 +1053,35 @@ local function StartAutoParry()
                             if delay ~= nil then
                                 local attackKey = animId .. "_" .. targetName
                                 if not DetectedAttacks[attackKey] then
-                                    -- Set cooldown using timestamp (no task.wait in Heartbeat)
                                     DetectedAttacks[attackKey] = now + PARRY_COOLDOWN
-                                    print("⚠️ Attack detected from " .. targetName .. ": " .. animId)
+                                    print("⚠️ Attack animation from " .. targetName .. ": " .. animId)
                                     PlayAnimationAndParry(animId, delay)
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Tool activation detection (detect weapon swings)
+                if Config.DetectTools then
+                    for _, tool in pairs(character:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            local toolKey = "tool_" .. tool.Name .. "_" .. targetName
+                            if tool:FindFirstChild("Handle") then
+                                -- Check if tool was recently activated via animation
+                                local toolAnimator = humanoid:FindFirstChildOfClass("Animator")
+                                if toolAnimator then
+                                    for _, track in pairs(toolAnimator:GetPlayingAnimationTracks()) do
+                                        if track.IsPlaying and track.Speed > 0 then
+                                            local animId = track.Animation and track.Animation.AnimationId
+                                            if animId and not DetectedAttacks[toolKey] then
+                                                -- Any playing animation on a tool-wielding enemy = potential attack
+                                                DetectedAttacks[toolKey] = now + PARRY_COOLDOWN
+                                                print("⚠️ Tool swing from " .. targetName .. " (" .. tool.Name .. ")")
+                                                PlayAnimationAndParry("tool:" .. tool.Name, Config.DefaultParryDelay)
+                                            end
+                                        end
+                                    end
                                 end
                             end
                         end
@@ -1073,6 +1143,7 @@ local function BuildAutoParryTab()
     
     CreateToggleWithKeybind("Enable AutoParry", "AutoParryEnabled")
     CreateToggle("Visualize Parry Radius", "VisualizeParry")
+    CreateToggle("Detect Tool Swings", "DetectTools")
     CreateSlider("Parry Radius (studs)", "ParryRadius", 5, 200)
     
     -- Animation List
