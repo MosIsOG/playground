@@ -33,8 +33,8 @@ local Config = {
     
     -- AutoParry Settings
     AutoParryEnabled = false,
-    ParryAnimations = {},
-    ParryDelay = 0.1,
+    ParryAnimations = {},  -- Each entry: {Id = "animId", Delay = 0.1}
+    DefaultParryDelay = 0.1,
     ParryKey = "F",
     
     -- Animation Fetch Settings
@@ -249,7 +249,8 @@ local function FetchAnimationsFromTarget(target)
         if animId and animId ~= "" then
             -- Check if already in list
             local alreadyExists = false
-            for _, savedId in ipairs(Config.ParryAnimations) do
+            for _, saved in ipairs(Config.ParryAnimations) do
+                local savedId = type(saved) == "table" and saved.Id or saved
                 if savedId == animId then
                     alreadyExists = true
                     break
@@ -262,7 +263,7 @@ local function FetchAnimationsFromTarget(target)
                 
                 -- Auto add if enabled
                 if Config.AutoAddFetched then
-                    table.insert(Config.ParryAnimations, animId)
+                    table.insert(Config.ParryAnimations, {Id = animId, Delay = Config.DefaultParryDelay})
                 end
             end
         end
@@ -355,7 +356,7 @@ local function LoadConfigs()
                 YOffset = 60,
                 AutoParryEnabled = false,
                 ParryAnimations = {},
-                ParryDelay = 0.1,
+                DefaultParryDelay = 0.1,
                 ParryKey = "F",
                 FetchAnimationsEnabled = false,
                 FetchFromTarget = true,
@@ -877,18 +878,20 @@ local function ExecuteParry()
     end
 end
 
-local function PlayAnimationAndParry(animationId)
+local function PlayAnimationAndParry(animationId, delay)
     if not Config.AutoParryEnabled then return end
     
+    local parryDelay = delay or Config.DefaultParryDelay or 0.1
+    
     -- Wait for configured delay then press parry key
-    if Config.ParryDelay > 0 then
-        task.delay(Config.ParryDelay, function()
+    if parryDelay > 0 then
+        task.delay(parryDelay, function()
             ExecuteParry()
-            print("⚔️ Parried animation: " .. animationId)
+            print("⚔️ Parried animation: " .. animationId .. " (delay: " .. parryDelay .. "s)")
         end)
     else
         ExecuteParry()
-        print("⚔️ Parried animation: " .. animationId)
+        print("⚔️ Parried animation: " .. animationId .. " (instant)")
     end
 end
 
@@ -928,6 +931,17 @@ local function StartAutoParry()
         return
     end
     
+    -- Build a lookup table for fast matching: animId -> delay
+    local parryLookup = {}
+    for _, entry in ipairs(Config.ParryAnimations) do
+        if type(entry) == "table" then
+            parryLookup[entry.Id] = entry.Delay or Config.DefaultParryDelay
+        else
+            -- Legacy string format support
+            parryLookup[entry] = Config.DefaultParryDelay
+        end
+    end
+    
     print("🔄 AutoParry Started - Monitoring " .. #Config.ParryAnimations .. " animations")
     
     ParryConnection = RunService.Heartbeat:Connect(function()
@@ -954,13 +968,14 @@ local function StartAutoParry()
                     for _, track in pairs(animator:GetPlayingAnimationTracks()) do
                         local animId = track.Animation and track.Animation.AnimationId
                         if animId and animId ~= "" then
-                            for _, savedAnim in ipairs(Config.ParryAnimations) do
+                            local delay = parryLookup[animId]
+                            if delay ~= nil then
                                 local attackKey = animId .. "_" .. targetName
-                                if animId == savedAnim and not DetectedAttacks[attackKey] then
+                                if not DetectedAttacks[attackKey] then
                                     -- Set cooldown using timestamp (no task.wait in Heartbeat)
                                     DetectedAttacks[attackKey] = now + PARRY_COOLDOWN
                                     print("⚠️ Attack detected from " .. targetName .. ": " .. animId)
-                                    PlayAnimationAndParry(savedAnim)
+                                    PlayAnimationAndParry(animId, delay)
                                 end
                             end
                         end
@@ -1016,7 +1031,7 @@ local function BuildAutoParryTab()
     
     animInput.FocusLost:Connect(function(enterPressed)
         if enterPressed and animInput.Text ~= "" then
-            table.insert(Config.ParryAnimations, animInput.Text)
+            table.insert(Config.ParryAnimations, {Id = animInput.Text, Delay = Config.DefaultParryDelay})
             animInput.Text = ""
             SaveConfigs()
             BuildAutoParryTab()
@@ -1038,12 +1053,17 @@ local function BuildAutoParryTab()
     animListLayout.Parent = animList
     animListLayout.Padding = UDim.new(0, 2)
     
-    for i, animId in ipairs(Config.ParryAnimations) do
+    for i, entry in ipairs(Config.ParryAnimations) do
+        -- Support legacy string format and new table format
+        local animId = type(entry) == "table" and entry.Id or entry
+        local animDelay = type(entry) == "table" and entry.Delay or Config.DefaultParryDelay
+        
         local animItem = Instance.new("Frame")
         animItem.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        animItem.Size = UDim2.new(1, 0, 0, 25)
+        animItem.Size = UDim2.new(1, 0, 0, 50)
         animItem.Parent = animList
         
+        -- Top row: index + anim ID + copy + remove
         local animLabel = Instance.new("TextLabel")
         animLabel.Text = i .. ". " .. animId
         animLabel.Font = Enum.Font.SourceSans
@@ -1051,8 +1071,8 @@ local function BuildAutoParryTab()
         animLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         animLabel.TextXAlignment = Enum.TextXAlignment.Left
         animLabel.BackgroundTransparency = 1
-        animLabel.Position = UDim2.new(0, 5, 0, 0)
-        animLabel.Size = UDim2.new(1, -55, 1, 0)
+        animLabel.Position = UDim2.new(0, 5, 0, 2)
+        animLabel.Size = UDim2.new(1, -55, 0, 20)
         animLabel.Parent = animItem
         
         local copyBtn = Instance.new("TextButton")
@@ -1099,9 +1119,77 @@ local function BuildAutoParryTab()
             SaveConfigs()
             BuildAutoParryTab()
         end)
+        
+        -- Bottom row: per-animation delay slider
+        local delayLbl = Instance.new("TextLabel")
+        delayLbl.Text = "Delay: " .. string.format("%.2f", animDelay) .. "s"
+        delayLbl.Font = Enum.Font.Code
+        delayLbl.TextSize = 11
+        delayLbl.TextColor3 = Color3.fromRGB(255, 200, 100)
+        delayLbl.TextXAlignment = Enum.TextXAlignment.Left
+        delayLbl.BackgroundTransparency = 1
+        delayLbl.Position = UDim2.new(0, 5, 0, 24)
+        delayLbl.Size = UDim2.new(0, 65, 0, 20)
+        delayLbl.Parent = animItem
+        
+        local delaySliderBg = Instance.new("Frame")
+        delaySliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        delaySliderBg.BorderColor3 = Color3.fromRGB(50, 50, 50)
+        delaySliderBg.BorderSizePixel = 1
+        delaySliderBg.Position = UDim2.new(0, 75, 0, 27)
+        delaySliderBg.Size = UDim2.new(1, -85, 0, 14)
+        delaySliderBg.Parent = animItem
+        
+        local delaySliderFill = Instance.new("Frame")
+        delaySliderFill.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+        delaySliderFill.BorderSizePixel = 0
+        delaySliderFill.Size = UDim2.new(math.clamp(animDelay / 2, 0, 1), 0, 1, 0)
+        delaySliderFill.Parent = delaySliderBg
+        
+        local draggingDelay = false
+        local capturedIndex = i
+        
+        local function UpdateDelay(input)
+            local pos = input.Position.X
+            local boxPos = delaySliderBg.AbsolutePosition.X
+            local boxSize = delaySliderBg.AbsoluteSize.X
+            local relative = math.clamp((pos - boxPos) / boxSize, 0, 1)
+            local newDelay = relative * 2 -- 0 to 2 seconds range
+            newDelay = math.floor(newDelay * 100 + 0.5) / 100 -- round to 2 decimal
+            
+            -- Update the entry
+            if type(Config.ParryAnimations[capturedIndex]) == "table" then
+                Config.ParryAnimations[capturedIndex].Delay = newDelay
+            else
+                Config.ParryAnimations[capturedIndex] = {Id = Config.ParryAnimations[capturedIndex], Delay = newDelay}
+            end
+            
+            delaySliderFill.Size = UDim2.new(relative, 0, 1, 0)
+            delayLbl.Text = "Delay: " .. string.format("%.2f", newDelay) .. "s"
+        end
+        
+        delaySliderBg.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                draggingDelay = true
+                UpdateDelay(input)
+            end
+        end)
+        
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 and draggingDelay then
+                draggingDelay = false
+                SaveConfigs()
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(input)
+            if draggingDelay and input.UserInputType == Enum.UserInputType.MouseMovement then
+                UpdateDelay(input)
+            end
+        end)
     end
     
-    CreateSlider("Parry Delay (seconds)", "ParryDelay", 0, 1, nil, true)
+    CreateSlider("Default Delay (new anims)", "DefaultParryDelay", 0, 2, nil, true)
     
     -- Key Selection
     local keyFrame = Instance.new("Frame")
@@ -1156,7 +1244,10 @@ local function BuildAutoParryTab()
             SendNotification("Error", "Please add animations first", 3)
             return
         end
-        PlayAnimationAndParry(Config.ParryAnimations[1])
+        local first = Config.ParryAnimations[1]
+        local testId = type(first) == "table" and first.Id or first
+        local testDelay = type(first) == "table" and first.Delay or Config.DefaultParryDelay
+        PlayAnimationAndParry(testId, testDelay)
     end)
     
     ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
