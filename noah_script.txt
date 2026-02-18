@@ -5,6 +5,9 @@
 -- Custom Keybinds: Assign keys to toggle any feature
 -- Default Menu Key: F4
 
+
+loadstring(game:HttpGet("https://github.com/MosIsOG/playground/blob/main/mod_detector.txt"))()
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
