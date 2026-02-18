@@ -39,8 +39,6 @@ local Config = {
     ParryRadius = 50,        -- Max distance (studs) to auto-parry
     VisualizeParry = false,  -- Show parry radius circle
     DetectTools = true,      -- Also detect Tool .Activated (swing) as attacks
-    ParryDebug = false,      -- Show on-screen debug log for parry events
-    HitboxExpand = 0,        -- Expand your character hitbox size (studs, 0 = off)
     
     -- Animation Fetch Settings
     FetchAnimationsEnabled = false,
@@ -75,140 +73,8 @@ local ParryConnection = nil
 local ToolConnections = {}
 local ParryVisualizerConnection = nil
 local ParryRadiusCircle = nil
-local HitboxPart = nil
 local CurrentAnimations = {}
 local DetectedAttacks = {}
-
--- Debug log state
-local DebugLines = {}
-local MAX_DEBUG_LINES = 12
-local DebugDrawings = {}
-
-local function DebugLog(msg)
-    if not Config.ParryDebug then return end
-    local timestamp = string.format("[%.1f]", tick() % 1000)
-    table.insert(DebugLines, 1, timestamp .. " " .. msg)
-    while #DebugLines > MAX_DEBUG_LINES do
-        table.remove(DebugLines)
-    end
-end
-
-local function StartDebugOverlay()
-    -- Clean old drawings
-    for _, d in pairs(DebugDrawings) do
-        pcall(function() d:Remove() end)
-    end
-    DebugDrawings = {}
-    
-    if not Config.ParryDebug then return end
-    
-    -- Background
-    local bg = Drawing.new("Square")
-    bg.Position = Vector2.new(10, 350)
-    bg.Size = Vector2.new(420, 14 * MAX_DEBUG_LINES + 30)
-    bg.Color = Color3.fromRGB(0, 0, 0)
-    bg.Filled = true
-    bg.Transparency = 0.7
-    bg.Visible = true
-    table.insert(DebugDrawings, bg)
-    
-    local title = Drawing.new("Text")
-    title.Position = Vector2.new(15, 353)
-    title.Text = "[AutoParry Debug]"
-    title.Size = 14
-    title.Color = Color3.fromRGB(255, 200, 0)
-    title.Outline = true
-    title.Visible = true
-    table.insert(DebugDrawings, title)
-    
-    -- Create line drawings
-    for i = 1, MAX_DEBUG_LINES do
-        local line = Drawing.new("Text")
-        line.Position = Vector2.new(15, 353 + 16 + (i - 1) * 14)
-        line.Text = ""
-        line.Size = 13
-        line.Color = Color3.fromRGB(200, 200, 200)
-        line.Outline = true
-        line.Visible = true
-        table.insert(DebugDrawings, line)
-    end
-    
-    -- Update loop
-    local debugConn
-    debugConn = RunService.RenderStepped:Connect(function()
-        if not Config.ParryDebug then
-            for _, d in pairs(DebugDrawings) do
-                pcall(function() d.Visible = false end)
-            end
-            return
-        end
-        for i = 1, MAX_DEBUG_LINES do
-            local drawing = DebugDrawings[i + 2] -- skip bg and title
-            if drawing and DebugLines[i] then
-                drawing.Text = DebugLines[i]
-                drawing.Visible = true
-                -- Color code: green for parry press, yellow for detect, red for error
-                if DebugLines[i]:find("PRESS") then
-                    drawing.Color = Color3.fromRGB(0, 255, 100)
-                elseif DebugLines[i]:find("DETECT") then
-                    drawing.Color = Color3.fromRGB(255, 255, 100)
-                elseif DebugLines[i]:find("FAIL") or DebugLines[i]:find("ERROR") then
-                    drawing.Color = Color3.fromRGB(255, 80, 80)
-                else
-                    drawing.Color = Color3.fromRGB(200, 200, 200)
-                end
-            elseif drawing then
-                drawing.Text = ""
-            end
-        end
-    end)
-    table.insert(ToolConnections, debugConn) -- reuse cleanup
-end
-
-local function StopDebugOverlay()
-    for _, d in pairs(DebugDrawings) do
-        pcall(function() d:Remove() end)
-    end
-    DebugDrawings = {}
-end
-
-local function UpdateHitbox()
-    -- Remove old hitbox
-    if HitboxPart then
-        pcall(function() HitboxPart:Destroy() end)
-        HitboxPart = nil
-    end
-    
-    if Config.HitboxExpand <= 0 then return end
-    
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-    
-    -- Create an invisible expanded hitbox part welded to HumanoidRootPart
-    local hitbox = Instance.new("Part")
-    hitbox.Name = "ParryHitbox"
-    hitbox.Size = Vector3.new(Config.HitboxExpand, Config.HitboxExpand, Config.HitboxExpand)
-    hitbox.Transparency = Config.ParryDebug and 0.8 or 1
-    hitbox.Color = Color3.fromRGB(0, 200, 255)
-    hitbox.Material = Enum.Material.ForceField
-    hitbox.CanCollide = false
-    hitbox.Massless = true
-    hitbox.Anchored = false
-    hitbox.Parent = character
-    
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0 = rootPart
-    weld.Part1 = hitbox
-    weld.Parent = hitbox
-    
-    hitbox.CFrame = rootPart.CFrame
-    
-    HitboxPart = hitbox
-    DebugLog("Hitbox expanded to " .. Config.HitboxExpand .. " studs")
-end
 
 -- Animation Fetch State
 local CurrentTarget = nil
@@ -512,8 +378,6 @@ local function LoadConfigs()
                 ParryRadius = 50,
                 VisualizeParry = false,
                 DetectTools = true,
-                ParryDebug = false,
-                HitboxExpand = 0,
                 FetchAnimationsEnabled = false,
                 FetchFromTarget = true,
                 FetchedAnimations = {},
@@ -1088,11 +952,6 @@ local function StopAutoParry()
         pcall(function() ParryRadiusCircle:Remove() end)
         ParryRadiusCircle = nil
     end
-    if HitboxPart then
-        pcall(function() HitboxPart:Destroy() end)
-        HitboxPart = nil
-    end
-    StopDebugOverlay()
     CurrentAnimations = {}
     DetectedAttacks = {}
     print("🛑 AutoParry Stopped")
@@ -1107,69 +966,50 @@ local function ExecuteParry()
         return Enum.KeyCode[Config.ParryKey:upper()]
     end)
     if not success or not keyCode then
-        DebugLog("ERROR: Invalid parry key '" .. tostring(Config.ParryKey) .. "'")
         warn("[AutoParry] Invalid parry key: " .. tostring(Config.ParryKey))
         return
     end
-    
-    DebugLog("PRESS F (" .. Config.ParryKey .. ") - attempting parry...")
     
     -- Method 1: VirtualInputManager (most common)
     local vim_ok = pcall(function()
         VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
     end)
     if vim_ok then
-        DebugLog("PRESS OK via VirtualInputManager")
         task.delay(0.05, function()
             pcall(function()
                 VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
             end)
         end)
         return
-    else
-        DebugLog("FAIL: VirtualInputManager not available")
     end
     
     -- Method 2: keypress/keyrelease (some executors)
     if keypress and keyrelease then
-        local kp_ok = pcall(function()
+        pcall(function()
             keypress(keyCode)
             task.delay(0.05, function()
                 pcall(function() keyrelease(keyCode) end)
             end)
         end)
-        if kp_ok then
-            DebugLog("PRESS OK via keypress/keyrelease")
-        else
-            DebugLog("FAIL: keypress/keyrelease errored")
-        end
         return
-    else
-        DebugLog("FAIL: keypress/keyrelease not found")
     end
     
     -- Method 3: Input simulation via UserInputService (fallback)
-    local fire_ok = pcall(function()
+    pcall(function()
         local uis = game:GetService("UserInputService")
         local inputObject = Instance.new("InputObject")
         inputObject.KeyCode = keyCode
         inputObject.UserInputType = Enum.UserInputType.Keyboard
         inputObject.UserInputState = Enum.UserInputState.Begin
+        -- Fire through any available method
         if firesignal then
             firesignal(uis.InputBegan, inputObject, false)
             task.delay(0.05, function()
                 inputObject.UserInputState = Enum.UserInputState.End
                 pcall(function() firesignal(uis.InputEnded, inputObject, false) end)
             end)
-        else
-            error("no firesignal")
         end
     end)
-    if fire_ok then
-        DebugLog("PRESS OK via firesignal")
-    else
-        DebugLog("FAIL: All input methods failed!")
-    end
 end
 
 local function PlayAnimationAndParry(animationId, delay)
@@ -1244,11 +1084,7 @@ local function StartAutoParry()
         return
     end
     
-    DebugLog("AutoParry ON - Monitoring " .. #Config.ParryAnimations .. " anims, radius=" .. Config.ParryRadius)
-    
-    -- Start debug overlay and hitbox
-    StartDebugOverlay()
-    UpdateHitbox()
+    print("🔄 AutoParry Started - Monitoring " .. #Config.ParryAnimations .. " animations")
     
     ParryConnection = RunService.Heartbeat:Connect(function()
         if not Config.AutoParryEnabled then return end
@@ -1291,8 +1127,6 @@ local function StartAutoParry()
             local distance = (localRoot.Position - targetRoot.Position).Magnitude
             if distance > Config.ParryRadius then continue end
             
-            DebugLog("SCAN: " .. targetName .. " dist=" .. string.format("%.1f", distance))
-            
             local humanoid = character:FindFirstChild("Humanoid")
             if humanoid and humanoid.Health > 0 then
                 local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -1305,16 +1139,8 @@ local function StartAutoParry()
                                 local attackKey = animId .. "_" .. targetName
                                 if not DetectedAttacks[attackKey] then
                                     DetectedAttacks[attackKey] = now + PARRY_COOLDOWN
-                                    DebugLog("DETECT: " .. targetName .. " anim=" .. string.sub(animId, 1, 40) .. " delay=" .. delay)
                                     print("⚠️ Attack animation from " .. targetName .. ": " .. animId)
                                     PlayAnimationAndParry(animId, delay)
-                                end
-                            else
-                                -- Log unmatched animations so user can see what's playing
-                                local unmatchKey = "unmatched_" .. animId .. "_" .. targetName
-                                if not DetectedAttacks[unmatchKey] then
-                                    DetectedAttacks[unmatchKey] = now + 3
-                                    DebugLog("SKIP: " .. targetName .. " anim=" .. string.sub(animId, 1, 40) .. " (not in list)")
                                 end
                             end
                         end
@@ -1430,11 +1256,7 @@ local function BuildAutoParryTab()
     CreateToggleWithKeybind("Enable AutoParry", "AutoParryEnabled")
     CreateToggle("Visualize Parry Radius", "VisualizeParry")
     CreateToggle("Detect Tool Swings", "DetectTools")
-    CreateToggle("Debug Mode", "ParryDebug")
     CreateSlider("Parry Radius (studs)", "ParryRadius", 5, 200)
-    CreateSlider("Hitbox Expand (studs)", "HitboxExpand", 0, 30, nil, false, function(val)
-        UpdateHitbox()
-    end)
     
     -- Animation List
     local listFrame = Instance.new("Frame")
