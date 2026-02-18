@@ -2156,12 +2156,6 @@ local function CreateDrawing(type, props)
     return obj
 end
 
--- Safe helper to read a property that may not exist on an Instance
-local function SafeGetProp(obj, prop)
-    local ok, val = pcall(function() return obj[prop] end)
-    return ok and val or nil
-end
-
 local function RemoveESP(model)
     if ESP_Cache[model] then
         for _, drawing in pairs(ESP_Cache[model].Drawings) do
@@ -2185,7 +2179,7 @@ RunService.RenderStepped:Connect(function()
         local model = folder:IsA("Model") and folder or folder:FindFirstChildWhichIsA("Model")
         
         if model and model ~= LocalPlayer.Character then
-          pcall(function()
+            
             local head = model:FindFirstChild("Head")
             local humanoid = model:FindFirstChild("Humanoid")
             local player = Players:GetPlayerFromCharacter(model)
@@ -2200,7 +2194,7 @@ RunService.RenderStepped:Connect(function()
 
             if isNPC and not Config.ShowNPCs then
                 if ESP_Cache[model] then RemoveESP(model) end
-                return -- exit pcall; acts like continue for the outer loop
+                continue
             end
 
             if head and humanoid then
@@ -2250,14 +2244,14 @@ RunService.RenderStepped:Connect(function()
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
                         if lf then 
-                            val1 = SafeGetProp(lf, "Value") or 0
-                            max1 = lf:GetAttribute("MaxValue") or SafeGetProp(lf, "MaxValue") or 100
-                            min1 = lf:GetAttribute("MinValue") or SafeGetProp(lf, "MinValue") or 0
+                            val1 = lf.Value 
+                            max1 = lf:GetAttribute("MaxValue") or lf.MaxValue or 100
+                            min1 = lf:GetAttribute("MinValue") or lf.MinValue or 0
                         end
                         if pos then 
-                            val2 = SafeGetProp(pos, "Value") or 0
-                            max2 = pos:GetAttribute("MaxValue") or SafeGetProp(pos, "MaxValue") or 100
-                            min2 = pos:GetAttribute("MinValue") or SafeGetProp(pos, "MinValue") or 0
+                            val2 = pos.Value 
+                            max2 = pos:GetAttribute("MaxValue") or pos.MaxValue or 100
+                            min2 = pos:GetAttribute("MinValue") or pos.MinValue or 0
                             showBar2 = true
                         end
                         
@@ -2380,7 +2374,6 @@ RunService.RenderStepped:Connect(function()
                     for _, v in pairs(d) do v.Visible = false end
                 end
             end
-          end) -- pcall end
         end
     end
 
