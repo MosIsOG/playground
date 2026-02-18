@@ -1099,6 +1099,7 @@ local function StopAutoParry()
 end
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 local function ExecuteParry()
     if not Config.AutoParryEnabled then return end
     
@@ -1189,6 +1190,11 @@ local function PlayAnimationAndParry(animationId, delay)
 local function PlayAnimationAndParry(animationId)
     if not Config.AutoParryEnabled then return end
     
+=======
+local function PlayAnimationAndParry(animationId)
+    if not Config.AutoParryEnabled then return end
+    
+>>>>>>> parent of 4a4bca9 (push this)
     local character = LocalPlayer.Character
     if not character then return end
     
@@ -1247,6 +1253,7 @@ local function StartAutoParry()
     ParryConnection = RunService.Heartbeat:Connect(function()
         if not Config.AutoParryEnabled then return end
         
+<<<<<<< HEAD
 <<<<<<< HEAD
         local now = tick()
         
@@ -1334,6 +1341,8 @@ local function StartAutoParry()
                                             end
                                         end
 =======
+=======
+>>>>>>> parent of 4a4bca9 (push this)
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local character = player.Character
@@ -1354,6 +1363,9 @@ local function StartAutoParry()
                                         
                                         task.wait(2)
                                         DetectedAttacks[animId .. player.Name] = nil
+<<<<<<< HEAD
+>>>>>>> parent of 4a4bca9 (push this)
+=======
 >>>>>>> parent of 4a4bca9 (push this)
                                     end
                                 end
