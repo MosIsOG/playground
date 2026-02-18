@@ -74,8 +74,6 @@ local DetectedAttacks = {}
 local CurrentTarget = nil
 local FetchConnection = nil
 local FetchedAnimationList = {}
-local LastFetchTime = 0
-local FETCH_INTERVAL = 0.5 -- re-scan same target every 0.5 seconds
 
 -- Keybind State
 local KeybindMode = false
@@ -307,18 +305,9 @@ local function StartAnimationFetching()
         
         if Config.FetchFromTarget then
             local target = GetNearestTarget()
-            if target then
-                local now = tick()
-                if target ~= CurrentTarget then
-                    -- New target, fetch immediately
-                    CurrentTarget = target
-                    LastFetchTime = now
-                    FetchAnimationsFromTarget(target)
-                elseif now - LastFetchTime >= FETCH_INTERVAL then
-                    -- Same target, re-scan periodically for new attack animations
-                    LastFetchTime = now
-                    FetchAnimationsFromTarget(target)
-                end
+            if target and target ~= CurrentTarget then
+                CurrentTarget = target
+                FetchAnimationsFromTarget(target)
             end
         end
     end)
@@ -1025,6 +1014,17 @@ local function StartAutoParry()
         return
     end
     
+    -- Build a lookup table for fast matching: animId -> delay
+    local parryLookup = {}
+    for _, entry in ipairs(Config.ParryAnimations) do
+        if type(entry) == "table" then
+            parryLookup[entry.Id] = entry.Delay or Config.DefaultParryDelay
+        else
+            -- Legacy string format support
+            parryLookup[entry] = Config.DefaultParryDelay
+        end
+    end
+    
     print("🔄 AutoParry Started - Monitoring " .. #Config.ParryAnimations .. " animations")
     
     ParryConnection = RunService.Heartbeat:Connect(function()
@@ -1033,16 +1033,6 @@ local function StartAutoParry()
 <<<<<<< HEAD
 <<<<<<< HEAD
         local now = tick()
-        
-        -- Rebuild lookup table every frame so newly added animations work immediately
-        local parryLookup = {}
-        for _, entry in ipairs(Config.ParryAnimations) do
-            if type(entry) == "table" then
-                parryLookup[entry.Id] = entry.Delay or Config.DefaultParryDelay
-            else
-                parryLookup[entry] = Config.DefaultParryDelay
-            end
-        end
         
         -- Clean up expired cooldowns
         for attackKey, expireTime in pairs(DetectedAttacks) do
