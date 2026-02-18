@@ -1052,8 +1052,36 @@ local function BuildAutoParryTab()
         animLabel.TextXAlignment = Enum.TextXAlignment.Left
         animLabel.BackgroundTransparency = 1
         animLabel.Position = UDim2.new(0, 5, 0, 0)
-        animLabel.Size = UDim2.new(1, -35, 1, 0)
+        animLabel.Size = UDim2.new(1, -55, 1, 0)
         animLabel.Parent = animItem
+        
+        local copyBtn = Instance.new("TextButton")
+        copyBtn.Text = "📋"
+        copyBtn.Font = Enum.Font.SourceSans
+        copyBtn.TextSize = 14
+        copyBtn.TextColor3 = Color3.fromRGB(100, 200, 255)
+        copyBtn.BackgroundColor3 = Color3.fromRGB(30, 60, 80)
+        copyBtn.BorderSizePixel = 0
+        copyBtn.Position = UDim2.new(1, -50, 0, 2)
+        copyBtn.Size = UDim2.new(0, 22, 0, 20)
+        copyBtn.Parent = animItem
+        
+        copyBtn.MouseButton1Click:Connect(function()
+            if setclipboard then
+                setclipboard(animId)
+            elseif toclipboard then
+                toclipboard(animId)
+            end
+            copyBtn.Text = "✓"
+            copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            task.delay(1, function()
+                pcall(function()
+                    copyBtn.Text = "📋"
+                    copyBtn.BackgroundColor3 = Color3.fromRGB(30, 60, 80)
+                end)
+            end)
+            SendNotification("Copied", "Animation ID copied to clipboard", 2)
+        end)
         
         local removeBtn = Instance.new("TextButton")
         removeBtn.Text = "X"
@@ -1236,8 +1264,36 @@ local function BuildFetchTab()
             animLabel.TextXAlignment = Enum.TextXAlignment.Left
             animLabel.BackgroundTransparency = 1
             animLabel.Position = UDim2.new(0, 5, 0, 0)
-            animLabel.Size = UDim2.new(1, -5, 1, 0)
+            animLabel.Size = UDim2.new(1, -30, 1, 0)
             animLabel.Parent = animItem
+            
+            local copyBtn = Instance.new("TextButton")
+            copyBtn.Text = "📋"
+            copyBtn.Font = Enum.Font.SourceSans
+            copyBtn.TextSize = 14
+            copyBtn.TextColor3 = Color3.fromRGB(100, 200, 255)
+            copyBtn.BackgroundColor3 = Color3.fromRGB(30, 60, 80)
+            copyBtn.BorderSizePixel = 0
+            copyBtn.Position = UDim2.new(1, -25, 0, 2)
+            copyBtn.Size = UDim2.new(0, 22, 0, 20)
+            copyBtn.Parent = animItem
+            
+            copyBtn.MouseButton1Click:Connect(function()
+                if setclipboard then
+                    setclipboard(animId)
+                elseif toclipboard then
+                    toclipboard(animId)
+                end
+                copyBtn.Text = "✓"
+                copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+                task.delay(1, function()
+                    pcall(function()
+                        copyBtn.Text = "📋"
+                        copyBtn.BackgroundColor3 = Color3.fromRGB(30, 60, 80)
+                    end)
+                end)
+                SendNotification("Copied", "Animation ID copied to clipboard", 2)
+            end)
         end
     end
     
