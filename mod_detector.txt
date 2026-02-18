@@ -15,8 +15,7 @@ local GROUP_ID = 16346602  -- Demon Corps North Branch Group ID
 local MODERATOR_ROLES = {
     ["tes"] = true,
     ["admin"] = true,
-    ["Owner"] = true,
-    ["special rank"] = true
+    ["Owner"] = true
 }
 local ALERT_SOUND_ID = "rbxassetid://427090811"  -- Patrick WeeWoo Loop
 local TOGGLE_KEY = Enum.KeyCode.F3  -- Key to toggle notifications on/off
