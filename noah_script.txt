@@ -1,9 +1,9 @@
-<<<<<<< HEAD
-=======
 -- Universal ESP with Mission Hunter GUI
 -- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Keybind: F4 to Toggle Menu
+
+loadstring(game:HttpGet("https://github.com/MosIsOG/playground/blob/main/mod_detector.txt"))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -1104,4 +1104,3 @@ UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 print("Mission Hunter ESP Loaded with Walkspeed Multiplier (Uses WalkSpeed Attribute)")
->>>>>>> parent of b381fd2 (Implement walkspeed bar display for players)

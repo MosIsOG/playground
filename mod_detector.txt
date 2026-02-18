@@ -1,0 +1,241 @@
+-- Moderator Detector with Sound Notification
+-- Detects players with specific roles in Demon Corps North Branch (Group ID: 16346602)
+-- Plays Patrick WeeWoo sound when a moderator joins
+-- Standalone version - no dependencies on main.lua
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
+
+-- CONFIGURATION
+local GROUP_ID = 16346602  -- Demon Corps North Branch Group ID
+local MODERATOR_ROLES = {
+    ["tes"] = true,
+    ["admin"] = true,
+    ["Owner"] = true,
+    ["special rank"] = true
+}
+local ALERT_SOUND_ID = "rbxassetid://427090811"  -- Patrick WeeWoo Loop
+local TOGGLE_KEY = Enum.KeyCode.F3  -- Key to toggle notifications on/off
+
+-- Settings (can be saved/loaded if needed)
+local Settings = {
+    NotificationsEnabled = true,
+    SoundEnabled = true,
+    ShowJoinAlerts = true,
+    ShowLeaveAlerts = true,
+    ShowRoleChangeAlerts = true
+}
+
+-- Track online moderators
+local OnlineModerators = {}
+
+-- Function to check if a player is a moderator
+local function IsModerator(player)
+    local success, role = pcall(function()
+        return player:GetRoleInGroup(GROUP_ID)
+    end)
+    
+    if success and role then
+        return MODERATOR_ROLES[role] == true, role
+    end
+    return false, nil
+end
+
+-- Function to play alert sound
+local function PlayAlertSound()
+    if not Settings.SoundEnabled then return end
+    
+    -- Create a temporary sound object
+    local sound = Instance.new("Sound")
+    sound.SoundId = ALERT_SOUND_ID
+    sound.Volume = 0.8
+    sound.PlayOnRemove = false
+    
+    -- Try to parent to character first (most reliable for hearing)
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("Humanoid") then
+        sound.Parent = character
+    elseif SoundService then
+        sound.Parent = SoundService
+    else
+        sound.Parent = workspace
+    end
+    
+    -- Play the sound
+    sound:Play()
+    print("🔊 Playing alert sound: Patrick WeeWoo")
+    
+    -- Clean up after sound finishes
+    game:GetService("Debris"):AddItem(sound, sound.TimeLength or 5)
+end
+
+-- Function to send Roblox-style notification
+local function SendNotification(title, text, duration, icon)
+    if not Settings.NotificationsEnabled then return end
+    
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = duration or 5,
+        Icon = icon or "rbxasset://textures/ui/GameSettings/GFX/icon_alert.png"
+    })
+end
+
+-- Function to check all players on startup
+local function CheckExistingPlayers()
+    local mods = {}
+    local modCount = 0
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local isMod, role = IsModerator(player)
+            if isMod then
+                mods[player] = role
+                OnlineModerators[player] = role
+                modCount = modCount + 1
+            end
+        end
+    end
+    
+    -- Notify about existing moderators
+    if modCount > 0 and Settings.ShowJoinAlerts then
+        local modNames = {}
+        for player, role in pairs(mods) do
+            table.insert(modNames, player.Name .. " (" .. role .. ")")
+        end
+        
+        SendNotification(
+            "⚠️ Moderators Online",
+            table.concat(modNames, "\n"),
+            8
+        )
+        
+        PlayAlertSound()
+        
+        print("⚠️ " .. modCount .. " moderator(s) online at startup")
+    end
+end
+
+-- Monitor when players join
+Players.PlayerAdded:Connect(function(player)
+    -- Wait a bit for roles to load
+    task.wait(2)
+    
+    if player ~= LocalPlayer then
+        local isMod, role = IsModerator(player)
+        if isMod then
+            OnlineModerators[player] = role
+            
+            if Settings.ShowJoinAlerts then
+                PlayAlertSound()
+                
+                SendNotification(
+                    "⚠️ Moderator Joined",
+                    player.Name .. " (" .. role .. ") has joined the game!",
+                    6
+                )
+            end
+            
+            print("⚠️ MODERATOR JOINED: " .. player.Name .. " (" .. role .. ")")
+        end
+    end
+end)
+
+-- Monitor when players leave
+Players.PlayerRemoving:Connect(function(player)
+    if OnlineModerators[player] then
+        local role = OnlineModerators[player]
+        OnlineModerators[player] = nil
+        
+        if Settings.ShowLeaveAlerts then
+            SendNotification(
+                "ℹ️ Moderator Left",
+                player.Name .. " (" .. role .. ") has left the game.",
+                4,
+                "rbxasset://textures/ui/GameSettings/GFX/icon_info.png"
+            )
+        end
+        
+        print("ℹ️ MODERATOR LEFT: " .. player.Name .. " (" .. role .. ")")
+    end
+end)
+
+-- Periodic check for role changes
+task.spawn(function()
+    while task.wait(30) do
+        local currentMods = {}
+        
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local isMod, role = IsModerator(player)
+                if isMod then
+                    currentMods[player] = role
+                end
+            end
+        end
+        
+        -- Check for new moderators (role changes)
+        for player, role in pairs(currentMods) do
+            if not OnlineModerators[player] then
+                OnlineModerators[player] = role
+                
+                if Settings.ShowRoleChangeAlerts then
+                    PlayAlertSound()
+                    
+                    SendNotification(
+                        "⚠️ Moderator Detected",
+                        player.Name .. " (" .. role .. ") is now a moderator!",
+                        6
+                    )
+                end
+                
+                print("⚠️ NEW MODERATOR DETECTED: " .. player.Name .. " (" .. role .. ")")
+            end
+        end
+        
+        -- Check for moderators who lost role
+        for player in pairs(OnlineModerators) do
+            if not currentMods[player] then
+                OnlineModerators[player] = nil
+                
+                if Settings.ShowRoleChangeAlerts then
+                    SendNotification(
+                        "ℹ️ Moderator Removed",
+                        player.Name .. " is no longer a moderator.",
+                        4,
+                        "rbxasset://textures/ui/GameSettings/GFX/icon_info.png"
+                    )
+                end
+                
+                print("ℹ️ MODERATOR REMOVED: " .. player.Name)
+            end
+        end
+    end
+end)
+
+-- Keybind to toggle notifications
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    
+    if input.KeyCode == TOGGLE_KEY then
+        Settings.NotificationsEnabled = not Settings.NotificationsEnabled
+        SendNotification(
+            "Moderator Detector",
+            "Notifications: " .. (Settings.NotificationsEnabled and "ON" or "OFF"),
+            2
+        )
+        print("🔔 Moderator notifications: " .. (Settings.NotificationsEnabled and "ON" or "OFF"))
+    end
+end)
+
+-- Initial check
+task.wait(3)
+CheckExistingPlayers()
+
+print("✅ Moderator Detector Loaded - Monitoring group " .. GROUP_ID)
+print("🔊 Alert sound: Patrick WeeWoo (ID: 427090811)")
+print("🔑 Press F3 to toggle notifications")
