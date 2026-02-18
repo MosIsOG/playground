@@ -1003,6 +1003,9 @@ RunService.RenderStepped:Connect(function()
                         cleanName = "" -- NO NAME FOR NPCs
                     else
                         -- PLAYER LOGIC: Show name + all bars
+                        cleanName = (player.DisplayName and player.DisplayName ~= "" and player.DisplayName)
+                            or player.Name
+
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         
