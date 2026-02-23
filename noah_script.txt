@@ -1208,6 +1208,195 @@ local function CancelEscortMission()
     EscortMission.CurrentNPC = nil
     EscortMission.Following = false
 end
+
+-- ==================== TELEPORT FUNCTIONS ====================
+
+-- Function 1: Teleport both player and NPC directly to finish (original skip)
+local function TeleportToFinish()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    local markers = FindMarkers()
+    local targetMarker = markerChoice == "main" and markers.missionMarker1 or markers.missionMarker2
+    
+    if not targetMarker then
+        Library:Notify(string.format("%s marker not found!", markerChoice), 3)
+        return
+    end
+    
+    print(string.format("Teleporting to %s marker at: %s", markerChoice, tostring(targetMarker:GetFullName())))
+    
+    -- Teleport NPC
+    if EscortMission.CurrentNPC then
+        local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
+        if npcRoot then
+            npcRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, 2)
+        end
+    end
+    
+    -- Teleport Player
+    local player = LocalPlayer
+    if player.Character then
+        local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        if playerRoot then
+            playerRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, -2)
+        end
+    end
+    
+    -- Add teleport effect
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(8, 8, 8)
+    effect.CFrame = targetMarker.CFrame
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright red")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify(string.format("Teleported to %s marker!", markerChoice), 3)
+    
+    -- Complete the mission
+    CompleteEscortMission()
+end
+
+-- Function 2: Teleport both player and NPC 300 studs towards white marker
+local function TeleportTowardsWhiteMarker()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    local markers = FindMarkers()
+    
+    if not markers.white then
+        Library:Notify("White marker not found! Can't calculate direction.", 3)
+        return
+    end
+    
+    -- Get current positions
+    local player = LocalPlayer
+    local playerRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local npcRoot = EscortMission.CurrentNPC and (EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart)
+    
+    if not playerRoot or not npcRoot then
+        Library:Notify("Player or NPC not found!", 3)
+        return
+    end
+    
+    -- Calculate direction from current position to white marker
+    local currentPos = npcRoot.Position
+    local whitePos = markers.white.Position
+    
+    -- Vector from current position to white marker
+    local directionToWhite = (whitePos - currentPos).Unit
+    
+    -- Calculate new position 300 studs towards white marker
+    local distanceToWhite = (whitePos - currentPos).Magnitude
+    local teleportDistance = math.min(300, distanceToWhite - 10) -- Don't overshoot, leave 10 studs buffer
+    
+    if teleportDistance < 10 then
+        Library:Notify("Already too close to white marker!", 3)
+        return
+    end
+    
+    local newPosition = currentPos + (directionToWhite * teleportDistance)
+    
+    print(string.format("Teleporting 300 studs towards white marker"))
+    print(string.format("From: %.0f, %.0f, %.0f", currentPos.X, currentPos.Y, currentPos.Z))
+    print(string.format("To: %.0f, %.0f, %.0f", newPosition.X, newPosition.Y, newPosition.Z))
+    print(string.format("Distance to white: %.0f studs", (whitePos - newPosition).Magnitude))
+    
+    -- Teleport NPC
+    npcRoot.CFrame = CFrame.new(newPosition) * CFrame.new(0, 0, 2)
+    
+    -- Teleport Player (position them slightly behind the NPC)
+    playerRoot.CFrame = CFrame.new(newPosition) * CFrame.new(0, 0, -4)
+    
+    -- Add teleport effect
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(8, 8, 8)
+    effect.CFrame = CFrame.new(newPosition)
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright green")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify(string.format("Teleported 300 studs towards white marker! (%.0f studs remaining)", (whitePos - newPosition).Magnitude), 3)
+end
+
+-- Function 3: Teleport ONLY the mission NPC (not the player)
+local function TeleportMissionNPCOnly()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    if not EscortMission.CurrentNPC then
+        Library:Notify("No NPC found!", 3)
+        return
+    end
+    
+    local markers = FindMarkers()
+    local targetMarker = markerChoice == "main" and markers.missionMarker1 or markers.missionMarker2
+    
+    if not targetMarker then
+        Library:Notify(string.format("%s marker not found!", markerChoice), 3)
+        return
+    end
+    
+    -- Get NPC root part
+    local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
+    if not npcRoot then
+        Library:Notify("NPC has no root part!", 3)
+        return
+    end
+    
+    print(string.format("Teleporting NPC ONLY to %s marker", markerChoice))
+    
+    -- Teleport ONLY the NPC
+    npcRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, 0)
+    
+    -- Add teleport effect just for NPC
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(5, 5, 5)
+    effect.CFrame = targetMarker.CFrame
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright yellow")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify("Mission NPC teleported to " .. markerChoice .. " marker!", 3)
+end
+
+-- ==================== ADD ESCORT MISSION TO GUI ====================
 -- ==================== ADD ESCORT MISSION TO GUI ====================
 
 -- Add Escort Mission tab
@@ -1232,22 +1421,25 @@ end)
 EscortGroup:AddDivider()
 
 -- Mission control buttons
-EscortGroup:AddButton({
-    Text = "Start Escort Mission",
-    Func = StartEscortMission,
-    Tooltip = "Start escorting the nearest NPC to the red marker (start at white marker)"
-})
+EscortGroup:AddDivider()
+EscortGroup:AddLabel("🎮 TELEPORT OPTIONS:")
 
 EscortGroup:AddButton({
-    Text = "Complete Mission (Arrived at Finish)",
-    Func = function() CompleteEscortMission(false) end,
-    Tooltip = "Manually complete the mission when you reach the red marker"
-})
-
-EscortGroup:AddButton({
-    Text = "⚡ TELEPORT TO FINISH (Skip)",
+    Text = "⚡ SKIP TO FINISH (Both)",
     Func = TeleportToFinish,
-    Tooltip = "Emergency teleport - teleports both you and NPC to red marker"
+    Tooltip = "Emergency teleport - teleports both you and NPC directly to the chosen marker"
+})
+
+EscortGroup:AddButton({
+    Text = "➡️ 300 TOWARDS START (Both)",
+    Func = TeleportTowardsWhiteMarker,
+    Tooltip = "Teleport you and NPC 300 studs closer to the white marker"
+})
+
+EscortGroup:AddButton({
+    Text = "👤 NPC ONLY TELEPORT",
+    Func = TeleportMissionNPCOnly,
+    Tooltip = "Teleport only the mission NPC to the chosen marker (you stay where you are)"
 })
 
 EscortGroup:AddButton({
