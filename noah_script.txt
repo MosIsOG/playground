@@ -1309,6 +1309,175 @@ end)
 print("=== Escort Mission System Loaded ===")
 print("New tab 'Escort' added to menu")
 
+-- ==================== SERVER TELEPORT SECTION ====================
+-- Fast travel between different games/servers
+
+local TeleportService = game:GetService("TeleportService")
+local TeleportTab = Window:AddTab("Server Teleport")
+local TeleportGroup = TeleportTab:AddLeftGroupbox("Game Teleporter")
+
+-- Store game information
+local GameLocations = {
+    -- Format: Name = {PlaceId = 123456789, Description = "description"}
+    
+    ["Forest World"] = {
+        PlaceId = 14220581641,
+        Description = "Main Forest game world"
+    },
+    
+    -- Add more games here as you find them!
+    -- ["Game Name"] = {
+    --     PlaceId = 1234567890,
+    --     Description = "Description here"
+    -- },
+}
+
+-- Current game info display
+TeleportGroup:AddLabel("Current Game: " .. game.Name)
+TeleportGroup:AddLabel("Current Place ID: " .. game.PlaceId)
+TeleportGroup:AddLabel("Current Server: " .. game.JobId:sub(1, 8) .. "...")
+
+TeleportGroup:AddDivider()
+
+-- Add teleport buttons for each game
+for name, data in pairs(GameLocations) do
+    TeleportGroup:AddButton({
+        Text = string.format("🌍 %s", name),
+        Func = function()
+            -- Confirm teleport
+            Library:Notify(string.format("Teleporting to %s...", name), 2)
+            task.wait(0.5)
+            TeleportService:Teleport(data.PlaceId, LocalPlayer)
+        end,
+        Tooltip = data.Description .. " | Place ID: " .. data.PlaceId
+    })
+end
+
+-- Add separator
+TeleportGroup:AddDivider()
+
+-- Custom Place ID teleporter
+local CustomGroup = TeleportTab:AddRightGroupbox("Custom Server Join")
+
+CustomGroup:AddLabel("Enter any Place ID to join")
+
+CustomGroup:AddInput("CustomPlaceId", {
+    Text = "Place ID",
+    Default = "",
+    Placeholder = "Enter Place ID (e.g. 14220581641)",
+    Numeric = true,
+    Finished = true,
+    Callback = function(value)
+        _G.TeleportPlaceId = tonumber(value)
+    end
+})
+
+CustomGroup:AddButton({
+    Text = "🚀 Teleport to Place ID",
+    Func = function()
+        local placeId = _G.TeleportPlaceId
+        if not placeId or placeId == 0 then
+            Library:Notify("Please enter a valid Place ID!", 3)
+            return
+        end
+        
+        Library:Notify(string.format("Teleporting to Place ID: %d...", placeId), 2)
+        task.wait(0.5)
+        TeleportService:Teleport(placeId, LocalPlayer)
+    end
+})
+
+CustomGroup:AddDivider()
+
+-- Server hopping options
+local ServerGroup = TeleportTab:AddRightGroupbox("Server Hopping")
+
+ServerGroup:AddButton({
+    Text = "🔄 Rejoin Current Game",
+    Func = function()
+        Library:Notify("Rejoining current game...", 2)
+        task.wait(0.5)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end,
+    Tooltip = "Leave and rejoin the current server"
+})
+
+ServerGroup:AddButton({
+    Text = "🎲 Join Random Server",
+    Func = function()
+        Library:Notify("Searching for another server...", 2)
+        
+        -- Try to get another server
+        local success, result = pcall(function()
+            return TeleportService:GetLocalPlayerPlaceAsync(game.PlaceId)
+        end)
+        
+        if success then
+            Library:Notify("Joining another server...", 2)
+            task.wait(0.5)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        else
+            Library:Notify("Could not find another server, trying direct teleport...", 3)
+            task.wait(0.5)
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end
+    end,
+    Tooltip = "Try to join a different server of the same game"
+})
+
+-- Add saved servers list (optional)
+local SavedGroup = TeleportTab:AddLeftGroupbox("Saved Places")
+
+-- Table to store saved places
+local SavedPlaces = {}
+
+-- Load saved places function
+local function LoadSavedPlaces()
+    -- You can implement saving to file here if needed
+    -- For now, just show some defaults
+    SavedPlaces = {
+        ["Forest World"] = 14220581641,
+    }
+end
+
+LoadSavedPlaces()
+
+-- Display saved places
+for name, placeId in pairs(SavedPlaces) do
+    if placeId ~= game.PlaceId then -- Don't show current game
+        SavedGroup:AddButton({
+            Text = string.format("📌 %s", name),
+            Func = function()
+                Library:Notify(string.format("Teleporting to %s...", name), 2)
+                task.wait(0.5)
+                TeleportService:Teleport(placeId, LocalPlayer)
+            end,
+            Tooltip = "Place ID: " .. placeId
+        })
+    end
+end
+
+-- Add quick teleport to Forest World button at the top
+local QuickGroup = TeleportTab:AddLeftGroupbox("Quick Actions")
+
+QuickGroup:AddButton({
+    Text = "🌳 FOREST WORLD (14220581641)",
+    Func = function()
+        if game.PlaceId == 14220581641 then
+            Library:Notify("You're already in Forest World!", 3)
+        else
+            Library:Notify("Teleporting to Forest World...", 2)
+            task.wait(0.5)
+            TeleportService:Teleport(14220581641, LocalPlayer)
+        end
+    end,
+    Tooltip = "Fast travel to Forest World (Place ID: 14220581641)"
+})
+
+print("=== Server Teleport System Loaded ===")
+print("New tab 'Server Teleport' added to menu")
+print("Use to jump between different games/servers")
+
 
 
 -- Keybind to toggle menu (F4)
