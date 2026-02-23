@@ -1189,6 +1189,114 @@ local function CancelEscortMission()
     EscortMission.CurrentNPC = nil
     EscortMission.Following = false
 end
+-- ==================== ADD ESCORT MISSION TO GUI ====================
+
+-- Add Escort Mission tab
+local EscortTab = Window:AddTab("Escort")
+local EscortGroup = EscortTab:AddLeftGroupbox("Village Escort Missions")
+
+-- Mission status display
+local statusLabel = EscortGroup:AddLabel("Mission Status: Inactive")
+
+-- Update status periodically
+task.spawn(function()
+    while task.wait(0.5) do
+        if EscortMission.Active then
+            local npcName = EscortMission.CurrentNPC and EscortMission.CurrentNPC.Name or "Unknown"
+            statusLabel:SetText(string.format("Mission Status: ACTIVE (Escorting %s)", npcName))
+        else
+            statusLabel:SetText("Mission Status: Inactive")
+        end
+    end
+end)
+
+EscortGroup:AddDivider()
+
+-- Mission control buttons
+EscortGroup:AddButton({
+    Text = "Start Escort Mission",
+    Func = StartEscortMission,
+    Tooltip = "Start escorting the nearest NPC to the red marker (start at white marker)"
+})
+
+EscortGroup:AddButton({
+    Text = "Complete Mission (Arrived at Finish)",
+    Func = function() CompleteEscortMission(false) end,
+    Tooltip = "Manually complete the mission when you reach the red marker"
+})
+
+EscortGroup:AddButton({
+    Text = "⚡ TELEPORT TO FINISH (Skip)",
+    Func = TeleportToFinish,
+    Tooltip = "Emergency teleport - teleports both you and NPC to red marker"
+})
+
+EscortGroup:AddButton({
+    Text = "Cancel Mission",
+    Func = CancelEscortMission,
+    Tooltip = "Cancel the current escort mission"
+})
+
+EscortGroup:AddDivider()
+
+-- Info display
+EscortGroup:AddLabel("📋 How to Play:")
+EscortGroup:AddLabel("1️⃣ Go to WHITE marker (start line)")
+EscortGroup:AddLabel("2️⃣ Get near an NPC and click 'Start'")
+EscortGroup:AddLabel("3️⃣ Lead NPC to RED marker (finish line)")
+EscortGroup:AddLabel("4️⃣ Mission auto-completes at finish line")
+EscortGroup:AddLabel("5️⃣ Use 'Teleport' only to skip/emergency")
+
+-- Marker scanner section
+local MarkerGroup = EscortTab:AddRightGroupbox("Marker Scanner")
+
+MarkerGroup:AddButton({
+    Text = "Scan for Markers",
+    Func = function()
+        local markers = FindMarkers()
+        if markers.red then
+            Library:Notify("✓ Red marker found at " .. string.format("%.1f, %.1f, %.1f", markers.red.Position.X, markers.red.Position.Y, markers.red.Position.Z), 3)
+        else
+            Library:Notify("✗ Red marker not found!", 3)
+        end
+        
+        if markers.white then
+            Library:Notify("✓ White marker found at " .. string.format("%.1f, %.1f, %.1f", markers.white.Position.X, markers.white.Position.Y, markers.white.Position.Z), 3)
+        else
+            Library:Notify("✗ White marker not found!", 3)
+        end
+    end
+})
+
+MarkerGroup:AddButton({
+    Text = "Find Nearest NPC",
+    Func = function()
+        local npc, dist = FindNearestNPC(LocalPlayer)
+        if npc then
+            Library:Notify(string.format("Nearest NPC: %s (%.1f studs away)", npc.Name, dist), 3)
+        else
+            Library:Notify("No NPCs found in Live folder!", 3)
+        end
+    end
+})
+
+-- Add Ctrl+E and Ctrl+T keybinds for quick mission control
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    
+    -- Ctrl+E to start escort
+    if input.KeyCode == Enum.KeyCode.E and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        StartEscortMission()
+    end
+    
+    -- Ctrl+T to teleport to finish
+    if input.KeyCode == Enum.KeyCode.T and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        TeleportToFinish()
+    end
+end)
+
+print("=== Escort Mission System Loaded ===")
+print("New tab 'Escort' added to menu")
 
 
 
