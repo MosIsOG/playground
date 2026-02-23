@@ -31,13 +31,17 @@ end
 
 safeRequire("https://raw.githubusercontent.com/MosIsOG/playground/main/mod_detector.txt")
 
+-- Load LinoriaLib
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
-local HttpService = game:GetService("HttpService")
-local Camera = workspace.CurrentCamera
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 
 -- Configuration (Default Settings)
 local Config = {
@@ -60,7 +64,7 @@ local ESP_Cache = {}
 local LiveFolder = workspace:FindFirstChild("Live")
 local Configs = {}
 local CurrentConfig = "Default"
-local BaseWalkspeed = 16 -- This will be the attribute value
+local BaseWalkspeed = 16
 local WalkspeedUpdateConnection = nil
 
 -- Config file path
@@ -69,12 +73,10 @@ local ConfigFile = "configs.json"
 
 -- Function to get the WalkSpeed attribute from humanoid
 local function GetBaseWalkspeedFromAttribute(humanoid)
-    -- Try to get WalkSpeed attribute
     local attrSpeed = humanoid:GetAttribute("WalkSpeed")
     if attrSpeed then
         return attrSpeed
     end
-    -- Fallback to humanoid.WalkSpeed
     return humanoid.WalkSpeed
 end
 
@@ -86,15 +88,10 @@ local function ApplyWalkspeedMultiplier()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Only apply if enabled
     if Config.ShowWalkspeed then
-        -- Get the base speed from attribute (or current if no attribute)
         local baseSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-        
-        -- Calculate target speed
         local targetSpeed = baseSpeed * Config.WalkspeedMultiplier
         
-        -- Apply if different
         if math.abs(humanoid.WalkSpeed - targetSpeed) > 0.1 then
             humanoid.WalkSpeed = targetSpeed
         end
@@ -109,13 +106,11 @@ local function UpdateBaseWalkspeed()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Get current base from attribute
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
 end
 
 -- Start monitoring walkspeed changes
 local function StartWalkspeedMonitoring()
-    -- Stop any existing connection
     if WalkspeedUpdateConnection then
         WalkspeedUpdateConnection:Disconnect()
         WalkspeedUpdateConnection = nil
@@ -127,20 +122,16 @@ local function StartWalkspeedMonitoring()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    -- Get initial base speed
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
     
-    -- Monitor for attribute changes
     local attributeConnection = humanoid:GetAttributeChangedSignal("WalkSpeed"):Connect(function()
-        -- Attribute changed, update base speed and reapply multiplier
-        task.wait(0.1) -- Small delay to ensure attribute is fully updated
+        task.wait(0.1)
         BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
         if Config.ShowWalkspeed then
             ApplyWalkspeedMultiplier()
         end
     end)
     
-    -- Monitor for walkspeed changes every frame
     WalkspeedUpdateConnection = RunService.RenderStepped:Connect(function()
         if not Config.Enabled or not Config.ShowWalkspeed then return end
         
@@ -150,10 +141,8 @@ local function StartWalkspeedMonitoring()
         local currentHumanoid = currentChar:FindFirstChild("Humanoid")
         if not currentHumanoid then return end
         
-        -- Get current base (might have changed via attribute)
         local currentBase = GetBaseWalkspeedFromAttribute(currentHumanoid)
         
-        -- If base changed, update our stored value
         if math.abs(currentBase - BaseWalkspeed) > 0.1 then
             BaseWalkspeed = currentBase
         end
@@ -161,14 +150,11 @@ local function StartWalkspeedMonitoring()
         local currentSpeed = currentHumanoid.WalkSpeed
         local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
         
-        -- If speed changed and it's not our target, something else modified it
         if math.abs(currentSpeed - targetSpeed) > 0.1 then
-            -- Something changed the walkspeed, reapply our multiplier
             currentHumanoid.WalkSpeed = targetSpeed
         end
     end)
     
-    -- Clean up attribute connection when done
     character.AncestryChanged:Connect(function()
         if not character.Parent then
             if attributeConnection then
@@ -180,28 +166,20 @@ end
 
 -- Handle character respawns
 local function OnCharacterAdded(character)
-    -- Wait for humanoid
     local humanoid = character:WaitForChild("Humanoid")
-    
-    -- Give it a moment to initialize
     task.wait(0.1)
     
-    -- Get base speed from attribute
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
     
-    -- Apply multiplier if enabled
     if Config.ShowWalkspeed then
         humanoid.WalkSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
     end
     
-    -- Start monitoring
     StartWalkspeedMonitoring()
     
-    -- Also monitor for humanoid changes
     humanoid.AncestryChanged:Connect(function()
         task.wait(0.1)
         if not humanoid.Parent then
-            -- Humanoid was removed, restart monitoring when new one appears
             task.wait(0.5)
             OnCharacterAdded(character)
         end
@@ -211,7 +189,6 @@ end
 -- Connect character events
 LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
--- If character already exists
 if LocalPlayer.Character then
     OnCharacterAdded(LocalPlayer.Character)
 end
@@ -223,7 +200,7 @@ local function SaveConfigs()
             CurrentConfig = CurrentConfig,
             Configs = Configs
         }
-        writefile(ConfigFolder .. "/" .. ConfigFile, HttpService:JSONEncode(data))
+        writefile(ConfigFolder .. "/" .. ConfigFile, game:GetService("HttpService"):JSONEncode(data))
     end)
     if not success then
         warn("Failed to save configs: " .. tostring(err))
@@ -234,18 +211,16 @@ end
 local function LoadConfigs()
     local success, err = pcall(function()
         if isfile(ConfigFolder .. "/" .. ConfigFile) then
-            local data = HttpService:JSONDecode(readfile(ConfigFolder .. "/" .. ConfigFile))
+            local data = game:GetService("HttpService"):JSONDecode(readfile(ConfigFolder .. "/" .. ConfigFile))
             CurrentConfig = data.CurrentConfig or "Default"
             Configs = data.Configs or {}
             
-            -- Load the current config if it exists
             if Configs[CurrentConfig] then
                 for k, v in pairs(Configs[CurrentConfig]) do
                     Config[k] = v
                 end
             end
         else
-            -- Create default config
             Configs["Default"] = {
                 Enabled = true,
                 ShowNames = true,
@@ -284,509 +259,249 @@ local function LoadConfigs()
     end
 end
 
--- Load configs at startup and apply multiplier
 LoadConfigs()
 ApplyWalkspeedMultiplier()
 
---------------------------------------------------------------------------------
--- 1. GUI CONSTRUCTION
---------------------------------------------------------------------------------
+-- Create LinoriaLib Window
+local Window = Library:CreateWindow({
+    Title = "Mission Hunter ESP",
+    Center = true,
+    AutoShow = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2
+})
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MissionHunterESP"
-ScreenGui.ResetOnSpawn = false
+-- Create Tabs
+local Tabs = {
+    Main = Window:AddTab("Main"),
+    Config = Window:AddTab("Config"),
+    Theme = Window:AddTab("Theme")
+}
 
-if gethui then
-    ScreenGui.Parent = gethui()
-elseif game:GetService("RunService"):IsStudio() then
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-else
-    pcall(function() ScreenGui.Parent = CoreGui end)
-    if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-end
+-- ==================== MAIN TAB ====================
+local MainGroup = Tabs.Main:AddLeftGroupbox("Settings")
 
--- Main Container
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 400, 0, 450)
-MainFrame.Position = UDim2.new(0, 20, 0, 25)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-MainFrame.BorderSizePixel = 1
-MainFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
-MainFrame.Visible = true
-MainFrame.Parent = ScreenGui
-
--- Header
-local Header = Instance.new("Frame")
-Header.Name = "Header"
-Header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Header.BorderSizePixel = 0
-Header.Size = UDim2.new(1, 0, 0, 30)
-Header.Parent = MainFrame
-
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Mission Hunter ESP"
-TitleLabel.Font = Enum.Font.Code
-TitleLabel.TextSize = 14
-TitleLabel.TextColor3 = Color3.fromRGB(0, 120, 255)
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Size = UDim2.new(1, -20, 1, 0)
-TitleLabel.Parent = Header
-
--- Drag Logic
-local dragging, dragInput, dragStart, startPos
-Header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
+-- Master toggle
+MainGroup:AddToggle("Enabled", {
+    Text = "Master Enabled",
+    Default = Config.Enabled,
+    Tooltip = "Enable/disable all ESP features",
+    Callback = function(value)
+        Config.Enabled = value
+        SaveConfigs()
     end
-end)
-Header.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+})
+
+MainGroup:AddDivider()
+
+-- Visual toggles
+MainGroup:AddToggle("ShowNames", {
+    Text = "Show Player Names",
+    Default = Config.ShowNames,
+    Callback = function(value)
+        Config.ShowNames = value
+        SaveConfigs()
     end
-end)
+})
 
--- Tab Buttons
-local TabButtons = Instance.new("Frame")
-TabButtons.Name = "TabButtons"
-TabButtons.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-TabButtons.BorderSizePixel = 0
-TabButtons.Position = UDim2.new(0, 0, 0, 30)
-TabButtons.Size = UDim2.new(1, 0, 0, 25)
-TabButtons.Parent = MainFrame
-
-local MainTabBtn = Instance.new("TextButton")
-MainTabBtn.Text = "Main"
-MainTabBtn.Font = Enum.Font.SourceSans
-MainTabBtn.TextSize = 16
-MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
-MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainTabBtn.BorderSizePixel = 0
-MainTabBtn.Position = UDim2.new(0, 0, 0, 0)
-MainTabBtn.Size = UDim2.new(0, 100, 1, 0)
-MainTabBtn.Parent = TabButtons
-
-local ConfigTabBtn = Instance.new("TextButton")
-ConfigTabBtn.Text = "Config"
-ConfigTabBtn.Font = Enum.Font.SourceSans
-ConfigTabBtn.TextSize = 16
-ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-ConfigTabBtn.BorderSizePixel = 0
-ConfigTabBtn.Position = UDim2.new(0, 100, 0, 0)
-ConfigTabBtn.Size = UDim2.new(0, 100, 1, 0)
-ConfigTabBtn.Parent = TabButtons
-
--- Content Area
-local ContentArea = Instance.new("ScrollingFrame")
-ContentArea.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-ContentArea.BorderSizePixel = 0
-ContentArea.Position = UDim2.new(0, 10, 0, 65)
-ContentArea.Size = UDim2.new(1, -20, 1, -75)
-ContentArea.CanvasSize = UDim2.new(0, 0, 0, 0)
-ContentArea.ScrollBarThickness = 8
-ContentArea.ScrollBarImageColor3 = Color3.fromRGB(0, 120, 255)
-ContentArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ContentArea.Parent = MainFrame
-
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Parent = ContentArea
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 8)
-
--- Helper functions
-local function ClearContent()
-    for _, child in pairs(ContentArea:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextLabel") then
-            child:Destroy()
-        end
+MainGroup:AddToggle("ShowNPCs", {
+    Text = "Show NPCs (No Names)",
+    Default = Config.ShowNPCs,
+    Callback = function(value)
+        Config.ShowNPCs = value
+        SaveConfigs()
     end
-end
+})
 
-local function CreateToggle(text, configKey, container)
-    local container = container or ContentArea
-    
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.BackgroundTransparency = 1
-    toggleFrame.Size = UDim2.new(1, 0, 0, 24)
-    toggleFrame.LayoutOrder = 1
-    toggleFrame.Parent = container
-    
-    local btn = Instance.new("TextButton")
-    btn.Text = ""
-    btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
-    btn.BorderSizePixel = 0
-    btn.Position = UDim2.new(0, 5, 0, 4)
-    btn.Size = UDim2.new(0, 16, 0, 16)
-    btn.Parent = toggleFrame
-    
-    local lbl = Instance.new("TextLabel")
-    lbl.Text = text
-    lbl.Font = Enum.Font.SourceSans
-    lbl.TextSize = 16
-    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 30, 0, 0)
-    lbl.Size = UDim2.new(1, -30, 1, 0)
-    lbl.Parent = toggleFrame
-    
-    btn.MouseButton1Click:Connect(function()
-        Config[configKey] = not Config[configKey]
-        btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(40, 40, 40)
+MainGroup:AddToggle("ShowBars", {
+    Text = "Show Health Bars",
+    Default = Config.ShowBars,
+    Callback = function(value)
+        Config.ShowBars = value
+        SaveConfigs()
+    end
+})
+
+MainGroup:AddToggle("ShowValues", {
+    Text = "Show Bar Values",
+    Default = Config.ShowValues,
+    Callback = function(value)
+        Config.ShowValues = value
+        SaveConfigs()
+    end
+})
+
+MainGroup:AddToggle("ShowWalkspeed", {
+    Text = "Enable Walkspeed Multiplier",
+    Default = Config.ShowWalkspeed,
+    Tooltip = "Apply multiplier to walkspeed",
+    Callback = function(value)
+        Config.ShowWalkspeed = value
         
-        -- Special handling for walkspeed toggle
-        if configKey == "ShowWalkspeed" then
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            else
-                -- Reset to base speed when disabled
-                local character = LocalPlayer.Character
-                if character then
-                    local humanoid = character:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                    end
+        if value then
+            ApplyWalkspeedMultiplier()
+            StartWalkspeedMonitoring()
+        else
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
                 end
-                -- Stop monitoring
-                if WalkspeedUpdateConnection then
-                    WalkspeedUpdateConnection:Disconnect()
-                    WalkspeedUpdateConnection = nil
-                end
+            end
+            if WalkspeedUpdateConnection then
+                WalkspeedUpdateConnection:Disconnect()
+                WalkspeedUpdateConnection = nil
             end
         end
         
         SaveConfigs()
-    end)
-end
-
-local function CreateSlider(text, configKey, min, max, container, isFloat, callback)
-    local container = container or ContentArea
-    
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.BackgroundTransparency = 1
-    sliderFrame.Size = UDim2.new(1, 0, 0, 50)
-    sliderFrame.LayoutOrder = 2
-    sliderFrame.Parent = container
-    
-    local lbl = Instance.new("TextLabel")
-    lbl.Text = text
-    lbl.Font = Enum.Font.SourceSans
-    lbl.TextSize = 16
-    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 5, 0, 0)
-    lbl.Size = UDim2.new(1, -10, 0, 20)
-    lbl.Parent = sliderFrame
-    
-    local sliderBg = Instance.new("Frame")
-    sliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    sliderBg.BorderColor3 = Color3.fromRGB(50, 50, 50)
-    sliderBg.BorderSizePixel = 1
-    sliderBg.Position = UDim2.new(0, 5, 0, 25)
-    sliderBg.Size = UDim2.new(1, -10, 0, 20)
-    sliderBg.Parent = sliderFrame
-    
-    local sliderFill = Instance.new("Frame")
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Size = UDim2.new((Config[configKey] - min) / (max - min), 0, 1, 0)
-    sliderFill.Parent = sliderBg
-    
-    local valueLbl = Instance.new("TextLabel")
-    valueLbl.Text = isFloat and string.format("%.1f", Config[configKey]) or tostring(Config[configKey])
-    valueLbl.Font = Enum.Font.Code
-    valueLbl.TextSize = 14
-    valueLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    valueLbl.BackgroundTransparency = 1
-    valueLbl.Size = UDim2.new(1, 0, 1, 0)
-    valueLbl.ZIndex = 2
-    valueLbl.Parent = sliderBg
-    
-    local draggingSlider = false
-    local function Update(input)
-        local pos = input.Position.X
-        local boxPos = sliderBg.AbsolutePosition.X
-        local boxSize = sliderBg.AbsoluteSize.X
-        local relative = math.clamp((pos - boxPos) / boxSize, 0, 1)
-        local newVal = min + (max - min) * relative
-        
-        if not isFloat then
-            newVal = math.floor(newVal)
-        end
-        
-        Config[configKey] = newVal
-        sliderFill.Size = UDim2.new(relative, 0, 1, 0)
-        valueLbl.Text = isFloat and string.format("%.1f", newVal) or tostring(math.floor(newVal))
-        
-        -- Call callback if provided
-        if callback then
-            callback(newVal)
-        end
-        
-        SaveConfigs()
     end
-    
-    sliderBg.InputBegan:Connect(function(input) 
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-            draggingSlider = true 
-            Update(input) 
-        end 
-    end)
-    
-    UserInputService.InputEnded:Connect(function(input) 
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then 
-            draggingSlider = false 
-        end 
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input) 
-        if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then 
-            Update(input) 
-        end 
-    end)
-end
+})
 
--- Build Main Tab
-local function BuildMainTab()
-    ClearContent()
-    
-    local pad = Instance.new("Frame")
-    pad.Size = UDim2.new(1,0,0,5)
-    pad.BackgroundTransparency = 1
-    pad.LayoutOrder = 0
-    pad.Parent = ContentArea
-    
-    CreateToggle("Master Enabled", "Enabled")
-    CreateToggle("Show Player Names", "ShowNames")
-    CreateToggle("Show NPCs (No Names)", "ShowNPCs")
-    CreateToggle("Show Bars", "ShowBars")
-    CreateToggle("Show Values", "ShowValues")
-    CreateToggle("Enable Walkspeed Multiplier", "ShowWalkspeed")
-    
-    -- Walkspeed multiplier slider with callback
-    CreateSlider("Walkspeed Multiplier", "WalkspeedMultiplier", 0.5, 5, nil, true, function(newVal)
+-- Sliders
+MainGroup:AddSlider("WalkspeedMultiplier", {
+    Text = "Walkspeed Multiplier",
+    Default = Config.WalkspeedMultiplier,
+    Min = 0.5,
+    Max = 5,
+    Rounding = 1,
+    Suffix = "x",
+    Tooltip = "Multiply your walkspeed by this value",
+    Callback = function(value)
+        Config.WalkspeedMultiplier = value
         if Config.ShowWalkspeed then
             ApplyWalkspeedMultiplier()
         end
-    end)
-    
-    CreateSlider("Max Distance", "MaxDistance", 100, 5000)
-    
-    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+        SaveConfigs()
+    end
+})
+
+MainGroup:AddSlider("MaxDistance", {
+    Text = "Max Distance",
+    Default = Config.MaxDistance,
+    Min = 100,
+    Max = 5000,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(value)
+        Config.MaxDistance = value
+        SaveConfigs()
+    end
+})
+
+MainGroup:AddSlider("TextSize", {
+    Text = "Text Size",
+    Default = Config.TextSize,
+    Min = 8,
+    Max = 24,
+    Rounding = 0,
+    Suffix = "px",
+    Callback = function(value)
+        Config.TextSize = value
+        SaveConfigs()
+    end
+})
+
+-- Bar customization
+local BarGroup = Tabs.Main:AddRightGroupbox("Bar Customization")
+
+BarGroup:AddSlider("BarWidth", {
+    Text = "Bar Width",
+    Default = Config.BarWidth,
+    Min = 50,
+    Max = 300,
+    Rounding = 0,
+    Suffix = "px",
+    Callback = function(value)
+        Config.BarWidth = value
+        SaveConfigs()
+    end
+})
+
+BarGroup:AddSlider("BarHeight", {
+    Text = "Bar Height",
+    Default = Config.BarHeight,
+    Min = 2,
+    Max = 20,
+    Rounding = 0,
+    Suffix = "px",
+    Callback = function(value)
+        Config.BarHeight = value
+        SaveConfigs()
+    end
+})
+
+BarGroup:AddSlider("YOffset", {
+    Text = "Vertical Offset",
+    Default = Config.YOffset,
+    Min = 20,
+    Max = 200,
+    Rounding = 0,
+    Suffix = "px",
+    Callback = function(value)
+        Config.YOffset = value
+        SaveConfigs()
+    end
+})
+
+-- ==================== CONFIG TAB ====================
+local ConfigGroup = Tabs.Config:AddLeftGroupbox("Config Management")
+
+-- Current config display
+ConfigGroup:AddLabel("Current Config: " .. CurrentConfig)
+
+-- Config dropdown
+local configNames = {}
+for name, _ in pairs(Configs) do
+    table.insert(configNames, name)
 end
 
--- Build Config Tab
-local function BuildConfigTab()
-    ClearContent()
-    
-    -- Config Selection Frame
-    local selectFrame = Instance.new("Frame")
-    selectFrame.BackgroundTransparency = 1
-    selectFrame.Size = UDim2.new(1, 0, 0, 80)
-    selectFrame.LayoutOrder = 1
-    selectFrame.Parent = ContentArea
-    
-    local selectLbl = Instance.new("TextLabel")
-    selectLbl.Text = "Current Config:"
-    selectLbl.Font = Enum.Font.SourceSans
-    selectLbl.TextSize = 16
-    selectLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    selectLbl.TextXAlignment = Enum.TextXAlignment.Left
-    selectLbl.BackgroundTransparency = 1
-    selectLbl.Position = UDim2.new(0, 5, 0, 0)
-    selectLbl.Size = UDim2.new(1, -10, 0, 20)
-    selectLbl.Parent = selectFrame
-    
-    local configDropdown = Instance.new("TextButton")
-    configDropdown.Text = CurrentConfig .. " ▼"
-    configDropdown.Font = Enum.Font.SourceSans
-    configDropdown.TextSize = 16
-    configDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
-    configDropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    configDropdown.BorderSizePixel = 0
-    configDropdown.Position = UDim2.new(0, 5, 0, 25)
-    configDropdown.Size = UDim2.new(1, -10, 0, 30)
-    configDropdown.Parent = selectFrame
-    
-    local dropdownList = Instance.new("Frame")
-    dropdownList.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    dropdownList.BorderSizePixel = 0
-    dropdownList.Position = UDim2.new(0, 5, 0, 55)
-    dropdownList.Size = UDim2.new(1, -10, 0, 0)
-    dropdownList.Visible = false
-    dropdownList.Parent = selectFrame
-    
-    local dropdownLayout = Instance.new("UIListLayout")
-    dropdownLayout.Parent = dropdownList
-    
-    -- Update dropdown with configs
-    local function UpdateDropdown()
-        for _, child in pairs(dropdownList:GetChildren()) do
-            if child:IsA("TextButton") then
-                child:Destroy()
+ConfigGroup:AddDropdown("ConfigSelector", {
+    Text = "Select Config",
+    Values = configNames,
+    Default = CurrentConfig,
+    Tooltip = "Choose a config to load",
+    Callback = function(value)
+        CurrentConfig = value
+        if Configs[value] then
+            for k, v in pairs(Configs[value]) do
+                Config[k] = v
             end
-        end
-        
-        for name, _ in pairs(Configs) do
-            local btn = Instance.new("TextButton")
-            btn.Text = name
-            btn.Font = Enum.Font.SourceSans
-            btn.TextSize = 16
-            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-            btn.BorderSizePixel = 0
-            btn.Size = UDim2.new(1, 0, 0, 25)
-            btn.Parent = dropdownList
             
-            btn.MouseButton1Click:Connect(function()
-                CurrentConfig = name
-                configDropdown.Text = name .. " ▼"
-                dropdownList.Visible = false
-                
-                -- Load the selected config
-                if Configs[name] then
-                    for k, v in pairs(Configs[name]) do
-                        Config[k] = v
-                    end
-                end
-                
-                -- Apply walkspeed multiplier when loading config
-                if Config.ShowWalkspeed then
-                    ApplyWalkspeedMultiplier()
-                    StartWalkspeedMonitoring()
-                end
-                
-                SaveConfigs()
-                
-                -- Refresh main tab if visible
-                if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                    BuildMainTab()
-                end
-            end)
+            if Config.ShowWalkspeed then
+                ApplyWalkspeedMultiplier()
+                StartWalkspeedMonitoring()
+            end
+            
+            SaveConfigs()
+            
+            -- Update all UI elements to reflect new values
+            Library:Notify("Config '" .. value .. "' loaded!", 2)
         end
-        
-        dropdownList.Size = UDim2.new(1, -10, 0, dropdownLayout.AbsoluteContentSize.Y)
     end
-    
-    configDropdown.MouseButton1Click:Connect(function()
-        dropdownList.Visible = not dropdownList.Visible
-        if dropdownList.Visible then
-            UpdateDropdown()
-        end
-    end)
-    
-    -- Config Management Buttons
-    local btnFrame = Instance.new("Frame")
-    btnFrame.BackgroundTransparency = 1
-    btnFrame.Size = UDim2.new(1, 0, 0, 40)
-    btnFrame.LayoutOrder = 2
-    btnFrame.Parent = ContentArea
-    
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Text = "Save Current"
-    saveBtn.Font = Enum.Font.SourceSans
-    saveBtn.TextSize = 16
-    saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    saveBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    saveBtn.BorderSizePixel = 0
-    saveBtn.Position = UDim2.new(0, 5, 0, 0)
-    saveBtn.Size = UDim2.new(0.5, -10, 0, 30)
-    saveBtn.Parent = btnFrame
-    
-    local loadBtn = Instance.new("TextButton")
-    loadBtn.Text = "Load"
-    loadBtn.Font = Enum.Font.SourceSans
-    loadBtn.TextSize = 16
-    loadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    loadBtn.BorderSizePixel = 0
-    loadBtn.Position = UDim2.new(0.5, 5, 0, 0)
-    loadBtn.Size = UDim2.new(0.5, -10, 0, 30)
-    loadBtn.Parent = btnFrame
-    
-    -- New Config Creation
-    local newFrame = Instance.new("Frame")
-    newFrame.BackgroundTransparency = 1
-    newFrame.Size = UDim2.new(1, 0, 0, 100)
-    newFrame.LayoutOrder = 3
-    newFrame.Parent = ContentArea
-    
-    local newLbl = Instance.new("TextLabel")
-    newLbl.Text = "Create New Config:"
-    newLbl.Font = Enum.Font.SourceSans
-    newLbl.TextSize = 16
-    newLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-    newLbl.TextXAlignment = Enum.TextXAlignment.Left
-    newLbl.BackgroundTransparency = 1
-    newLbl.Position = UDim2.new(0, 5, 0, 0)
-    newLbl.Size = UDim2.new(1, -10, 0, 20)
-    newLbl.Parent = newFrame
-    
-    local nameBox = Instance.new("TextBox")
-    nameBox.Text = ""
-    nameBox.PlaceholderText = "Config Name"
-    nameBox.Font = Enum.Font.SourceSans
-    nameBox.TextSize = 16
-    nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    nameBox.BorderSizePixel = 0
-    nameBox.Position = UDim2.new(0, 5, 0, 25)
-    nameBox.Size = UDim2.new(1, -10, 0, 30)
-    nameBox.Parent = newFrame
-    
-    local createBtn = Instance.new("TextButton")
-    createBtn.Text = "Create New Config"
-    createBtn.Font = Enum.Font.SourceSans
-    createBtn.TextSize = 16
-    createBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-    createBtn.BorderSizePixel = 0
-    createBtn.Position = UDim2.new(0, 5, 0, 60)
-    createBtn.Size = UDim2.new(1, -10, 0, 30)
-    createBtn.Parent = newFrame
-    
-    local deleteBtn = Instance.new("TextButton")
-    deleteBtn.Text = "Delete Current Config"
-    deleteBtn.Font = Enum.Font.SourceSans
-    deleteBtn.TextSize = 16
-    deleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-    deleteBtn.BorderSizePixel = 0
-    deleteBtn.Position = UDim2.new(0, 5, 0, 95)
-    deleteBtn.Size = UDim2.new(1, -10, 0, 30)
-    deleteBtn.Parent = newFrame
-    
-    -- Button functionality
-    saveBtn.MouseButton1Click:Connect(function()
+})
+
+ConfigGroup:AddDivider()
+
+-- Config management buttons
+ConfigGroup:AddButton({
+    Text = "Save Current Config",
+    Func = function()
         local configCopy = {}
         for k, v in pairs(Config) do
             configCopy[k] = v
         end
         Configs[CurrentConfig] = configCopy
         SaveConfigs()
-        
-        saveBtn.Text = "Saved!"
-        saveBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-        task.wait(1)
-        saveBtn.Text = "Save Current"
-        saveBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    end)
-    
-    loadBtn.MouseButton1Click:Connect(function()
+        Library:Notify("Config saved!", 2)
+    end,
+    Tooltip = "Save current settings to selected config"
+})
+
+ConfigGroup:AddButton({
+    Text = "Load Selected Config",
+    Func = function()
         if Configs[CurrentConfig] then
             for k, v in pairs(Configs[CurrentConfig]) do
                 Config[k] = v
@@ -798,21 +513,30 @@ local function BuildConfigTab()
             end
             
             SaveConfigs()
-            
-            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildMainTab()
-            end
-            
-            loadBtn.Text = "Loaded!"
-            loadBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-            task.wait(1)
-            loadBtn.Text = "Load"
-            loadBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+            Library:Notify("Config loaded!", 2)
         end
-    end)
-    
-    createBtn.MouseButton1Click:Connect(function()
-        local newName = nameBox.Text:gsub("%s+", "")
+    end
+})
+
+ConfigGroup:AddDivider()
+
+-- New config creation
+ConfigGroup:AddInput("NewConfigName", {
+    Text = "New Config Name",
+    Default = "",
+    Placeholder = "Enter config name",
+    Finished = true,
+    Callback = function(value)
+        _G.NewConfigValue = value
+    end
+})
+
+ConfigGroup:AddButton({
+    Text = "Create New Config",
+    Func = function()
+        local newName = _G.NewConfigValue or ""
+        newName = newName:gsub("%s+", "")
+        
         if newName and newName ~= "" then
             if not Configs[newName] then
                 local configCopy = {}
@@ -821,26 +545,27 @@ local function BuildConfigTab()
                 end
                 Configs[newName] = configCopy
                 CurrentConfig = newName
-                configDropdown.Text = newName .. " ▼"
-                nameBox.Text = ""
                 SaveConfigs()
                 
-                createBtn.Text = "Created!"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-                task.wait(1)
-                createBtn.Text = "Create New Config"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+                -- Update dropdown values
+                local newNames = {}
+                for name, _ in pairs(Configs) do
+                    table.insert(newNames, name)
+                end
+                Options.ConfigSelector:SetValues(newNames)
+                Options.ConfigSelector:SetValue(newName)
+                
+                Library:Notify("Config '" .. newName .. "' created!", 2)
             else
-                createBtn.Text = "Name exists!"
-                createBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-                task.wait(1)
-                createBtn.Text = "Create New Config"
-                createBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+                Library:Notify("Config name already exists!", 3)
             end
         end
-    end)
-    
-    deleteBtn.MouseButton1Click:Connect(function()
+    end
+})
+
+ConfigGroup:AddButton({
+    Text = "Delete Current Config",
+    Func = function()
         if CurrentConfig ~= "Default" then
             Configs[CurrentConfig] = nil
             CurrentConfig = "Default"
@@ -856,52 +581,41 @@ local function BuildConfigTab()
                 StartWalkspeedMonitoring()
             end
             
-            configDropdown.Text = CurrentConfig .. " ▼"
-            SaveConfigs()
-            
-            if MainTabBtn.TextColor3 == Color3.fromRGB(0, 120, 255) then
-                BuildMainTab()
+            -- Update dropdown
+            local newNames = {}
+            for name, _ in pairs(Configs) do
+                table.insert(newNames, name)
             end
+            Options.ConfigSelector:SetValues(newNames)
+            Options.ConfigSelector:SetValue("Default")
             
-            deleteBtn.Text = "Deleted!"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-            task.wait(1)
-            deleteBtn.Text = "Delete Current Config"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+            SaveConfigs()
+            Library:Notify("Config deleted!", 2)
         else
-            deleteBtn.Text = "Can't delete Default!"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-            task.wait(1)
-            deleteBtn.Text = "Delete Current Config"
-            deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+            Library:Notify("Cannot delete default config!", 3)
         end
-    end)
-    
-    ContentArea.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
-end
+    end
+})
 
--- Tab switching
-MainTabBtn.MouseButton1Click:Connect(function()
-    MainTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
-    MainTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    ConfigTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    BuildMainTab()
-end)
+-- ==================== THEME TAB ====================
+-- Setup ThemeManager
+Library:SetWatermark("Mission Hunter ESP")
+Library:SetWatermarkVisibility(true)
 
-ConfigTabBtn.MouseButton1Click:Connect(function()
-    ConfigTabBtn.TextColor3 = Color3.fromRGB(0, 120, 255)
-    ConfigTabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    MainTabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    MainTabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    BuildConfigTab()
-end)
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
 
-BuildMainTab()
+ThemeManager:SetFolder("MissionHunterESP")
+SaveManager:SetFolder("MissionHunterESP")
 
---------------------------------------------------------------------------------
--- 2. ESP SYSTEM (NPC Names Hidden)
---------------------------------------------------------------------------------
+ThemeManager:ApplyToTab(Tabs.Theme)
+SaveManager:BuildConfigSection(Tabs.Config)
+
+-- Initialize
+SaveManager:Load()
+
+-- ==================== ESP SYSTEM ====================
+-- (Your existing ESP drawing code below - unchanged)
 
 local function CreateDrawing(type, props)
     local obj = Drawing.new(type)
@@ -937,7 +651,6 @@ RunService.RenderStepped:Connect(function()
             local humanoid = model:FindFirstChild("Humanoid")
             local player = Players:GetPlayerFromCharacter(model)
 
-            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
             if player and humanoid then
                 pcall(function()
                      humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
@@ -946,7 +659,6 @@ RunService.RenderStepped:Connect(function()
 
             local isNPC = not player
 
-            -- Check if we should skip due to settings
             if isNPC and not Config.ShowNPCs then
                 if ESP_Cache[model] then RemoveESP(model) end
                 continue
@@ -959,17 +671,14 @@ RunService.RenderStepped:Connect(function()
                         Drawings = {
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
                             
-                            -- Health Bar
                             Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
                             
-                            -- Posture Bar
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
                             
-                            -- Walkspeed Bar (only for players)
                             Bar3Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar3Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar3Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
@@ -993,18 +702,15 @@ RunService.RenderStepped:Connect(function()
                     local cleanName = ""
 
                     if isNPC then
-                        -- NPC LOGIC: Green Bar only, NO NAME
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
                         min1 = 0
-                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
+                        color1 = Color3.new(0.2, 0.9, 0.2)
                         showBar2 = false
                         showBar3 = false
-                        cleanName = "" -- NO NAME FOR NPCs
+                        cleanName = ""
                     else
-                        -- PLAYER LOGIC: Show name + all bars
-                        cleanName = (player.DisplayName and player.DisplayName ~= "" and player.DisplayName)
-                            or player.Name
+                        cleanName = (player.DisplayName and player.DisplayName ~= "" and player.DisplayName) or player.Name
 
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
@@ -1023,7 +729,6 @@ RunService.RenderStepped:Connect(function()
                     end
                     
 
-                    -- Calculate Percentages
                     local range1 = max1 - min1
                     local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
@@ -1033,7 +738,6 @@ RunService.RenderStepped:Connect(function()
                     local screenPos = Vector2.new(vector.X, vector.Y)
                     local startY = screenPos.Y - Config.YOffset - (1000/distance)
 
-                    -- 1. NAME (Players only)
                     if Config.ShowNames and not isNPC and cleanName ~= "" then
                         d.Name.Visible = true
                         d.Name.Text = cleanName
@@ -1043,18 +747,15 @@ RunService.RenderStepped:Connect(function()
                         d.Name.Visible = false
                     end
 
-                    -- 2. BARS
                     if Config.ShowBars then
                         local barPos = Vector2.new(screenPos.X - (Config.BarWidth / 2), startY)
                         
-                        -- Determine how many bars to show
-                        local barCount = 1 -- Health always shows
+                        local barCount = 1
                         if showBar2 then barCount = barCount + 1 end
                         if showBar3 then barCount = barCount + 1 end
                         
                         local currentY = startY
                         
-                        -- Posture Bar (Middle)
                         if showBar2 then
                             local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
@@ -1081,7 +782,6 @@ RunService.RenderStepped:Connect(function()
                             d.Bar2Text.Visible = false
                         end
                         
-                        -- Health Bar (Bottom)
                         local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                         
                         d.Bar1Bg.Visible = true
@@ -1101,7 +801,6 @@ RunService.RenderStepped:Connect(function()
                         end
 
                     else
-                        -- Hide all bars
                         d.Bar1Bg.Visible = false
                         d.Bar1Fill.Visible = false
                         d.Bar1Text.Visible = false
@@ -1127,10 +826,12 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Keybind to toggle menu (RightControl)
 UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.F4 then
-        MainFrame.Visible = not MainFrame.Visible
+        Library:Toggle()
     end
 end)
 
-print("Mission Hunter ESP Loaded with Walkspeed Multiplier (Uses WalkSpeed Attribute)")
+print("=== Mission Hunter ESP Loaded ===")
+print("Press F4 to toggle menu")
