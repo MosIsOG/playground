@@ -1312,6 +1312,13 @@ local WorldTeleports = {
         }
     },
 
+    [14220582083] = {
+        name = "Infinity Fortress",
+        locations = {
+            ["Secret Spot"] = Vector3.new(-737, -1262, -2516),
+        }
+    },
+
 
     
     -- Add more worlds here as you discover them
@@ -1406,18 +1413,24 @@ local GameLocations = {
     },
     ["Tokyo World"] = {
         PlaceId = 14220581261,
-        Description = "Main Forest game world"
+        Description = "Main Tokyo game world"
     },
 
     ["Slayer World"] = {
         PlaceId = 15240226383,
-        Description = "Main Forest game world"
+        Description = "Main Slayer game world"
     },
 
     ["Plains World"] = {
         PlaceId = 14220581884,
-        Description = "Main Forest game world"
+        Description = "Main Plains game world"
     },
+    ["Infinity Fortress"] = {
+        PlaceId = 14220582083,
+        Description = "Slayers shouldn't be here!"
+    },
+
+
 
     
     -- Add more games here as you find them!
