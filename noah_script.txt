@@ -848,17 +848,18 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Add this to your existing Mission Hunter ESP script
--- Place this after the ESP system but before the keybind section
-
 -- ==================== ESCORT MISSION SYSTEM ====================
+-- This makes the NPC follow you to the red marker
+
 local EscortMission = {
     Active = false,
     CurrentNPC = nil,
     CurrentPlayer = nil,
     RedMarker = nil,
     WhiteMarker = nil,
-    MissionStartTime = nil
+    MissionStartTime = nil,
+    Following = false,
+    FollowConnection = nil
 }
 
 -- Function to find markers in workspace
@@ -868,21 +869,23 @@ local function FindMarkers()
         white = nil
     }
     
-    -- Search for red marker (teleport destination)
+    -- Search for red marker (finish line)
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
-            -- Check for red marker
+            -- Check for red marker (finish line)
             if obj.BrickColor == BrickColor.new("Bright red") or 
                obj.Color == Color3.new(1, 0, 0) or
                obj.Name:lower():find("red") or
-               obj.Name:lower():find("checkpoint") then
+               obj.Name:lower():find("checkpoint") or
+               obj.Name:lower():find("finish") then
                 markers.red = obj
             end
             
-            -- Check for white marker (mission start)
+            -- Check for white marker (start line)
             if obj.BrickColor == BrickColor.new("White") or 
                obj.Color == Color3.new(1, 1, 1) or
                obj.Name:lower():find("white") or
+               obj.Name:lower():find("start") or
                obj.Name:lower():find("mission") then
                 markers.white = obj
             end
@@ -923,47 +926,71 @@ local function FindNearestNPC(player)
     return nearestNPC, shortestDist
 end
 
--- Function to teleport NPC to red marker
-local function TeleportNPCToRedMarker(npc)
-    if not npc then 
-        Library:Notify("No NPC selected!", 3)
-        return false 
+-- Function to make NPC follow the player
+local function MakeNPCFollow(npc, player)
+    if not npc or not player then return end
+    
+    -- Stop any existing follow connection
+    if EscortMission.FollowConnection then
+        EscortMission.FollowConnection:Disconnect()
+        EscortMission.FollowConnection = nil
     end
     
-    local markers = FindMarkers()
-    if not markers.red then
-        Library:Notify("Red marker not found!", 3)
-        return false
-    end
-    
+    local humanoid = npc:FindFirstChild("Humanoid")
     local rootPart = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-    if not rootPart then
-        Library:Notify("NPC has no root part!", 3)
-        return false
+    
+    if not humanoid or not rootPart then 
+        Library:Notify("NPC can't follow (missing Humanoid)", 3)
+        return 
     end
     
-    -- Teleport the NPC
-    rootPart.CFrame = markers.red.CFrame * CFrame.new(0, 3, 0) -- Slight offset above marker
+    EscortMission.Following = true
     
-    -- Optional: Add teleport effect
-    local effect = Instance.new("Part")
-    effect.Size = Vector3.new(5, 5, 5)
-    effect.CFrame = markers.red.CFrame
-    effect.Anchored = true
-    effect.CanCollide = false
-    effect.Transparency = 0.5
-    effect.BrickColor = BrickColor.new("Bright red")
-    effect.Parent = workspace
-    
-    -- Fade out effect
-    for i = 1, 10 do
-        effect.Transparency = effect.Transparency + 0.1
-        task.wait(0.03)
-    end
-    
-    effect:Destroy()
-    
-    return true
+    -- Make NPC follow player
+    EscortMission.FollowConnection = RunService.Heartbeat:Connect(function()
+        if not EscortMission.Active or not EscortMission.Following then
+            return
+        end
+        
+        -- Check if NPC and player still exist
+        if not npc or not npc.Parent or not player.Character then
+            EscortMission.Following = false
+            return
+        end
+        
+        local playerChar = player.Character
+        local playerRoot = playerChar:FindFirstChild("HumanoidRootPart")
+        
+        if not playerRoot then return end
+        
+        -- Calculate distance between NPC and player
+        local npcPos = rootPart.Position
+        local playerPos = playerRoot.Position
+        local distance = (npcPos - playerPos).Magnitude
+        
+        -- If NPC is too far, move closer
+        if distance > 8 then
+            humanoid:MoveTo(playerPos)
+        elseif distance < 4 then
+            -- If too close, back up a little
+            local direction = (npcPos - playerPos).Unit
+            local backupPos = playerPos + direction * 5
+            humanoid:MoveTo(backupPos)
+        else
+            -- Just stop moving if at good distance
+            humanoid:MoveTo(npcPos) -- Stop moving
+        end
+        
+        -- Check if we've reached the red marker (mission complete)
+        local markers = FindMarkers()
+        if markers.red then
+            local distToRed = (rootPart.Position - markers.red.Position).Magnitude
+            if distToRed < 15 then -- Within 15 studs of red marker
+                -- Auto-complete the mission
+                CompleteEscortMission(true) -- Pass true for "auto complete"
+            end
+        end
+    end)
 end
 
 -- Function to start escort mission
@@ -988,8 +1015,25 @@ local function StartEscortMission()
     
     local markers = FindMarkers()
     if not markers.red then
-        Library:Notify("Red marker not found in workspace!", 3)
+        Library:Notify("Red marker (finish line) not found in workspace!", 3)
         return
+    end
+    
+    if not markers.white then
+        Library:Notify("White marker (start line) not found!", 2)
+        -- Continue anyway, just warn
+    end
+    
+    -- Check if we're at the start line (white marker)
+    if markers.white then
+        local playerChar = player.Character
+        if playerChar and playerChar:FindFirstChild("HumanoidRootPart") then
+            local distToStart = (playerChar.HumanoidRootPart.Position - markers.white.Position).Magnitude
+            if distToStart > 20 then
+                Library:Notify("Go to the white marker to start the mission!", 3)
+                return
+            end
+        end
     end
     
     -- Start the mission
@@ -1005,9 +1049,11 @@ local function StartEscortMission()
     
     Library:Notify(string.format("Escort mission started! Lead %s to the red marker!", npcName), 3)
     
-    -- Highlight the NPC (optional)
+    -- Highlight the NPC
     if nearestNPC:FindFirstChild("Highlight") then
         nearestNPC.Highlight.Enabled = true
+        nearestNPC.Highlight.FillColor = Color3.new(0, 1, 0)
+        nearestNPC.Highlight.OutlineColor = Color3.new(1, 1, 1)
     else
         local highlight = Instance.new("Highlight")
         highlight.Parent = nearestNPC
@@ -1015,10 +1061,13 @@ local function StartEscortMission()
         highlight.OutlineColor = Color3.new(1, 1, 1)
         highlight.Enabled = true
     end
+    
+    -- Make the NPC follow
+    MakeNPCFollow(nearestNPC, player)
 end
 
--- Function to complete escort mission
-local function CompleteEscortMission()
+-- Function to complete escort mission (with optional auto-complete)
+local function CompleteEscortMission(autoComplete)
     if not EscortMission.Active then
         Library:Notify("No active mission!", 3)
         return
@@ -1030,22 +1079,90 @@ local function CompleteEscortMission()
         return
     end
     
-    -- Teleport the NPC
-    local success = TeleportNPCToRedMarker(EscortMission.CurrentNPC)
-    
-    if success then
-        local timeTaken = math.floor(tick() - EscortMission.MissionStartTime)
-        Library:Notify(string.format("Mission complete! NPC escorted in %d seconds!", timeTaken), 5)
-        
-        -- Remove highlight
-        if EscortMission.CurrentNPC:FindFirstChild("Highlight") then
-            EscortMission.CurrentNPC.Highlight.Enabled = false
-        end
-        
-        -- Reset mission state
-        EscortMission.Active = false
-        EscortMission.CurrentNPC = nil
+    local markers = FindMarkers()
+    if not markers.red then
+        Library:Notify("Red marker not found!", 3)
+        return
     end
+    
+    -- Stop following
+    if EscortMission.FollowConnection then
+        EscortMission.FollowConnection:Disconnect()
+        EscortMission.FollowConnection = nil
+    end
+    EscortMission.Following = false
+    
+    local timeTaken = math.floor(tick() - EscortMission.MissionStartTime)
+    
+    if autoComplete then
+        Library:Notify(string.format("Mission complete! You reached the finish line in %d seconds!", timeTaken), 5)
+    else
+        Library:Notify(string.format("Mission completed manually! Time: %d seconds", timeTaken), 5)
+    end
+    
+    -- Remove highlight
+    if EscortMission.CurrentNPC:FindFirstChild("Highlight") then
+        EscortMission.CurrentNPC.Highlight.Enabled = false
+    end
+    
+    -- Reset mission state
+    EscortMission.Active = false
+    EscortMission.CurrentNPC = nil
+    EscortMission.Following = false
+end
+
+-- Function to teleport both player and NPC to red marker (emergency/skip)
+local function TeleportToFinish()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    local markers = FindMarkers()
+    if not markers.red then
+        Library:Notify("Red marker not found!", 3)
+        return
+    end
+    
+    -- Teleport NPC
+    if EscortMission.CurrentNPC then
+        local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
+        if npcRoot then
+            npcRoot.CFrame = markers.red.CFrame * CFrame.new(0, 3, 2)
+        end
+    end
+    
+    -- Teleport Player
+    local player = LocalPlayer
+    if player.Character then
+        local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        if playerRoot then
+            playerRoot.CFrame = markers.red.CFrame * CFrame.new(0, 3, -2) -- Player on other side
+        end
+    end
+    
+    -- Add teleport effect
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(8, 8, 8)
+    effect.CFrame = markers.red.CFrame
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright red")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify("Teleported to finish line!", 3)
+    
+    -- Complete the mission
+    CompleteEscortMission()
 end
 
 -- Function to cancel current mission
@@ -1053,6 +1170,12 @@ local function CancelEscortMission()
     if not EscortMission.Active then
         Library:Notify("No active mission to cancel!", 3)
         return
+    end
+    
+    -- Stop following
+    if EscortMission.FollowConnection then
+        EscortMission.FollowConnection:Disconnect()
+        EscortMission.FollowConnection = nil
     end
     
     -- Remove highlight
@@ -1064,162 +1187,8 @@ local function CancelEscortMission()
     
     EscortMission.Active = false
     EscortMission.CurrentNPC = nil
+    EscortMission.Following = false
 end
-
--- Auto-detect nearby NPC for mission start (optional)
-local function CheckForMissionStart()
-    if EscortMission.Active then return end
-    
-    local player = LocalPlayer
-    local nearestNPC, distance = FindNearestNPC(player)
-    
-    -- If within range of white marker and close to NPC
-    local markers = FindMarkers()
-    if markers.white and nearestNPC and distance < 20 then
-        local character = player.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            local distToWhite = (character.HumanoidRootPart.Position - markers.white.Position).Magnitude
-            
-            -- If player is near white marker AND near an NPC
-            if distToWhite < 15 then
-                -- Show notification that mission is available
-                -- This would be handled by a UI element in a full implementation
-            end
-        end
-    end
-end
-
--- ==================== ADD ESCORT MISSION TO GUI ====================
-
--- Add Escort Mission tab
-local EscortTab = Window:AddTab("Escort")
-local EscortGroup = EscortTab:AddLeftGroupbox("Village Escort Missions")
-
--- Mission status display
-EscortGroup:AddLabel("Mission Status: Inactive", function(label)
-    -- Update label when mission state changes
-    if EscortMission.Active then
-        label:SetText("Mission Status: ACTIVE")
-    else
-        label:SetText("Mission Status: Inactive")
-    end
-end)
-
-EscortGroup:AddDivider()
-
--- Mission control buttons
-EscortGroup:AddButton({
-    Text = "Start Escort Mission",
-    Func = StartEscortMission,
-    Tooltip = "Start escorting the nearest NPC to the red marker"
-})
-
-EscortGroup:AddButton({
-    Text = "Complete Mission (Teleport NPC)",
-    Func = CompleteEscortMission,
-    Tooltip = "Teleport the escorted NPC to the red marker"
-})
-
-EscortGroup:AddButton({
-    Text = "Cancel Mission",
-    Func = CancelEscortMission,
-    Tooltip = "Cancel the current escort mission"
-})
-
-EscortGroup:AddDivider()
-
--- Info display
-EscortGroup:AddLabel("Mission Info:")
-EscortGroup:AddLabel("• White marker = Mission start area")
-EscortGroup:AddLabel("• Red marker = Teleport destination")
-EscortGroup:AddLabel("• Get within 30 studs of an NPC")
-EscortGroup:AddLabel("• Click 'Start Escort Mission'")
-EscortGroup:AddLabel("• Lead NPC to red marker")
-EscortGroup:AddLabel("• Click 'Complete Mission' to teleport")
-
--- Marker scanner
-local MarkerGroup = EscortTab:AddRightGroupbox("Marker Scanner")
-
-MarkerGroup:AddButton({
-    Text = "Scan for Markers",
-    Func = function()
-        local markers = FindMarkers()
-        if markers.red then
-            Library:Notify("✓ Red marker found at " .. string.format("%.1f, %.1f, %.1f", markers.red.Position.X, markers.red.Position.Y, markers.red.Position.Z), 3)
-        else
-            Library:Notify("✗ Red marker not found!", 3)
-        end
-        
-        if markers.white then
-            Library:Notify("✓ White marker found at " .. string.format("%.1f, %.1f, %.1f", markers.white.Position.X, markers.white.Position.Y, markers.white.Position.Z), 3)
-        else
-            Library:Notify("✗ White marker not found!", 3)
-        end
-    end
-})
-
-MarkerGroup:AddButton({
-    Text = "Find Nearest NPC",
-    Func = function()
-        local npc, dist = FindNearestNPC(LocalPlayer)
-        if npc then
-            Library:Notify(string.format("Nearest NPC: %s (%.1f studs away)", npc.Name, dist), 3)
-        else
-            Library:Notify("No NPCs found in Live folder!", 3)
-        end
-    end
-})
-
--- Optional: Auto-refresh marker detection
-local function UpdateMissionUI()
-    -- This would update UI elements in a more advanced implementation
-    -- For now, just check if mission should be auto-completed
-    
-    if EscortMission.Active and EscortMission.CurrentNPC then
-        -- Check if NPC is near red marker for auto-complete (optional)
-        local markers = FindMarkers()
-        if markers.red then
-            local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
-            if npcRoot then
-                local distToRed = (npcRoot.Position - markers.red.Position).Magnitude
-                if distToRed < 10 then
-                    -- Auto-complete if NPC is close to red marker
-                    -- Uncomment to enable auto-complete:
-                    -- CompleteEscortMission()
-                end
-            end
-        end
-    end
-end
-
--- Add to render loop for UI updates
-local oldRenderStep = RunService.RenderStepped:Connect(function()
-    -- Call existing ESP render code here (already in your script)
-    -- Then add our mission UI update
-    UpdateMissionUI()
-end)
-
--- Add keybinds for quick mission control (optional)
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    
-    -- Ctrl+E to start escort
-    if input.KeyCode == Enum.KeyCode.E and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        StartEscortMission()
-    end
-    
-    -- Ctrl+T to complete/teleport
-    if input.KeyCode == Enum.KeyCode.T and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        CompleteEscortMission()
-    end
-end)
-
-print("=== Escort Mission System Loaded ===")
-print("New tab 'Escort' added to menu")
-print("Controls:")
-print("- Click buttons in Escort tab to manage missions")
-print("- Ctrl+E = Start mission")
-print("- Ctrl+T = Complete/teleport")
 
 
 
