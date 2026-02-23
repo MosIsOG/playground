@@ -861,6 +861,48 @@ local EscortMission = {
     Following = false,
     FollowConnection = nil
 }
+-- Function to find markers in workspace
+local function FindMarkers()
+    local markers = {
+        red = nil,
+        white = nil
+    }
+    
+    -- Look for red marker (finish line)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            -- Check for red marker
+            if obj.BrickColor == BrickColor.new("Bright red") or 
+               obj.Color == Color3.new(1, 0, 0) or
+               obj.Name:lower():find("red") or
+               obj.Name:lower():find("checkpoint") or
+               obj.Name:lower():find("finish") or
+               obj.Name == "missionMarker" then
+                markers.red = obj
+                print("Found red marker at: " .. tostring(obj:GetFullName()))
+                break
+            end
+        end
+    end
+    
+    -- Look for white marker (start line)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            -- Check for white marker
+            if obj.BrickColor == BrickColor.new("White") or 
+               obj.Color == Color3.new(1, 1, 1) or
+               obj.Name:lower():find("white") or
+               obj.Name:lower():find("start") then
+                markers.white = obj
+                print("Found white marker at: " .. tostring(obj:GetFullName()))
+                break
+            end
+        end
+    end
+    
+    return markers
+end
+
 
 -- Function to find nearest NPC to player
 local function FindNearestNPC(player)
