@@ -1757,6 +1757,21 @@ local GameLocations = {
         PlaceId = 14220581641,
         Description = "Main Forest game world"
     },
+    ["Tokyo World"] = {
+        PlaceId = 14220581261,
+        Description = "Main Forest game world"
+    },
+
+    ["Slayer World"] = {
+        PlaceId = 15240226383,
+        Description = "Main Forest game world"
+    },
+
+    ["Plains World"] = {
+        PlaceId = 14220581884,
+        Description = "Main Forest game world"
+    },
+
     
     -- Add more games here as you find them!
     -- ["Game Name"] = {
