@@ -1436,14 +1436,44 @@ local WorldTeleports = {
         name = "Forest World",
         locations = {
             ["Spawn Area"] = Vector3.new(0, 50, 0),
-            ["Main Marker"] = Vector3.new(1641, 140, -784),
-            ["Station Marker"] = Vector3.new(946, 11, 1065),
-            ["Village Center"] = Vector3.new(500, 50, 300),
+            ["Train Station"] = Vector3.new(636, 17, 1730),
+            ["Temari & Arrow Boss"] = Vector3.new(1067, 20, 384),
+            ["Rui Boss"] = Vector3.new(499, 12, -1076),
+            ["Final Selection"] = Vector3.new(-729, 284, -432),
+            ["Holiday Boss"] = Vector3.new(-1293, 273, 63),
+            ["Wind & Snake Boss"] = Vector3.new(2045, 136, 1684),
+            ["Kill Grip Spot"] = Vector3.new(-20, 155, 1137),
+        }
+    },
+    [14220581261] = {
+        name = "Tokyo World",
+        locations = {
+            ["Slayer Base"] = Vector3.new(1879, 27, 797),
+            ["Train Station"] = Vector3.new(-1178, 9, -472),
+            ["Forest Gate"] = Vector3.new(-861, 9, 1269),
+            ["Shop"] = Vector3.new(-436, 20, -516),
             ["Training Grounds"] = Vector3.new(200, 30, 500),
             ["Boss Arena"] = Vector3.new(1200, 100, -500),
             ["Secret Cave"] = Vector3.new(-300, 20, 800),
         }
     },
+
+    [15240226383] = {
+        name = "Slayer Village",
+        locations = {
+        }
+    },
+
+    [14220581884] = {
+        name = "Plains World",
+        locations = {
+            ["Slayer Base"] = Vector3.new(-1819, 117, 45),
+            ["Thunder Boss"] = Vector3.new(1454, 303, 2037),
+            ["Kill Spot"] = Vector3.new(1675, 320, 174)
+        }
+    },
+
+
     
     -- Add more worlds here as you discover them
     -- [PLACE_ID] = {
