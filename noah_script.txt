@@ -1422,6 +1422,15 @@ EscortGroup:AddDivider()
 
 -- Mission control buttons
 EscortGroup:AddDivider()
+EscortGroup:AddLabel("🎮 MISSION CONTROLS:")
+
+EscortGroup:AddButton({
+    Text = "🚀 START ESCORT MISSION",
+    Func = StartEscortMission,
+    Tooltip = "Start escorting the nearest NPC to the chosen marker (must be near white marker)"
+})
+
+EscortGroup:AddDivider()
 EscortGroup:AddLabel("🎮 TELEPORT OPTIONS:")
 
 EscortGroup:AddButton({
@@ -1443,7 +1452,7 @@ EscortGroup:AddButton({
 })
 
 EscortGroup:AddButton({
-    Text = "Cancel Mission",
+    Text = "❌ Cancel Mission",
     Func = CancelEscortMission,
     Tooltip = "Cancel the current escort mission"
 })
