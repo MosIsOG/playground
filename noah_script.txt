@@ -1421,11 +1421,169 @@ print("=== Escort Mission System Loaded ===")
 print("New tab 'Escort' added to menu")
 
 -- ==================== SERVER TELEPORT SECTION ====================
--- Fast travel between different games/servers
+-- Fast travel between different games/servers AND in-game locations
 
 local TeleportService = game:GetService("TeleportService")
 local TeleportTab = Window:AddTab("Server Teleport")
-local TeleportGroup = TeleportTab:AddLeftGroupbox("Game Teleporter")
+
+-- ===== IN-GAME TELEPORT SECTION (Current World) =====
+local InGameGroup = TeleportTab:AddLeftGroupbox("📍 In-Game Teleport")
+
+-- Define teleport locations for different worlds
+local WorldTeleports = {
+    -- Forest World (14220581641)
+    [14220581641] = {
+        name = "Forest World",
+        locations = {
+            ["Spawn Area"] = Vector3.new(0, 50, 0),
+            ["Main Marker"] = Vector3.new(1641, 140, -784),
+            ["Station Marker"] = Vector3.new(946, 11, 1065),
+            ["Village Center"] = Vector3.new(500, 50, 300),
+            ["Training Grounds"] = Vector3.new(200, 30, 500),
+            ["Boss Arena"] = Vector3.new(1200, 100, -500),
+            ["Secret Cave"] = Vector3.new(-300, 20, 800),
+        }
+    },
+    
+    -- Add more worlds here as you discover them
+    -- [PLACE_ID] = {
+    --     name = "World Name",
+    --     locations = {
+    --         ["Location 1"] = Vector3.new(x, y, z),
+    --         ["Location 2"] = Vector3.new(x, y, z),
+    --     }
+    -- },
+}
+
+-- Function to teleport to in-game location
+local function TeleportInGame(locationName, position)
+    local player = LocalPlayer
+    if not player.Character then
+        Library:Notify("No character found!", 3)
+        return
+    end
+    
+    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then
+        Library:Notify("Cannot teleport (no HumanoidRootPart)", 3)
+        return
+    end
+    
+    -- Teleport effect
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(5, 5, 5)
+    effect.CFrame = humanoidRootPart.CFrame
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright blue")
+    effect.Parent = workspace
+    
+    -- Fade out
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.02)
+    end
+    
+    -- Teleport
+    humanoidRootPart.CFrame = CFrame.new(position)
+    
+    -- Fade in at new location
+    effect.CFrame = humanoidRootPart.CFrame
+    effect.Transparency = 0.5
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency - 0.1
+        task.wait(0.02)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify(string.format("Teleported to %s!", locationName), 3)
+end
+
+-- Show current world name
+local currentWorld = WorldTeleports[game.PlaceId]
+if currentWorld then
+    InGameGroup:AddLabel("🌲 Current World: " .. currentWorld.name)
+    InGameGroup:AddDivider()
+    
+    -- Add teleport buttons for current world
+    for name, pos in pairs(currentWorld.locations) do
+        InGameGroup:AddButton({
+            Text = string.format("📍 %s", name),
+            Func = function()
+                TeleportInGame(name, pos)
+            end,
+            Tooltip = string.format("Teleport to %s at (%.0f, %.0f, %.0f)", name, pos.X, pos.Y, pos.Z)
+        })
+    end
+else
+    InGameGroup:AddLabel("🌲 Current World: Unknown")
+    InGameGroup:AddLabel("No saved locations for this world")
+    InGameGroup:AddLabel("Add them in the script!")
+end
+
+-- Add custom in-game teleport
+InGameGroup:AddDivider()
+InGameGroup:AddLabel("🎯 Custom Position:")
+
+local customX, customY, customZ = 0, 50, 0
+
+InGameGroup:AddInput("CustomX", {
+    Text = "X",
+    Default = "0",
+    Placeholder = "X",
+    Numeric = true,
+    Finished = true,
+    Callback = function(value)
+        customX = tonumber(value) or 0
+    end
+})
+
+InGameGroup:AddInput("CustomY", {
+    Text = "Y",
+    Default = "50",
+    Placeholder = "Y",
+    Numeric = true,
+    Finished = true,
+    Callback = function(value)
+        customY = tonumber(value) or 50
+    end
+})
+
+InGameGroup:AddInput("CustomZ", {
+    Text = "Z",
+    Default = "0",
+    Placeholder = "Z",
+    Numeric = true,
+    Finished = true,
+    Callback = function(value)
+        customZ = tonumber(value) or 0
+    end
+})
+
+InGameGroup:AddButton({
+    Text = "🚀 Teleport to Custom Position",
+    Func = function()
+        TeleportInGame("Custom Position", Vector3.new(customX, customY, customZ))
+    end
+})
+
+-- Add save current position button
+InGameGroup:AddButton({
+    Text = "📌 Save Current Position",
+    Func = function()
+        local player = LocalPlayer
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local pos = player.Character.HumanoidRootPart.Position
+            Library:Notify(string.format("Current position: %.0f, %.0f, %.0f", pos.X, pos.Y, pos.Z), 5)
+            -- Copy to clipboard or display
+        end
+    end
+})
+
+-- ===== SERVER TELEPORT SECTION (Other Worlds) =====
+local ServerGroup = TeleportTab:AddRightGroupbox("🌍 Server Teleport")
 
 -- Store game information
 local GameLocations = {
@@ -1444,35 +1602,38 @@ local GameLocations = {
 }
 
 -- Current game info display
-TeleportGroup:AddLabel("Current Game: " .. game.Name)
-TeleportGroup:AddLabel("Current Place ID: " .. game.PlaceId)
-TeleportGroup:AddLabel("Current Server: " .. game.JobId:sub(1, 8) .. "...")
+ServerGroup:AddLabel("Current Game: " .. game.Name)
+ServerGroup:AddLabel("Current Place ID: " .. game.PlaceId)
+ServerGroup:AddLabel("Current Server: " .. game.JobId:sub(1, 8) .. "...")
 
-TeleportGroup:AddDivider()
+ServerGroup:AddDivider()
 
 -- Add teleport buttons for each game
 for name, data in pairs(GameLocations) do
-    TeleportGroup:AddButton({
-        Text = string.format("🌍 %s", name),
-        Func = function()
-            -- Confirm teleport
-            Library:Notify(string.format("Teleporting to %s...", name), 2)
-            task.wait(0.5)
-            TeleportService:Teleport(data.PlaceId, LocalPlayer)
-        end,
-        Tooltip = data.Description .. " | Place ID: " .. data.PlaceId
-    })
+    -- Skip current world in server list (since we already have in-game teleport)
+    if data.PlaceId ~= game.PlaceId then
+        ServerGroup:AddButton({
+            Text = string.format("🌍 %s", name),
+            Func = function()
+                -- Confirm teleport
+                Library:Notify(string.format("Teleporting to %s...", name), 2)
+                task.wait(0.5)
+                TeleportService:Teleport(data.PlaceId, LocalPlayer)
+            end,
+            Tooltip = data.Description .. " | Place ID: " .. data.PlaceId
+        })
+    end
 end
 
 -- Add separator
-TeleportGroup:AddDivider()
+ServerGroup:AddDivider()
 
 -- Custom Place ID teleporter
-local CustomGroup = TeleportTab:AddRightGroupbox("Custom Server Join")
+local CustomServerGroup = TeleportTab:AddRightGroupbox("🔧 Custom Server Join")
 
-CustomGroup:AddLabel("Enter any Place ID to join")
+CustomServerGroup:AddLabel("Enter any Place ID to join")
 
-CustomGroup:AddInput("CustomPlaceId", {
+CustomServerGroup:AddInput("CustomPlaceId", {
     Text = "Place ID",
     Default = "",
     Placeholder = "Enter Place ID (e.g. 14220581641)",
@@ -1483,7 +1644,7 @@ CustomGroup:AddInput("CustomPlaceId", {
     end
 })
 
-CustomGroup:AddButton({
+CustomServerGroup:AddButton({
     Text = "🚀 Teleport to Place ID",
     Func = function()
         local placeId = _G.TeleportPlaceId
@@ -1498,12 +1659,10 @@ CustomGroup:AddButton({
     end
 })
 
-CustomGroup:AddDivider()
+CustomServerGroup:AddDivider()
 
 -- Server hopping options
-local ServerGroup = TeleportTab:AddRightGroupbox("Server Hopping")
-
-ServerGroup:AddButton({
+CustomServerGroup:AddButton({
     Text = "🔄 Rejoin Current Game",
     Func = function()
         Library:Notify("Rejoining current game...", 2)
@@ -1513,7 +1672,7 @@ ServerGroup:AddButton({
     Tooltip = "Leave and rejoin the current server"
 })
 
-ServerGroup:AddButton({
+CustomServerGroup:AddButton({
     Text = "🎲 Join Random Server",
     Func = function()
         Library:Notify("Searching for another server...", 2)
@@ -1536,48 +1695,10 @@ ServerGroup:AddButton({
     Tooltip = "Try to join a different server of the same game"
 })
 
--- Add saved servers list
-local SavedGroup = TeleportTab:AddLeftGroupbox("Saved Places")
-
--- Table to store saved places
-local SavedPlaces = {
-    ["Forest World"] = 14220581641,
-}
-
--- Display saved places
-for name, placeId in pairs(SavedPlaces) do
-    if placeId ~= game.PlaceId then -- Don't show current game
-        SavedGroup:AddButton({
-            Text = string.format("📌 %s", name),
-            Func = function()
-                Library:Notify(string.format("Teleporting to %s...", name), 2)
-                task.wait(0.5)
-                TeleportService:Teleport(placeId, LocalPlayer)
-            end,
-            Tooltip = "Place ID: " .. placeId
-        })
-    end
-end
-
--- Add quick teleport to Forest World button at the top
-local QuickGroup = TeleportTab:AddLeftGroupbox("Quick Actions")
-
-QuickGroup:AddButton({
-    Text = "🌳 FOREST WORLD (14220581641)",
-    Func = function()
-        if game.PlaceId == 14220581641 then
-            Library:Notify("You're already in Forest World!", 3)
-        else
-            Library:Notify("Teleporting to Forest World...", 2)
-            task.wait(0.5)
-            TeleportService:Teleport(14220581641, LocalPlayer)
-        end
-    end,
-    Tooltip = "Fast travel to Forest World (Place ID: 14220581641)"
-})
-
-print("=== Server Teleport System Loaded ===")
-print("New tab 'Server Teleport' added to menu")
+print("=== Enhanced Teleport System Loaded ===")
+print("• In-game teleport for current world")
+print("• Server teleport to other worlds")
+print("• Custom position teleporter")
 
 
 
