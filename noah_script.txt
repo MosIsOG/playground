@@ -1396,6 +1396,61 @@ local function TeleportMissionNPCOnly()
     Library:Notify("Mission NPC teleported to " .. markerChoice .. " marker!", 3)
 end
 
+-- Function 4: Teleport ONLY the mission NPC to your current position
+local function TeleportNPCToMe()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    if not EscortMission.CurrentNPC then
+        Library:Notify("No NPC found!", 3)
+        return
+    end
+    
+    -- Get player position
+    local player = LocalPlayer
+    local playerRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not playerRoot then
+        Library:Notify("Player position not found!", 3)
+        return
+    end
+    
+    -- Get NPC root part
+    local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
+    if not npcRoot then
+        Library:Notify("NPC has no root part!", 3)
+        return
+    end
+    
+    local playerPos = playerRoot.Position
+    print(string.format("Teleporting NPC to player position: %.0f, %.0f, %.0f", playerPos.X, playerPos.Y, playerPos.Z))
+    
+    -- Teleport ONLY the NPC to player's position (slightly in front)
+    npcRoot.CFrame = CFrame.new(playerPos) * CFrame.new(0, 0, 3)
+    
+    -- Add teleport effect just for NPC
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(5, 5, 5)
+    effect.CFrame = CFrame.new(playerPos)
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright purple")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify("Mission NPC teleported to your position!", 3)
+end
+
 -- ==================== ADD ESCORT MISSION TO GUI ====================
 -- ==================== ADD ESCORT MISSION TO GUI ====================
 
@@ -1446,7 +1501,13 @@ EscortGroup:AddButton({
 })
 
 EscortGroup:AddButton({
-    Text = "👤 NPC ONLY TELEPORT",
+    Text = "👤 NPC TO MY POSITION",
+    Func = TeleportNPCToMe,
+    Tooltip = "Teleport only the mission NPC to where you are standing"
+})
+
+EscortGroup:AddButton({
+    Text = "👤 NPC TO MARKER",
     Func = TeleportMissionNPCOnly,
     Tooltip = "Teleport only the mission NPC to the chosen marker (you stay where you are)"
 })
