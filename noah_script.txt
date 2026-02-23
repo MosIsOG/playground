@@ -861,31 +861,39 @@ local EscortMission = {
     Following = false,
     FollowConnection = nil
 }
--- Function to find markers in workspace
+-- Function to find markers in workspace - UPDATED for multiple markers
 local function FindMarkers()
     local markers = {
         red = nil,
-        white = nil
+        white = nil,
+        -- Store both markers separately
+        missionMarker1 = nil,  -- The one at 1641, 140, -784
+        missionMarker2 = nil   -- The one at 946, 11, 1065
     }
     
-    -- Look for red marker (finish line)
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            -- Check for red marker
-            if obj.BrickColor == BrickColor.new("Bright red") or 
-               obj.Color == Color3.new(1, 0, 0) or
-               obj.Name:lower():find("red") or
-               obj.Name:lower():find("checkpoint") or
-               obj.Name:lower():find("finish") or
-               obj.Name == "missionMarker" then
-                markers.red = obj
-                print("Found red marker at: " .. tostring(obj:GetFullName()))
-                break
+    -- Look for the first missionMarker (Workspace.missionMarker)
+    local mainMarker = workspace:FindFirstChild("missionMarker")
+    if mainMarker and mainMarker:IsA("BasePart") then
+        markers.missionMarker1 = mainMarker
+        markers.red = mainMarker -- Set this as default red marker
+        print("Found main missionMarker at: " .. tostring(mainMarker.Position))
+    end
+    
+    -- Look for the second missionMarker (in train station)
+    local trainStation = workspace:FindFirstChild("townZones") and 
+                         workspace.townZones:FindFirstChild("Minami Village Train Station")
+    if trainStation then
+        local customMarkers = trainStation:FindFirstChild("CustomMarkers")
+        if customMarkers then
+            local stationMarker = customMarkers:FindFirstChild("missionMarker")
+            if stationMarker and stationMarker:IsA("BasePart") then
+                markers.missionMarker2 = stationMarker
+                print("Found station missionMarker at: " .. tostring(stationMarker.Position))
             end
         end
     end
     
-    -- Look for white marker (start line)
+    -- Look for white marker (start line) - adjust as needed
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             -- Check for white marker
@@ -1258,38 +1266,141 @@ EscortGroup:AddLabel("3️⃣ Lead NPC to RED marker (finish line)")
 EscortGroup:AddLabel("4️⃣ Mission auto-completes at finish line")
 EscortGroup:AddLabel("5️⃣ Use 'Teleport' only to skip/emergency")
 
--- Marker scanner section
+-- Marker scanner section - UPDATED
 local MarkerGroup = EscortTab:AddRightGroupbox("Marker Scanner")
 
 MarkerGroup:AddButton({
-    Text = "Scan for Markers",
+    Text = "🔍 Scan for Markers",
     Func = function()
         local markers = FindMarkers()
-        if markers.red then
-            Library:Notify("✓ Red marker found at " .. string.format("%.1f, %.1f, %.1f", markers.red.Position.X, markers.red.Position.Y, markers.red.Position.Z), 3)
-        else
-            Library:Notify("✗ Red marker not found!", 3)
+        if markers.missionMarker1 then
+            Library:Notify("✓ Main marker at: " .. string.format("%.0f, %.0f, %.0f", 
+                markers.missionMarker1.Position.X, 
+                markers.missionMarker1.Position.Y, 
+                markers.missionMarker1.Position.Z), 4)
         end
         
-        if markers.white then
-            Library:Notify("✓ White marker found at " .. string.format("%.1f, %.1f, %.1f", markers.white.Position.X, markers.white.Position.Y, markers.white.Position.Z), 3)
+        if markers.missionMarker2 then
+            Library:Notify("✓ Station marker at: " .. string.format("%.0f, %.0f, %.0f", 
+                markers.missionMarker2.Position.X, 
+                markers.missionMarker2.Position.Y, 
+                markers.missionMarker2.Position.Z), 4)
+        end
+        
+        if not markers.missionMarker1 and not markers.missionMarker2 then
+            Library:Notify("✗ No mission markers found!", 3)
+        end
+    end
+})
+
+-- Add buttons to teleport to specific markers
+MarkerGroup:AddButton({
+    Text = "📍 Teleport to MAIN marker",
+    Func = function()
+        local markers = FindMarkers()
+        if markers.missionMarker1 and LocalPlayer.Character then
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = markers.missionMarker1.CFrame * CFrame.new(0, 5, 0)
+                Library:Notify("Teleported to MAIN marker!", 3)
+            end
         else
-            Library:Notify("✗ White marker not found!", 3)
+            Library:Notify("Main marker not found!", 3)
         end
     end
 })
 
 MarkerGroup:AddButton({
-    Text = "Find Nearest NPC",
+    Text = "📍 Teleport to STATION marker",
     Func = function()
-        local npc, dist = FindNearestNPC(LocalPlayer)
-        if npc then
-            Library:Notify(string.format("Nearest NPC: %s (%.1f studs away)", npc.Name, dist), 3)
+        local markers = FindMarkers()
+        if markers.missionMarker2 and LocalPlayer.Character then
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = markers.missionMarker2.CFrame * CFrame.new(0, 5, 0)
+                Library:Notify("Teleported to STATION marker!", 3)
+            end
         else
-            Library:Notify("No NPCs found in Live folder!", 3)
+            Library:Notify("Station marker not found!", 3)
         end
     end
 })
+
+-- Add a dropdown to choose which marker to use for escort missions
+MarkerGroup:AddDivider()
+MarkerGroup:AddLabel("🎯 Choose Escort Destination:")
+
+local markerChoice = "main" -- Default choice
+
+MarkerGroup:AddDropdown("MarkerChoice", {
+    Text = "Destination Marker",
+    Values = {"main", "station"},
+    Default = "main",
+    Tooltip = "Choose which marker to teleport NPCs to",
+    Callback = function(value)
+        markerChoice = value
+        Library:Notify("Escort destination set to: " .. value .. " marker", 2)
+    end
+})
+
+-- Update the TeleportToFinish function to use the chosen marker
+local originalTeleportToFinish = TeleportToFinish
+TeleportToFinish = function()
+    if not EscortMission.Active then
+        Library:Notify("No active mission to teleport!", 3)
+        return
+    end
+    
+    local markers = FindMarkers()
+    local targetMarker = markerChoice == "main" and markers.missionMarker1 or markers.missionMarker2
+    
+    if not targetMarker then
+        Library:Notify(string.format("%s marker not found!", markerChoice), 3)
+        return
+    end
+    
+    print(string.format("Teleporting to %s marker at: %s", markerChoice, tostring(targetMarker:GetFullName())))
+    
+    -- Teleport NPC
+    if EscortMission.CurrentNPC then
+        local npcRoot = EscortMission.CurrentNPC:FindFirstChild("HumanoidRootPart") or EscortMission.CurrentNPC.PrimaryPart
+        if npcRoot then
+            npcRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, 2)
+        end
+    end
+    
+    -- Teleport Player
+    local player = LocalPlayer
+    if player.Character then
+        local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        if playerRoot then
+            playerRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, -2)
+        end
+    end
+    
+    -- Add teleport effect
+    local effect = Instance.new("Part")
+    effect.Size = Vector3.new(8, 8, 8)
+    effect.CFrame = targetMarker.CFrame
+    effect.Anchored = true
+    effect.CanCollide = false
+    effect.Transparency = 0.5
+    effect.BrickColor = BrickColor.new("Bright red")
+    effect.Parent = workspace
+    
+    -- Fade out effect
+    for i = 1, 10 do
+        effect.Transparency = effect.Transparency + 0.1
+        task.wait(0.03)
+    end
+    
+    effect:Destroy()
+    
+    Library:Notify(string.format("Teleported to %s marker!", markerChoice), 3)
+    
+    -- Complete the mission
+    CompleteEscortMission()
+end
 
 -- Add Ctrl+E and Ctrl+T keybinds for quick mission control
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -1425,22 +1536,13 @@ ServerGroup:AddButton({
     Tooltip = "Try to join a different server of the same game"
 })
 
--- Add saved servers list (optional)
+-- Add saved servers list
 local SavedGroup = TeleportTab:AddLeftGroupbox("Saved Places")
 
 -- Table to store saved places
-local SavedPlaces = {}
-
--- Load saved places function
-local function LoadSavedPlaces()
-    -- You can implement saving to file here if needed
-    -- For now, just show some defaults
-    SavedPlaces = {
-        ["Forest World"] = 14220581641,
-    }
-end
-
-LoadSavedPlaces()
+local SavedPlaces = {
+    ["Forest World"] = 14220581641,
+}
 
 -- Display saved places
 for name, placeId in pairs(SavedPlaces) do
@@ -1476,7 +1578,6 @@ QuickGroup:AddButton({
 
 print("=== Server Teleport System Loaded ===")
 print("New tab 'Server Teleport' added to menu")
-print("Use to jump between different games/servers")
 
 
 
