@@ -1,77 +1,20 @@
--- Universal ESP with Mission Hunter GUI
--- Logic: Players = Native Health Bar + Custom Red/Yellow Bars with Values + Walkspeed Multiplier
--- NPCs = Custom Green Bar (Toggleable) - Names hidden
--- Keybind: F4 to Toggle Menu
+-- ==================== MISSION HUNTER ESP - RAYFIELD VERSION ====================
+-- Features: Player/NPC ESP, Walkspeed Multiplier, Teleport Systems
+-- Keybind: Right Ctrl to toggle
 
--- Safely fetch and execute remote mod detector to avoid nil loadstring crashes
-local loader = loadstring or load
-local function safeRequire(url)
-    if not loader then
-        warn("Executor has no loadstring; skipping remote script: " .. url)
-        return
-    end
+-- Load Rayfield Library
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
 
-    local okFetch, srcOrErr = pcall(game.HttpGet, game, url)
-    if not okFetch then
-        warn("Failed to fetch remote script: " .. tostring(srcOrErr))
-        return
-    end
-
-    local fn, compileErr = loader(srcOrErr)
-    if not fn then
-        warn("Failed to compile remote script: " .. tostring(compileErr))
-        return
-    end
-
-    local okRun, runErr = pcall(fn)
-    if not okRun then
-        warn("Remote script error: " .. tostring(runErr))
-    end
-end
-
-safeRequire("https://raw.githubusercontent.com/MosIsOG/playground/main/mod_detector.txt")
-
--- Load LinoriaLib
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
-
+-- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
-
-
--- Add this near the top of your script
-local function OnCharacterAdded(character)
-    print("Character added/respawned - cleaning up...")
-    
-    -- Clear ESP cache to prevent stale references
-    for model, _ in pairs(ESP_Cache) do 
-        RemoveESP(model) 
-    end
-    
-    -- Reset any state that might cause issues
-    if EscortMission then
-        EscortMission.Active = false
-        EscortMission.CurrentNPC = nil
-        if EscortMission.Attachment then
-            EscortMission.Attachment:Destroy()
-            EscortMission.Attachment = nil
-        end
-    end
-    
-    -- Small delay before re-enabling ESP
-    task.wait(1)
-end
-
--- Connect to character added event
-LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
-
--- Configuration (Default Settings)
+-- Configuration
 local Config = {
     Enabled = true,
     ShowNames = true,
@@ -90,25 +33,17 @@ local Config = {
 -- State
 local ESP_Cache = {}
 local LiveFolder = workspace:FindFirstChild("Live")
-local Configs = {}
-local CurrentConfig = "Default"
 local BaseWalkspeed = 16
 local WalkspeedUpdateConnection = nil
 
--- Config file path
-local ConfigFolder = "MissionHunterESP"
-local ConfigFile = "configs.json"
-
--- Function to get the WalkSpeed attribute from humanoid
+-- Function to get WalkSpeed attribute
 local function GetBaseWalkspeedFromAttribute(humanoid)
     local attrSpeed = humanoid:GetAttribute("WalkSpeed")
-    if attrSpeed then
-        return attrSpeed
-    end
+    if attrSpeed then return attrSpeed end
     return humanoid.WalkSpeed
 end
 
--- Function to consistently apply walkspeed multiplier
+-- Apply walkspeed multiplier
 local function ApplyWalkspeedMultiplier()
     local character = LocalPlayer.Character
     if not character then return end
@@ -126,18 +61,7 @@ local function ApplyWalkspeedMultiplier()
     end
 end
 
--- Function to update base walkspeed from attribute
-local function UpdateBaseWalkspeed()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-    
-    BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
-end
-
--- Start monitoring walkspeed changes
+-- Start walkspeed monitoring
 local function StartWalkspeedMonitoring()
     if WalkspeedUpdateConnection then
         WalkspeedUpdateConnection:Disconnect()
@@ -152,14 +76,6 @@ local function StartWalkspeedMonitoring()
     
     BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
     
-    local attributeConnection = humanoid:GetAttributeChangedSignal("WalkSpeed"):Connect(function()
-        task.wait(0.1)
-        BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
-        if Config.ShowWalkspeed then
-            ApplyWalkspeedMultiplier()
-        end
-    end)
-    
     WalkspeedUpdateConnection = RunService.RenderStepped:Connect(function()
         if not Config.Enabled or not Config.ShowWalkspeed then return end
         
@@ -170,480 +86,50 @@ local function StartWalkspeedMonitoring()
         if not currentHumanoid then return end
         
         local currentBase = GetBaseWalkspeedFromAttribute(currentHumanoid)
-        
-        if math.abs(currentBase - BaseWalkspeed) > 0.1 then
-            BaseWalkspeed = currentBase
-        end
-        
         local currentSpeed = currentHumanoid.WalkSpeed
-        local targetSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
+        local targetSpeed = currentBase * Config.WalkspeedMultiplier
         
         if math.abs(currentSpeed - targetSpeed) > 0.1 then
             currentHumanoid.WalkSpeed = targetSpeed
         end
     end)
-    
-    character.AncestryChanged:Connect(function()
-        if not character.Parent then
-            if attributeConnection then
-                attributeConnection:Disconnect()
-            end
-        end
-    end)
 end
 
--- Handle character respawns
+-- Character respawn handling
 local function OnCharacterAdded(character)
     local humanoid = character:WaitForChild("Humanoid")
     task.wait(0.1)
     
-    BaseWalkspeed = GetBaseWalkspeedFromAttribute(humanoid)
-    
     if Config.ShowWalkspeed then
-        humanoid.WalkSpeed = BaseWalkspeed * Config.WalkspeedMultiplier
+        humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid) * Config.WalkspeedMultiplier
     end
     
     StartWalkspeedMonitoring()
-    
-    humanoid.AncestryChanged:Connect(function()
-        task.wait(0.1)
-        if not humanoid.Parent then
-            task.wait(0.5)
-            OnCharacterAdded(character)
-        end
-    end)
 end
 
--- Connect character events
 LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
-
 if LocalPlayer.Character then
     OnCharacterAdded(LocalPlayer.Character)
 end
 
--- Function to save configs to file
-local function SaveConfigs()
-    local success, err = pcall(function()
-        local data = {
-            CurrentConfig = CurrentConfig,
-            Configs = Configs
-        }
-        writefile(ConfigFolder .. "/" .. ConfigFile, game:GetService("HttpService"):JSONEncode(data))
-    end)
-    if not success then
-        warn("Failed to save configs: " .. tostring(err))
-    end
-end
-
--- Function to load configs from file
-local function LoadConfigs()
-    local success, err = pcall(function()
-        if isfile(ConfigFolder .. "/" .. ConfigFile) then
-            local data = game:GetService("HttpService"):JSONDecode(readfile(ConfigFolder .. "/" .. ConfigFile))
-            CurrentConfig = data.CurrentConfig or "Default"
-            Configs = data.Configs or {}
-            
-            if Configs[CurrentConfig] then
-                for k, v in pairs(Configs[CurrentConfig]) do
-                    Config[k] = v
-                end
-            end
-        else
-            Configs["Default"] = {
-                Enabled = true,
-                ShowNames = true,
-                ShowBars = true,
-                ShowNPCs = true,
-                ShowValues = true,
-                ShowWalkspeed = true,
-                WalkspeedMultiplier = 1.0,
-                MaxDistance = 1500,
-                TextSize = 14,
-                BarWidth = 150,
-                BarHeight = 6,
-                YOffset = 60
-            }
-            CurrentConfig = "Default"
-            SaveConfigs()
-        end
-    end)
-    if not success then
-        warn("Failed to load configs: " .. tostring(err))
-        Configs["Default"] = {
-            Enabled = true,
-            ShowNames = true,
-            ShowBars = true,
-            ShowNPCs = true,
-            ShowValues = true,
-            ShowWalkspeed = true,
-            WalkspeedMultiplier = 1.0,
-            MaxDistance = 1500,
-            TextSize = 14,
-            BarWidth = 150,
-            BarHeight = 6,
-            YOffset = 60
-        }
-        CurrentConfig = "Default"
-    end
-end
-
-LoadConfigs()
-ApplyWalkspeedMultiplier()
-
--- Create LinoriaLib Window
-local Window = Library:CreateWindow({
-    Title = "Mission Hunter ESP",
-    Center = true,
-    AutoShow = true,
-    TabPadding = 8,
-    MenuFadeTime = 0.2
-})
-
--- Create Tabs
-local Tabs = {
-    Main = Window:AddTab("Main"),
-    Config = Window:AddTab("Config"),
-    Theme = Window:AddTab("Theme")
-}
-
--- ==================== MAIN TAB ====================
-local MainGroup = Tabs.Main:AddLeftGroupbox("Settings")
-
--- Master toggle
-MainGroup:AddToggle("Enabled", {
-    Text = "Master Enabled",
-    Default = Config.Enabled,
-    Tooltip = "Enable/disable all ESP features",
-    Callback = function(value)
-        Config.Enabled = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddDivider()
-
--- Visual toggles
-MainGroup:AddToggle("ShowNames", {
-    Text = "Show Player Names",
-    Default = Config.ShowNames,
-    Callback = function(value)
-        Config.ShowNames = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddToggle("ShowNPCs", {
-    Text = "Show NPCs (No Names)",
-    Default = Config.ShowNPCs,
-    Callback = function(value)
-        Config.ShowNPCs = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddToggle("ShowBars", {
-    Text = "Show Health Bars",
-    Default = Config.ShowBars,
-    Callback = function(value)
-        Config.ShowBars = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddToggle("ShowValues", {
-    Text = "Show Bar Values",
-    Default = Config.ShowValues,
-    Callback = function(value)
-        Config.ShowValues = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddToggle("ShowWalkspeed", {
-    Text = "Enable Walkspeed Multiplier",
-    Default = Config.ShowWalkspeed,
-    Tooltip = "Apply multiplier to walkspeed",
-    Callback = function(value)
-        Config.ShowWalkspeed = value
-        
-        if value then
-            ApplyWalkspeedMultiplier()
-            StartWalkspeedMonitoring()
-        else
-            local character = LocalPlayer.Character
-            if character then
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
-                end
-            end
-            if WalkspeedUpdateConnection then
-                WalkspeedUpdateConnection:Disconnect()
-                WalkspeedUpdateConnection = nil
-            end
-        end
-        
-        SaveConfigs()
-    end
-})
-
--- Sliders
-MainGroup:AddSlider("WalkspeedMultiplier", {
-    Text = "Walkspeed Multiplier",
-    Default = Config.WalkspeedMultiplier,
-    Min = 0.5,
-    Max = 5,
-    Rounding = 1,
-    Suffix = "x",
-    Tooltip = "Multiply your walkspeed by this value",
-    Callback = function(value)
-        Config.WalkspeedMultiplier = value
-        if Config.ShowWalkspeed then
-            ApplyWalkspeedMultiplier()
-        end
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddSlider("MaxDistance", {
-    Text = "Max Distance",
-    Default = Config.MaxDistance,
-    Min = 100,
-    Max = 5000,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(value)
-        Config.MaxDistance = value
-        SaveConfigs()
-    end
-})
-
-MainGroup:AddSlider("TextSize", {
-    Text = "Text Size",
-    Default = Config.TextSize,
-    Min = 8,
-    Max = 24,
-    Rounding = 0,
-    Suffix = "px",
-    Callback = function(value)
-        Config.TextSize = value
-        SaveConfigs()
-    end
-})
-
--- Bar customization
-local BarGroup = Tabs.Main:AddRightGroupbox("Bar Customization")
-
-BarGroup:AddSlider("BarWidth", {
-    Text = "Bar Width",
-    Default = Config.BarWidth,
-    Min = 50,
-    Max = 300,
-    Rounding = 0,
-    Suffix = "px",
-    Callback = function(value)
-        Config.BarWidth = value
-        SaveConfigs()
-    end
-})
-
-BarGroup:AddSlider("BarHeight", {
-    Text = "Bar Height",
-    Default = Config.BarHeight,
-    Min = 2,
-    Max = 20,
-    Rounding = 0,
-    Suffix = "px",
-    Callback = function(value)
-        Config.BarHeight = value
-        SaveConfigs()
-    end
-})
-
-BarGroup:AddSlider("YOffset", {
-    Text = "Vertical Offset",
-    Default = Config.YOffset,
-    Min = 20,
-    Max = 200,
-    Rounding = 0,
-    Suffix = "px",
-    Callback = function(value)
-        Config.YOffset = value
-        SaveConfigs()
-    end
-})
-
--- ==================== CONFIG TAB ====================
-local ConfigGroup = Tabs.Config:AddLeftGroupbox("Config Management")
-
--- Current config display
-ConfigGroup:AddLabel("Current Config: " .. CurrentConfig)
-
--- Config dropdown
-local configNames = {}
-for name, _ in pairs(Configs) do
-    table.insert(configNames, name)
-end
-
-ConfigGroup:AddDropdown("ConfigSelector", {
-    Text = "Select Config",
-    Values = configNames,
-    Default = CurrentConfig,
-    Tooltip = "Choose a config to load",
-    Callback = function(value)
-        CurrentConfig = value
-        if Configs[value] then
-            for k, v in pairs(Configs[value]) do
-                Config[k] = v
-            end
-            
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            end
-            
-            SaveConfigs()
-            
-            -- Update all UI elements to reflect new values
-            Library:Notify("Config '" .. value .. "' loaded!", 2)
-        end
-    end
-})
-
-ConfigGroup:AddDivider()
-
--- Config management buttons
-ConfigGroup:AddButton({
-    Text = "Save Current Config",
-    Func = function()
-        local configCopy = {}
-        for k, v in pairs(Config) do
-            configCopy[k] = v
-        end
-        Configs[CurrentConfig] = configCopy
-        SaveConfigs()
-        Library:Notify("Config saved!", 2)
-    end,
-    Tooltip = "Save current settings to selected config"
-})
-
-ConfigGroup:AddButton({
-    Text = "Load Selected Config",
-    Func = function()
-        if Configs[CurrentConfig] then
-            for k, v in pairs(Configs[CurrentConfig]) do
-                Config[k] = v
-            end
-            
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            end
-            
-            SaveConfigs()
-            Library:Notify("Config loaded!", 2)
-        end
-    end
-})
-
-ConfigGroup:AddDivider()
-
--- New config creation
-ConfigGroup:AddInput("NewConfigName", {
-    Text = "New Config Name",
-    Default = "",
-    Placeholder = "Enter config name",
-    Finished = true,
-    Callback = function(value)
-        _G.NewConfigValue = value
-    end
-})
-
-ConfigGroup:AddButton({
-    Text = "Create New Config",
-    Func = function()
-        local newName = _G.NewConfigValue or ""
-        newName = newName:gsub("%s+", "")
-        
-        if newName and newName ~= "" then
-            if not Configs[newName] then
-                local configCopy = {}
-                for k, v in pairs(Config) do
-                    configCopy[k] = v
-                end
-                Configs[newName] = configCopy
-                CurrentConfig = newName
-                SaveConfigs()
-                
-                -- Update dropdown values
-                local newNames = {}
-                for name, _ in pairs(Configs) do
-                    table.insert(newNames, name)
-                end
-                Options.ConfigSelector:SetValues(newNames)
-                Options.ConfigSelector:SetValue(newName)
-                
-                Library:Notify("Config '" .. newName .. "' created!", 2)
-            else
-                Library:Notify("Config name already exists!", 3)
+-- Death cleanup
+LocalPlayer.CharacterRemoving:Connect(function()
+    for model, entry in pairs(ESP_Cache) do
+        if entry.Drawings then
+            for _, drawing in pairs(entry.Drawings) do
+                pcall(function() 
+                    if drawing then
+                        drawing.Visible = false
+                        drawing:Remove() 
+                    end
+                end)
             end
         end
     end
-})
-
-ConfigGroup:AddButton({
-    Text = "Delete Current Config",
-    Func = function()
-        if CurrentConfig ~= "Default" then
-            Configs[CurrentConfig] = nil
-            CurrentConfig = "Default"
-            
-            if Configs["Default"] then
-                for k, v in pairs(Configs["Default"]) do
-                    Config[k] = v
-                end
-            end
-            
-            if Config.ShowWalkspeed then
-                ApplyWalkspeedMultiplier()
-                StartWalkspeedMonitoring()
-            end
-            
-            -- Update dropdown
-            local newNames = {}
-            for name, _ in pairs(Configs) do
-                table.insert(newNames, name)
-            end
-            Options.ConfigSelector:SetValues(newNames)
-            Options.ConfigSelector:SetValue("Default")
-            
-            SaveConfigs()
-            Library:Notify("Config deleted!", 2)
-        else
-            Library:Notify("Cannot delete default config!", 3)
-        end
-    end
-})
-
--- ==================== THEME TAB ====================
--- Setup ThemeManager
-Library:SetWatermark("Mission Hunter ESP")
-Library:SetWatermarkVisibility(true)
-
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-
-ThemeManager:SetFolder("MissionHunterESP")
-SaveManager:SetFolder("MissionHunterESP")
-
-ThemeManager:ApplyToTab(Tabs.Theme)
-SaveManager:BuildConfigSection(Tabs.Config)
-
--- Initialize
-SaveManager:Load()
+    ESP_Cache = {}
+end)
 
 -- ==================== ESP SYSTEM ====================
--- FIXED: Bars now work properly for players (Lifeforce and Posture) and NPCs
 
 local function CreateDrawing(type, props)
     local obj = Drawing.new(type)
@@ -660,6 +146,7 @@ local function RemoveESP(model)
     end
 end
 
+-- ESP Render Loop
 RunService.RenderStepped:Connect(function()
     if not Config.Enabled then 
         for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
@@ -671,9 +158,7 @@ RunService.RenderStepped:Connect(function()
         return 
     end
 
-    -- ADD THIS CHECK - prevents crashes when character is nil
     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        -- Clear ESP when dead to prevent errors
         for model, _ in pairs(ESP_Cache) do RemoveESP(model) end
         return
     end
@@ -691,7 +176,6 @@ RunService.RenderStepped:Connect(function()
             local humanoid = model:FindFirstChild("Humanoid")
             local player = Players:GetPlayerFromCharacter(model)
 
-            -- === PLAYER LOGIC (AlwaysOn Health Bar) ===
             if player and humanoid then
                 pcall(function()
                     humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
@@ -700,7 +184,6 @@ RunService.RenderStepped:Connect(function()
 
             local isNPC = not player
 
-            -- Check if we should skip due to settings
             if isNPC and not Config.ShowNPCs then
                 if ESP_Cache[model] then RemoveESP(model) end
                 continue
@@ -711,15 +194,10 @@ RunService.RenderStepped:Connect(function()
                     ESP_Cache[model] = {
                         Seen = true,
                         Drawings = {
-                            -- Name
                             Name = CreateDrawing("Text", {Center = true, Outline = true, Color = Color3.new(1,1,1), Size = Config.TextSize}),
-                            
-                            -- Bar1: Health/Lifeforce (Players: Red, NPCs: Green)
                             Bar1Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar1Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar1Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
-                            
-                            -- Bar2: Posture (Players only - Yellow)
                             Bar2Bg = CreateDrawing("Square", {Filled = true, Color = Color3.new(0.1,0.1,0.1), Transparency = 0.8}),
                             Bar2Fill = CreateDrawing("Square", {Filled = true, Transparency = 1}),
                             Bar2Text = CreateDrawing("Text", {Center = false, Outline = true, Color = Color3.new(1,1,1), Size = 13}),
@@ -736,38 +214,32 @@ RunService.RenderStepped:Connect(function()
 
                 if onScreen and distance <= Config.MaxDistance then
                     
-                    -- Initialize values
-                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0) -- Default red
-                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0) -- Default yellow
+                    local val1, min1, max1, color1 = 0, 0, 100, Color3.new(1, 0, 0)
+                    local val2, min2, max2, color2 = 0, 0, 100, Color3.new(1, 1, 0)
                     local showBar2 = false
                     local cleanName = ""
 
                     if isNPC then
-                        -- NPC LOGIC: Green bar only, NO NAME
                         val1 = humanoid.Health
                         max1 = humanoid.MaxHealth
                         min1 = 0
-                        color1 = Color3.new(0.2, 0.9, 0.2) -- Green
+                        color1 = Color3.new(0.2, 0.9, 0.2)
                         showBar2 = false
-                        cleanName = "" -- NO NAME FOR NPCs
+                        cleanName = ""
                     else
-                        -- PLAYER LOGIC: Show name + both bars (Lifeforce and Posture)
                         cleanName = (player.DisplayName and player.DisplayName ~= "" and player.DisplayName) or player.Name
 
-                        -- Look for Lifeforce (Bar1)
                         local lf = folder:FindFirstChild("Lifeforce") or model:FindFirstChild("Lifeforce")
                         if lf then 
                             val1 = lf.Value 
                             max1 = lf:GetAttribute("MaxValue") or lf.MaxValue or 100
                             min1 = lf:GetAttribute("MinValue") or lf.MinValue or 0
                         else
-                            -- Fallback to humanoid health
                             val1 = humanoid.Health
                             max1 = humanoid.MaxHealth
                             min1 = 0
                         end
                         
-                        -- Look for Posture (Bar2)
                         local pos = folder:FindFirstChild("Posture") or model:FindFirstChild("Posture")
                         if pos then 
                             val2 = pos.Value 
@@ -777,7 +249,6 @@ RunService.RenderStepped:Connect(function()
                         end
                     end
                     
-                    -- Calculate Percentages
                     local range1 = max1 - min1
                     local pct1 = range1 > 0 and math.clamp((val1 - min1) / range1, 0, 1) or 0
                     
@@ -785,29 +256,19 @@ RunService.RenderStepped:Connect(function()
                     local pct2 = range2 > 0 and math.clamp((val2 - min2) / range2, 0, 1) or 0
 
                     local screenPos = Vector2.new(vector.X, vector.Y)
-                    
-                    -- Calculate starting Y position (bars will stack upward from here)
                     local startY = screenPos.Y - Config.YOffset
-                    
-                    -- Current Y position for stacking (start from bottom and go up)
                     local currentY = startY
 
-                    -- NAME (Players only)
                     if Config.ShowNames and not isNPC and cleanName ~= "" then
                         d.Name.Visible = true
                         d.Name.Text = cleanName
-                        -- Name above all bars
                         d.Name.Position = Vector2.new(screenPos.X, startY - 30)
                         d.Name.Size = Config.TextSize
                     else
                         d.Name.Visible = false
                     end
 
-                    -- BARS
                     if Config.ShowBars then
-                        -- Determine bar order (bottom to top: Health/Lifeforce first, then Posture above it)
-                        
-                        -- Bar1: Health/Lifeforce (bottom bar)
                         local bar1Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                         
                         d.Bar1Bg.Visible = true
@@ -826,10 +287,8 @@ RunService.RenderStepped:Connect(function()
                             d.Bar1Text.Visible = false
                         end
                         
-                        -- Move up for next bar
                         currentY = currentY - (Config.BarHeight + 2)
                         
-                        -- Bar2: Posture (above health bar) - only for players
                         if showBar2 and not isNPC then
                             local bar2Pos = Vector2.new(screenPos.X - (Config.BarWidth / 2), currentY)
                             
@@ -854,7 +313,6 @@ RunService.RenderStepped:Connect(function()
                             d.Bar2Text.Visible = false
                         end
                     else
-                        -- Hide all bars
                         d.Bar1Bg.Visible = false
                         d.Bar1Fill.Visible = false
                         d.Bar1Text.Visible = false
@@ -864,7 +322,6 @@ RunService.RenderStepped:Connect(function()
                     end
 
                 else
-                    -- Hide everything if off screen or too far
                     for _, v in pairs(d) do 
                         if v and v.Visible ~= nil then
                             v.Visible = false 
@@ -875,7 +332,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Clean up ESP for models that are no longer valid
     for model, entry in pairs(ESP_Cache) do
         if not entry.Seen or not model or not model.Parent then
             RemoveESP(model)
@@ -883,719 +339,398 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==================== ESCORT MISSION SYSTEM ====================
--- Client-sided NPC attachment system
+-- ==================== CREATE RAYFIELD WINDOW ====================
 
-local EscortMission = {
-    Active = false,
-    CurrentNPC = nil,
-    Attachment = nil,
-    MarkerChoice = "main"
-}
-
--- Function to find markers in workspace
-local function FindMarkers()
-    local markers = {
-        missionMarker1 = nil,  -- Main marker
-        missionMarker2 = nil   -- Station marker
+local Window = Rayfield:CreateWindow({
+    Name = "Mission Hunter ESP",
+    LoadingTitle = "Mission Hunter ESP",
+    LoadingSubtitle = "by System",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "MissionHunterESP",
+        FileName = "Config.json"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberJoins = true
+    },
+    KeySystem = false,
+    KeySettings = {
+        Title = "Key System",
+        Subtitle = "Enter Key",
+        Note = "No key required",
+        FileName = "Key",
+        SaveKey = false,
+        GrabKeyFromSite = false,
+        Key = {"Hello"}
     }
-    
-    -- Look for main missionMarker
-    local mainMarker = workspace:FindFirstChild("missionMarker")
-    if mainMarker and mainMarker:IsA("BasePart") then
-        markers.missionMarker1 = mainMarker
-        print("Found main missionMarker at: " .. tostring(mainMarker.Position))
-    end
-    
-    -- Look for station missionMarker
-    local trainStation = workspace:FindFirstChild("townZones") and 
-                         workspace.townZones:FindFirstChild("Minami Village Train Station")
-    if trainStation then
-        local customMarkers = trainStation:FindFirstChild("CustomMarkers")
-        if customMarkers then
-            local stationMarker = customMarkers:FindFirstChild("missionMarker")
-            if stationMarker and stationMarker:IsA("BasePart") then
-                markers.missionMarker2 = stationMarker
-                print("Found station missionMarker at: " .. tostring(stationMarker.Position))
-            end
-        end
-    end
-    
-    return markers
-end
+})
 
--- Function to find nearest NPC to player
-local function FindNearestNPC()
-    local player = LocalPlayer
-    local character = player.Character
-    if not character then return nil, math.huge end
-    
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil, math.huge end
-    
-    local playerPos = rootPart.Position
-    local nearestNPC = nil
-    local shortestDist = math.huge
-    
-    local LiveFolder = workspace:FindFirstChild("Live")
-    if not LiveFolder then return nil, math.huge end
-    
-    for _, npc in ipairs(LiveFolder:GetChildren()) do
-        -- Skip if it's a player character
-        if Players:GetPlayerFromCharacter(npc) then continue end
-        
-        local npcRoot = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-        if npcRoot then
-            local dist = (npcRoot.Position - playerPos).Magnitude
-            if dist < shortestDist then
-                shortestDist = dist
-                nearestNPC = npc
-            end
-        end
-    end
-    
-    return nearestNPC, shortestDist
-end
+-- ==================== MAIN TAB ====================
 
--- Function to attach yourself to an NPC
-local function AttachToNPC()
-    -- Detach from any previous NPC first
-    if EscortMission.Attachment then
-        EscortMission.Attachment:Destroy()
-        EscortMission.Attachment = nil
-    end
-    
-    if EscortMission.CurrentNPC and EscortMission.CurrentNPC:FindFirstChild("Highlight") then
-        EscortMission.CurrentNPC.Highlight.Enabled = false
-    end
-    
-    local player = LocalPlayer
-    local character = player.Character
-    if not character then
-        Library:Notify("No character found!", 3)
-        return
-    end
-    
-    -- Find nearest NPC
-    local nearestNPC, distance = FindNearestNPC()
-    
-    if not nearestNPC then
-        Library:Notify("No NPCs found nearby!", 3)
-        return
-    end
-    
-    if distance > 15 then
-        Library:Notify("NPC too far! Get closer (within 15 studs)", 3)
-        return
-    end
-    
-    local npcRoot = nearestNPC:FindFirstChild("HumanoidRootPart") or nearestNPC.PrimaryPart
-    local playerRoot = character:FindFirstChild("HumanoidRootPart")
-    
-    if not npcRoot or not playerRoot then
-        Library:Notify("Missing root parts!", 3)
-        return
-    end
-    
-    -- Create a Weld to attach player to NPC
-    local weld = Instance.new("Weld")
-    weld.Part0 = npcRoot  -- NPC is the base
-    weld.Part1 = playerRoot  -- Player attaches to NPC
-    weld.C0 = CFrame.new(0, 0, 3) -- Position player behind NPC
-    weld.C1 = CFrame.new(0, 0, 0)
-    weld.Parent = npcRoot
-    
-    -- Store attachment info
-    EscortMission.Active = true
-    EscortMission.CurrentNPC = nearestNPC
-    EscortMission.Attachment = weld
-    
-    -- Highlight the NPC
-    if nearestNPC:FindFirstChild("Highlight") then
-        nearestNPC.Highlight.Enabled = true
-        nearestNPC.Highlight.FillColor = Color3.new(0, 1, 0)
-    else
-        local highlight = Instance.new("Highlight")
-        highlight.Parent = nearestNPC
-        highlight.FillColor = Color3.new(0, 1, 0)
-        highlight.Enabled = true
-    end
-    
-    Library:Notify("✅ Attached to NPC! Move and the NPC will follow!", 4)
-end
+local MainTab = Window:CreateTab("Main", 4483362458)
+local MainSection = MainTab:CreateSection("ESP Settings")
 
--- Function to detach from NPC
-local function DetachFromNPC()
-    if EscortMission.Attachment then
-        EscortMission.Attachment:Destroy()
-        EscortMission.Attachment = nil
+-- Master toggle
+MainTab:CreateToggle({
+    Name = "Master Enabled",
+    CurrentValue = true,
+    Flag = "MasterEnabled",
+    Callback = function(Value)
+        Config.Enabled = Value
     end
-    
-    if EscortMission.CurrentNPC and EscortMission.CurrentNPC:FindFirstChild("Highlight") then
-        EscortMission.CurrentNPC.Highlight.Enabled = false
-    end
-    
-    EscortMission.Active = false
-    EscortMission.CurrentNPC = nil
-    
-    Library:Notify("Detached from NPC", 3)
-end
+})
 
--- Function to teleport with attached NPC
-local function TeleportWithNPC()
-    if not EscortMission.Active or not EscortMission.CurrentNPC then
-        Library:Notify("Not attached to any NPC!", 3)
-        return
+MainTab:CreateToggle({
+    Name = "Show Player Names",
+    CurrentValue = true,
+    Flag = "ShowNames",
+    Callback = function(Value)
+        Config.ShowNames = Value
     end
-    
-    local markers = FindMarkers()
-    local targetMarker = EscortMission.MarkerChoice == "main" and markers.missionMarker1 or markers.missionMarker2
-    
-    if not targetMarker then
-        Library:Notify("Target marker not found!", 3)
-        return
-    end
-    
-    local player = LocalPlayer
-    local character = player.Character
-    if not character then return end
-    
-    local playerRoot = character:FindFirstChild("HumanoidRootPart")
-    if not playerRoot then return end
-    
-    -- Store current attachment
-    local weld = EscortMission.Attachment
-    
-    -- Temporarily detach to teleport
-    if weld then
-        weld:Destroy()
-        EscortMission.Attachment = nil
-    end
-    
-    -- Teleport player to marker
-    playerRoot.CFrame = targetMarker.CFrame * CFrame.new(0, 3, -2)
-    
-    -- Small delay to let game process
-    task.wait(0.1)
-    
-    -- Find the NPC and re-attach
-    local npc = EscortMission.CurrentNPC
-    if npc and npc.Parent then
-        local npcRoot = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-        if npcRoot then
-            -- Create new weld to re-attach
-            local newWeld = Instance.new("Weld")
-            newWeld.Part0 = npcRoot
-            newWeld.Part1 = playerRoot
-            newWeld.C0 = CFrame.new(0, 0, 3)
-            newWeld.C1 = CFrame.new(0, 0, 0)
-            newWeld.Parent = npcRoot
-            EscortMission.Attachment = newWeld
-            
-            -- Teleport effect
-            local effect = Instance.new("Part")
-            effect.Size = Vector3.new(5, 5, 5)
-            effect.CFrame = targetMarker.CFrame
-            effect.Anchored = true
-            effect.CanCollide = false
-            effect.Transparency = 0.5
-            effect.BrickColor = BrickColor.new("Bright blue")
-            effect.Parent = workspace
-            
-            task.wait(0.1)
-            effect:Destroy()
-            
-            Library:Notify("✨ Teleported with NPC to " .. EscortMission.MarkerChoice .. " marker!", 3)
-        end
-    else
-        Library:Notify("NPC lost during teleport!", 3)
-        EscortMission.Active = false
-    end
-end
+})
 
--- Function to teleport NPC to your position
-local function TeleportNPCToMe()
-    if not EscortMission.Active or not EscortMission.CurrentNPC then
-        Library:Notify("Not attached to any NPC!", 3)
-        return
+MainTab:CreateToggle({
+    Name = "Show NPCs",
+    CurrentValue = true,
+    Flag = "ShowNPCs",
+    Callback = function(Value)
+        Config.ShowNPCs = Value
     end
-    
-    local player = LocalPlayer
-    local character = player.Character
-    if not character then return end
-    
-    local playerRoot = character:FindFirstChild("HumanoidRootPart")
-    if not playerRoot then return end
-    
-    local npc = EscortMission.CurrentNPC
-    local npcRoot = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-    if not npcRoot then return end
-    
-    -- Store current attachment
-    local weld = EscortMission.Attachment
-    
-    -- Temporarily detach
-    if weld then
-        weld:Destroy()
-        EscortMission.Attachment = nil
+})
+
+MainTab:CreateToggle({
+    Name = "Show Health Bars",
+    CurrentValue = true,
+    Flag = "ShowBars",
+    Callback = function(Value)
+        Config.ShowBars = Value
     end
-    
-    -- Teleport NPC to player (slightly behind)
-    npcRoot.CFrame = playerRoot.CFrame * CFrame.new(0, 0, 3)
-    
-    task.wait(0.1)
-    
-    -- Re-attach
-    local newWeld = Instance.new("Weld")
-    newWeld.Part0 = npcRoot
-    newWeld.Part1 = playerRoot
-    newWeld.C0 = CFrame.new(0, 0, 3)
-    newWeld.C1 = CFrame.new(0, 0, 0)
-    newWeld.Parent = npcRoot
-    EscortMission.Attachment = newWeld
-    
-    Library:Notify("NPC brought to your position!", 3)
-end
+})
 
--- ==================== ESCORT GUI ====================
+MainTab:CreateToggle({
+    Name = "Show Bar Values",
+    CurrentValue = true,
+    Flag = "ShowValues",
+    Callback = function(Value)
+        Config.ShowValues = Value
+    end
+})
 
--- Add Escort Mission tab
-local EscortTab = Window:AddTab("Escort")
-local EscortGroup = EscortTab:AddLeftGroupbox("NPC Attachment System")
-
--- Status display
-local statusLabel = EscortGroup:AddLabel("Status: Not attached")
-
--- Update status periodically
-task.spawn(function()
-    while task.wait(0.5) do
-        if EscortMission.Active and EscortMission.CurrentNPC then
-            statusLabel:SetText(string.format("Status: ✅ Attached to %s", EscortMission.CurrentNPC.Name))
+MainTab:CreateToggle({
+    Name = "Enable Walkspeed Multiplier",
+    CurrentValue = true,
+    Flag = "ShowWalkspeed",
+    Callback = function(Value)
+        Config.ShowWalkspeed = Value
+        if Value then
+            ApplyWalkspeedMultiplier()
+            StartWalkspeedMonitoring()
         else
-            statusLabel:SetText("Status: ❌ Not attached")
-        end
-    end
-end)
-
-EscortGroup:AddDivider()
-
--- Attachment controls
-EscortGroup:AddLabel("🎮 ATTACHMENT CONTROLS:")
-
-EscortGroup:AddButton({
-    Text = "🔗 ATTACH TO NEAREST NPC",
-    Func = AttachToNPC,
-    Tooltip = "Attach yourself to the nearest NPC (you will move together)"
-})
-
-EscortGroup:AddButton({
-    Text = "🔓 DETACH FROM NPC",
-    Func = DetachFromNPC,
-    Tooltip = "Detach from the current NPC"
-})
-
-EscortGroup:AddDivider()
-EscortGroup:AddLabel("📍 TELEPORT OPTIONS:")
-
--- Marker choice dropdown
-EscortGroup:AddDropdown("MarkerChoice", {
-    Text = "Target Marker",
-    Values = {"main", "station"},
-    Default = "main",
-    Tooltip = "Choose which marker to teleport to",
-    Callback = function(value)
-        EscortMission.MarkerChoice = value
-        Library:Notify("Target marker set to: " .. value, 2)
-    end
-})
-
-EscortGroup:AddButton({
-    Text = "✨ TELEPORT TO MARKER (Both)",
-    Func = TeleportWithNPC,
-    Tooltip = "Teleport yourself and attached NPC to chosen marker"
-})
-
-EscortGroup:AddButton({
-    Text = "👤 BRING NPC TO ME",
-    Func = TeleportNPCToMe,
-    Tooltip = "Teleport only the NPC to your current position"
-})
-
-EscortGroup:AddDivider()
-
--- Marker scanner
-local MarkerGroup = EscortTab:AddRightGroupbox("Marker Scanner")
-
-MarkerGroup:AddButton({
-    Text = "🔍 Scan for Markers",
-    Func = function()
-        local markers = FindMarkers()
-        if markers.missionMarker1 then
-            Library:Notify("✓ Main marker at: " .. string.format("%.0f, %.0f, %.0f", 
-                markers.missionMarker1.Position.X, 
-                markers.missionMarker1.Position.Y, 
-                markers.missionMarker1.Position.Z), 4)
-        end
-        
-        if markers.missionMarker2 then
-            Library:Notify("✓ Station marker at: " .. string.format("%.0f, %.0f, %.0f", 
-                markers.missionMarker2.Position.X, 
-                markers.missionMarker2.Position.Y, 
-                markers.missionMarker2.Position.Z), 4)
-        end
-        
-        if not markers.missionMarker1 and not markers.missionMarker2 then
-            Library:Notify("✗ No mission markers found!", 3)
-        end
-    end
-})
-
-MarkerGroup:AddButton({
-    Text = "📍 Teleport to MAIN marker",
-    Func = function()
-        local markers = FindMarkers()
-        if markers.missionMarker1 and LocalPlayer.Character then
-            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = markers.missionMarker1.CFrame * CFrame.new(0, 5, 0)
-                Library:Notify("Teleported to MAIN marker!", 3)
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = GetBaseWalkspeedFromAttribute(humanoid)
+                end
             end
-        else
-            Library:Notify("Main marker not found!", 3)
-        end
-    end
-})
-
-MarkerGroup:AddButton({
-    Text = "📍 Teleport to STATION marker",
-    Func = function()
-        local markers = FindMarkers()
-        if markers.missionMarker2 and LocalPlayer.Character then
-            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = markers.missionMarker2.CFrame * CFrame.new(0, 5, 0)
-                Library:Notify("Teleported to STATION marker!", 3)
+            if WalkspeedUpdateConnection then
+                WalkspeedUpdateConnection:Disconnect()
+                WalkspeedUpdateConnection = nil
             end
-        else
-            Library:Notify("Station marker not found!", 3)
         end
     end
 })
 
-MarkerGroup:AddDivider()
-MarkerGroup:AddLabel("📋 How to use:")
-MarkerGroup:AddLabel("1️⃣ Get near an NPC")
-MarkerGroup:AddLabel("2️⃣ Click 'ATTACH TO NPC'")
-MarkerGroup:AddLabel("3️⃣ Move around - NPC follows!")
-MarkerGroup:AddLabel("4️⃣ Use teleport options to jump")
+local SliderSection = MainTab:CreateSection("Slider Settings")
 
-print("=== NPC Attachment System Loaded ===")
-print("• Attach to any NPC")
-print("• NPC follows you when you move")
-print("• Teleport together to markers")
+MainTab:CreateSlider({
+    Name = "Walkspeed Multiplier",
+    Range = {0.5, 5},
+    Increment = 0.1,
+    Suffix = "x",
+    CurrentValue = 1.0,
+    Flag = "WalkspeedSlider",
+    Callback = function(Value)
+        Config.WalkspeedMultiplier = Value
+        if Config.ShowWalkspeed then
+            ApplyWalkspeedMultiplier()
+        end
+    end
+})
 
--- ==================== SERVER TELEPORT SECTION ====================
--- Fast travel between different games/servers AND in-game locations
+MainTab:CreateSlider({
+    Name = "Max Distance",
+    Range = {100, 5000},
+    Increment = 10,
+    Suffix = "studs",
+    CurrentValue = 1500,
+    Flag = "MaxDistance",
+    Callback = function(Value)
+        Config.MaxDistance = Value
+    end
+})
 
-local TeleportService = game:GetService("TeleportService")
-local TeleportTab = Window:AddTab("Server Teleport")
+MainTab:CreateSlider({
+    Name = "Text Size",
+    Range = {8, 24},
+    Increment = 1,
+    Suffix = "px",
+    CurrentValue = 14,
+    Flag = "TextSize",
+    Callback = function(Value)
+        Config.TextSize = Value
+    end
+})
 
--- ===== IN-GAME TELEPORT SECTION (Current World) =====
-local InGameGroup = TeleportTab:AddLeftGroupbox("📍 In-Game Teleport")
+MainTab:CreateSlider({
+    Name = "Bar Width",
+    Range = {50, 300},
+    Increment = 5,
+    Suffix = "px",
+    CurrentValue = 150,
+    Flag = "BarWidth",
+    Callback = function(Value)
+        Config.BarWidth = Value
+    end
+})
 
--- Define teleport locations for different worlds
+MainTab:CreateSlider({
+    Name = "Bar Height",
+    Range = {2, 20},
+    Increment = 1,
+    Suffix = "px",
+    CurrentValue = 6,
+    Flag = "BarHeight",
+    Callback = function(Value)
+        Config.BarHeight = Value
+    end
+})
+
+MainTab:CreateSlider({
+    Name = "Vertical Offset",
+    Range = {20, 200},
+    Increment = 5,
+    Suffix = "px",
+    CurrentValue = 60,
+    Flag = "YOffset",
+    Callback = function(Value)
+        Config.YOffset = Value
+    end
+})
+
+-- ==================== TELEPORT TAB ====================
+
+local TeleportTab = Window:CreateTab("Teleport", 4483362458)
+local InGameSection = TeleportTab:CreateSection("In-Game Teleport")
+
+-- Define world locations
 local WorldTeleports = {
-    -- Forest World (14220581641)
     [14220581641] = {
         name = "Forest World",
         locations = {
-            ["Spawn Area"] = Vector3.new(0, 50, 0),
-            ["Train Station"] = Vector3.new(636, 17, 1730),
-            ["Temari & Arrow Boss"] = Vector3.new(1067, 20, 384),
-            ["Rui Boss"] = Vector3.new(499, 12, -1076),
-            ["Final Selection"] = Vector3.new(-729, 284, -432),
-            ["Holiday Boss"] = Vector3.new(-1293, 273, 63),
-            ["Wind & Snake Boss"] = Vector3.new(2045, 136, 1684),
-            ["Kill Grip Spot"] = Vector3.new(-20, 155, 1137),
+            "Spawn Area:0,50,0",
+            "Train Station:636,17,1730",
+            "Temari & Arrow Boss:1067,20,384",
+            "Rui Boss:499,12,-1076",
+            "Final Selection:-729,284,-432",
+            "Holiday Boss:-1293,273,63",
+            "Wind & Snake Boss:2045,136,1684",
+            "Kill Grip Spot:-20,155,1137",
         }
     },
     [14220581261] = {
         name = "Tokyo World",
         locations = {
-            ["Slayer Base"] = Vector3.new(1879, 27, 797),
-            ["Train Station"] = Vector3.new(-1178, 9, -472),
-            ["Forest Gate"] = Vector3.new(-861, 9, 1269),
-            ["Shop"] = Vector3.new(-436, 20, -516),
-            ["Training Grounds"] = Vector3.new(200, 30, 500),
-            ["Boss Arena"] = Vector3.new(1200, 100, -500),
-            ["Secret Cave"] = Vector3.new(-300, 20, 800),
+            "Slayer Base:1879,27,797",
+            "Train Station:-1178,9,-472",
+            "Forest Gate:-861,9,1269",
+            "Shop:-436,20,-516",
         }
     },
-
-    [15240226383] = {
-        name = "Slayer Village",
-        locations = {
-        }
-    },
-
     [14220581884] = {
         name = "Plains World",
         locations = {
-            ["Slayer Base"] = Vector3.new(-1819, 117, 45),
-            ["Thunder Boss"] = Vector3.new(1454, 303, 2037),
-            ["Kill Spot"] = Vector3.new(1675, 320, 174)
+            "Slayer Base:-1819,117,45",
+            "Thunder Boss:1454,303,2037",
+            "Kill Spot:1675,320,174",
         }
     },
-
     [14220582083] = {
         name = "Infinity Fortress",
         locations = {
-            ["Secret Spot"] = Vector3.new(-737, -1262, -2516),
+            "Secret Spot:-737,-1262,-2516",
         }
     },
-
-
-    
-    -- Add more worlds here as you discover them
-    -- [PLACE_ID] = {
-    --     name = "World Name",
-    --     locations = {
-    --         ["Location 1"] = Vector3.new(x, y, z),
-    --         ["Location 2"] = Vector3.new(x, y, z),
-    --     }
-    -- },
 }
 
--- Function to teleport to in-game location
-local function TeleportInGame(locationName, position)
+-- Teleport function
+local function TeleportTo(position)
     local player = LocalPlayer
     if not player.Character then
-        Library:Notify("No character found!", 3)
+        Rayfield:Notify({Title = "Error", Content = "No character found!", Duration = 3})
         return
     end
     
-    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then
-        Library:Notify("Cannot teleport (no HumanoidRootPart)", 3)
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        Rayfield:Notify({Title = "Error", Content = "No HumanoidRootPart!", Duration = 3})
         return
     end
     
-    -- Teleport effect
-    local effect = Instance.new("Part")
-    effect.Size = Vector3.new(5, 5, 5)
-    effect.CFrame = humanoidRootPart.CFrame
-    effect.Anchored = true
-    effect.CanCollide = false
-    effect.Transparency = 0.5
-    effect.BrickColor = BrickColor.new("Bright blue")
-    effect.Parent = workspace
-    
-    -- Fade out
-    for i = 1, 10 do
-        effect.Transparency = effect.Transparency + 0.1
-        task.wait(0.02)
-    end
-    
-    -- Teleport
-    humanoidRootPart.CFrame = CFrame.new(position)
-    
-    -- Fade in at new location
-    effect.CFrame = humanoidRootPart.CFrame
-    effect.Transparency = 0.5
-    for i = 1, 10 do
-        effect.Transparency = effect.Transparency - 0.1
-        task.wait(0.02)
-    end
-    
-    effect:Destroy()
-    
-    Library:Notify(string.format("Teleported to %s!", locationName), 3)
+    root.CFrame = CFrame.new(position)
+    Rayfield:Notify({Title = "Teleported", Content = "Teleported to location!", Duration = 2})
 end
 
--- Show current world name
+-- Add buttons for current world
 local currentWorld = WorldTeleports[game.PlaceId]
 if currentWorld then
-    InGameGroup:AddLabel("🌲 Current World: " .. currentWorld.name)
-    InGameGroup:AddDivider()
+    TeleportTab:CreateLabel("Current World: " .. currentWorld.name)
     
-    -- Add teleport buttons for current world
-    for name, pos in pairs(currentWorld.locations) do
-        InGameGroup:AddButton({
-            Text = string.format("📍 %s", name),
-            Func = function()
-                TeleportInGame(name, pos)
-            end,
-            Tooltip = string.format("Teleport to %s at (%.0f, %.0f, %.0f)", name, pos.X, pos.Y, pos.Z)
+    for _, locString in ipairs(currentWorld.locations) do
+        local name, x, y, z = locString:match("([^:]+):([^,]+),([^,]+),(.+)")
+        local pos = Vector3.new(tonumber(x), tonumber(y), tonumber(z))
+        
+        TeleportTab:CreateButton({
+            Name = "📍 " .. name,
+            Callback = function()
+                TeleportTo(pos)
+            end
         })
     end
 else
-    InGameGroup:AddLabel("🌲 Current World: Unknown")
-    InGameGroup:AddLabel("No saved locations for this world")
-    InGameGroup:AddLabel("Add them in the script!")
+    TeleportTab:CreateLabel("No saved locations for this world")
 end
 
+-- ==================== SERVER TELEPORT TAB ====================
 
--- ===== SERVER TELEPORT SECTION (Other Worlds) =====
-local ServerGroup = TeleportTab:AddRightGroupbox("🌍 Server Teleport")
+local ServerTab = Window:CreateTab("Server Teleport", 4483362458)
+local ServerSection = ServerTab:CreateSection("World Hopping")
 
--- Store game information
 local GameLocations = {
-    -- Format: Name = {PlaceId = 123456789, Description = "description"}
-    
-    ["Forest World"] = {
-        PlaceId = 14220581641,
-        Description = "Main Forest game world"
-    },
-    ["Tokyo World"] = {
-        PlaceId = 14220581261,
-        Description = "Main Tokyo game world"
-    },
-
-    ["Slayer World"] = {
-        PlaceId = 15240226383,
-        Description = "Main Slayer game world"
-    },
-
-    ["Plains World"] = {
-        PlaceId = 14220581884,
-        Description = "Main Plains game world"
-    },
-    ["Infinity Fortress"] = {
-        PlaceId = 14220582083,
-        Description = "Slayers shouldn't be here!"
-    },
-
-
-
-    
-    -- Add more games here as you find them!
-    -- ["Game Name"] = {
-    --     PlaceId = 1234567890,
-    --     Description = "Description here"
-    -- },
+    ["Forest World"] = 14220581641,
+    ["Tokyo World"] = 14220581261,
+    ["Plains World"] = 14220581884,
+    ["Infinity Fortress"] = 14220582083,
 }
 
--- Current game info display
-ServerGroup:AddLabel("Current Game: " .. game.Name)
-ServerGroup:AddLabel("Current Place ID: " .. game.PlaceId)
-ServerGroup:AddLabel("Current Server: " .. game.JobId:sub(1, 8) .. "...")
-
-ServerGroup:AddDivider()
-
--- Add teleport buttons for each game
-for name, data in pairs(GameLocations) do
-    -- Skip current world in server list (since we already have in-game teleport)
-    if data.PlaceId ~= game.PlaceId then
-        ServerGroup:AddButton({
-            Text = string.format("🌍 %s", name),
-            Func = function()
-                -- Confirm teleport
-                Library:Notify(string.format("Teleporting to %s...", name), 2)
+for name, placeId in pairs(GameLocations) do
+    if placeId ~= game.PlaceId then
+        ServerTab:CreateButton({
+            Name = "🌍 " .. name,
+            Callback = function()
+                Rayfield:Notify({Title = "Teleporting", Content = "Teleporting to " .. name .. "...", Duration = 2})
                 task.wait(0.5)
-                TeleportService:Teleport(data.PlaceId, LocalPlayer)
-            end,
-            Tooltip = data.Description .. " | Place ID: " .. data.PlaceId
+                TeleportService:Teleport(placeId, LocalPlayer)
+            end
         })
     end
 end
 
--- Add separator
-ServerGroup:AddDivider()
+local CustomSection = ServerTab:CreateSection("Custom Join")
 
--- Custom Place ID teleporter
-local CustomServerGroup = TeleportTab:AddRightGroupbox("🔧 Custom Server Join")
-
-CustomServerGroup:AddLabel("Enter any Place ID to join")
-
-CustomServerGroup:AddInput("CustomPlaceId", {
-    Text = "Place ID",
-    Default = "",
-    Placeholder = "Enter Place ID (e.g. 14220581641)",
-    Numeric = true,
-    Finished = true,
-    Callback = function(value)
-        _G.TeleportPlaceId = tonumber(value)
+ServerTab:CreateInput({
+    Name = "Place ID",
+    CurrentValue = "",
+    PlaceholderText = "Enter Place ID",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.CustomPlaceId = tonumber(Value)
     end
 })
 
-CustomServerGroup:AddButton({
-    Text = "🚀 Teleport to Place ID",
-    Func = function()
-        local placeId = _G.TeleportPlaceId
-        if not placeId or placeId == 0 then
-            Library:Notify("Please enter a valid Place ID!", 3)
+ServerTab:CreateButton({
+    Name = "🚀 Teleport to Place ID",
+    Callback = function()
+        local placeId = _G.CustomPlaceId
+        if not placeId then
+            Rayfield:Notify({Title = "Error", Content = "Enter a valid Place ID!", Duration = 3})
             return
         end
-        
-        Library:Notify(string.format("Teleporting to Place ID: %d...", placeId), 2)
+        Rayfield:Notify({Title = "Teleporting", Content = "Teleporting to Place ID: " .. placeId, Duration = 2})
         task.wait(0.5)
         TeleportService:Teleport(placeId, LocalPlayer)
     end
 })
 
-CustomServerGroup:AddDivider()
-
--- Server hopping options
-CustomServerGroup:AddButton({
+ServerTab:CreateButton({
     Text = "🔄 Rejoin Current Game",
     Func = function()
-        Library:Notify("Rejoining current game...", 2)
+        Rayfield:Notify({Title = "Rejoining", Content = "Rejoining current game...", Duration = 2})
         task.wait(0.5)
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end,
-    Tooltip = "Leave and rejoin the current server"
-})
-
-CustomServerGroup:AddButton({
-    Text = "🎲 Join Random Server",
-    Func = function()
-        Library:Notify("Searching for another server...", 2)
-        
-        -- Try to get another server
-        local success, result = pcall(function()
-            return TeleportService:GetLocalPlayerPlaceAsync(game.PlaceId)
-        end)
-        
-        if success then
-            Library:Notify("Joining another server...", 2)
-            task.wait(0.5)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        else
-            Library:Notify("Could not find another server, trying direct teleport...", 3)
-            task.wait(0.5)
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end
-    end,
-    Tooltip = "Try to join a different server of the same game"
-})
-
-print("=== Enhanced Teleport System Loaded ===")
-print("• In-game teleport for current world")
-print("• Server teleport to other worlds")
-print("• Custom position teleporter")
-
--- ==================== ADVANCED SERVER JOINER ====================
--- Join by Job ID or by Player
-
-local AdvancedJoinTab = Window:AddTab("Advanced Join")
-local JobIdGroup = AdvancedJoinTab:AddLeftGroupbox("🔑 Join by Job ID")
-local PlayerJoinGroup = AdvancedJoinTab:AddRightGroupbox("👥 Join by Player")
-
--- Function to fetch servers for a place
-local function FetchServers(placeId)
-    local success, result = pcall(function()
-        local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?limit=50", placeId)
-        local response = game:HttpGet(url)
-        return game:GetService("HttpService"):JSONDecode(response)
-    end)
-    
-    if success and result and result.data then
-        return result.data
     end
-    return {}
-end
+})
 
--- Function to get player's current server info
+-- ==================== ADVANCED JOIN TAB ====================
+
+local AdvancedTab = Window:CreateTab("Advanced Join", 4483362458)
+local JobIdSection = AdvancedTab:CreateSection("Join by Job ID")
+
+AdvancedTab:CreateInput({
+    Name = "Job ID",
+    CurrentValue = "",
+    PlaceholderText = "Paste Job ID here",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetJobId = Value
+    end
+})
+
+AdvancedTab:CreateInput({
+    Name = "Place ID (optional)",
+    CurrentValue = tostring(game.PlaceId),
+    PlaceholderText = "Leave blank for current game",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetPlaceId = tonumber(Value) or game.PlaceId
+    end
+})
+
+AdvancedTab:CreateButton({
+    Name = "🚀 JOIN BY JOB ID",
+    Callback = function()
+        local jobId = _G.TargetJobId
+        local placeId = _G.TargetPlaceId or game.PlaceId
+        
+        if not jobId or jobId == "" then
+            Rayfield:Notify({Title = "Error", Content = "Please enter a Job ID!", Duration = 3})
+            return
+        end
+        
+        Rayfield:Notify({Title = "Joining", Content = "Joining server...", Duration = 2})
+        task.wait(0.5)
+        
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
+        end)
+    end
+})
+
+AdvancedTab:CreateLabel("Current Job ID: " .. game.JobId)
+
+AdvancedTab:CreateButton({
+    Name = "📋 Copy Current Job ID",
+    Callback = function()
+        setclipboard(game.JobId)
+        Rayfield:Notify({Title = "Copied", Content = "Job ID copied to clipboard!", Duration = 2})
+    end
+})
+
+local PlayerJoinSection = AdvancedTab:CreateSection("Join by Player")
+
+AdvancedTab:CreateInput({
+    Name = "Username",
+    CurrentValue = "",
+    PlaceholderText = "Enter player username",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetUsername = Value
+    end
+})
+
+-- Function to get player server info
 local function GetPlayerServerInfo(userId)
     local success, result = pcall(function()
         local url = string.format("https://games.roblox.com/v1/games/%d/players/%d", game.PlaceId, userId)
@@ -1604,95 +739,20 @@ local function GetPlayerServerInfo(userId)
     end)
     
     if success and result and result.jobId then
-        return result
+        return result.jobId
     end
     return nil
 end
 
--- ===== JOIN BY JOB ID =====
-JobIdGroup:AddLabel("Enter a Job ID to join a specific server")
-
-JobIdGroup:AddInput("JobIdInput", {
-    Text = "Job ID",
-    Default = "",
-    Placeholder = "Paste Job ID here",
-    Finished = true,
-    Callback = function(value)
-        _G.TargetJobId = value
-    end
-})
-
-JobIdGroup:AddInput("TargetPlaceId", {
-    Text = "Place ID (optional)",
-    Default = tostring(game.PlaceId),
-    Placeholder = "Leave blank for current game",
-    Numeric = true,
-    Finished = true,
-    Callback = function(value)
-        _G.TargetPlaceId = tonumber(value) or game.PlaceId
-    end
-})
-
-JobIdGroup:AddButton({
-    Text = "🚀 JOIN BY JOB ID",
-    Func = function()
-        local jobId = _G.TargetJobId
-        local placeId = _G.TargetPlaceId or game.PlaceId
-        
-        if not jobId or jobId == "" then
-            Library:Notify("Please enter a Job ID!", 3)
-            return
-        end
-        
-        Library:Notify(string.format("Joining server: %s...", jobId:sub(1, 8) .. "..."), 2)
-        task.wait(0.5)
-        
-        local success, err = pcall(function()
-            game:GetService("TeleportService"):TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
-        end)
-        
-        if not success then
-            Library:Notify("Failed to join: " .. tostring(err), 4)
-        end
-    end
-})
-
-JobIdGroup:AddDivider()
-JobIdGroup:AddLabel("📋 Current Server Info:")
-JobIdGroup:AddLabel("Current Job ID: " .. game.JobId)
-JobIdGroup:AddLabel("Current Place ID: " .. game.PlaceId)
-
-JobIdGroup:AddButton({
-    Text = "📋 Copy Current Job ID",
-    Func = function()
-        setclipboard(game.JobId)
-        Library:Notify("Job ID copied to clipboard!", 2)
-    end
-})
-
--- ===== JOIN BY PLAYER =====
-PlayerJoinGroup:AddLabel("Enter a username to join their server")
-
-PlayerJoinGroup:AddInput("TargetUsername", {
-    Text = "Username",
-    Default = "",
-    Placeholder = "Enter player username",
-    Finished = true,
-    Callback = function(value)
-        _G.TargetUsername = value
-    end
-})
-
-PlayerJoinGroup:AddButton({
-    Text = "🔍 FIND PLAYER",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "🔍 FIND PLAYER",
+    Callback = function()
         local username = _G.TargetUsername
         if not username or username == "" then
-            Library:Notify("Please enter a username!", 3)
+            Rayfield:Notify({Title = "Error", Content = "Please enter a username!", Duration = 3})
             return
         end
         
-        -- Try to find user
         local success, userId = pcall(function()
             local url = string.format("https://users.roblox.com/v1/users/search?keyword=%s&limit=1", username)
             local response = game:HttpGet(url)
@@ -1705,169 +765,138 @@ PlayerJoinGroup:AddButton({
         
         if success and userId then
             _G.TargetUserId = userId
-            Library:Notify(string.format("Found user: %s (ID: %d)", username, userId), 3)
-            
-            -- Check if they're in this game
-            local serverInfo = GetPlayerServerInfo(userId)
-            if serverInfo and serverInfo.jobId then
-                Library:Notify(string.format("✅ Player is in server: %s", serverInfo.jobId:sub(1, 8) .. "..."), 3)
-                _G.FoundJobId = serverInfo.jobId
+            local jobId = GetPlayerServerInfo(userId)
+            if jobId then
+                _G.FoundJobId = jobId
+                Rayfield:Notify({Title = "Found", Content = "Player found! Ready to join.", Duration = 3})
             else
-                Library:Notify("❌ Player is not in this game or server is private", 4)
+                Rayfield:Notify({Title = "Error", Content = "Player not in this game!", Duration = 3})
             end
         else
-            Library:Notify("Could not find user: " .. username, 3)
+            Rayfield:Notify({Title = "Error", Content = "Could not find user!", Duration = 3})
         end
     end
 })
 
-PlayerJoinGroup:AddButton({
-    Text = "👥 JOIN PLAYER'S SERVER",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "👥 JOIN PLAYER'S SERVER",
+    Callback = function()
         if not _G.FoundJobId then
-            Library:Notify("No player server found! Search for a player first.", 3)
+            Rayfield:Notify({Title = "Error", Content = "Find a player first!", Duration = 3})
             return
         end
         
-        Library:Notify("Joining player's server...", 2)
+        Rayfield:Notify({Title = "Joining", Content = "Joining player's server...", Duration = 2})
         task.wait(0.5)
         
-        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, _G.FoundJobId, LocalPlayer)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, _G.FoundJobId, LocalPlayer)
     end
 })
 
-PlayerJoinGroup:AddDivider()
-PlayerJoinGroup:AddLabel("📊 Online Friends:")
+-- ==================== SERVER BROWSER ====================
 
--- Function to list friends in game
-local function RefreshFriendsList()
-    local friends = {}
+local BrowserSection = AdvancedTab:CreateSection("Server Browser")
+
+local function FetchServers(placeId)
+    local success, result = pcall(function()
+        local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?limit=20", placeId)
+        local response = game:HttpGet(url)
+        return game:GetService("HttpService"):JSONDecode(response)
+    end)
     
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(friends, player.Name)
-        end
+    if success and result and result.data then
+        return result.data
     end
-    
-    return friends
+    return {}
 end
 
-PlayerJoinGroup:AddDropdown("FriendsDropdown", {
-    Text = "Players in Current Server",
-    Values = RefreshFriendsList(),
-    Default = 1,
-    Callback = function(value)
-        _G.SelectedFriend = value
+AdvancedTab:CreateInput({
+    Name = "Place ID to browse",
+    CurrentValue = tostring(game.PlaceId),
+    PlaceholderText = "Enter Place ID",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.BrowsePlaceId = tonumber(Value) or game.PlaceId
     end
 })
 
-PlayerJoinGroup:AddButton({
-    Text = "🔄 Refresh List",
-    Func = function()
-        local friends = RefreshFriendsList()
-        Options.FriendsDropdown:SetValues(friends)
-        Library:Notify(string.format("Found %d players in server", #friends), 2)
+local serverOptions = {}
+local serverData = {}
+
+AdvancedTab:CreateDropdown({
+    Name = "Select Server",
+    Options = {"No servers loaded"},
+    CurrentOption = "No servers loaded",
+    Flag = "ServerDropdown",
+    Callback = function(Value)
+        if serverData[Value] then
+            _G.SelectedServer = serverData[Value]
+            Rayfield:Notify({Title = "Selected", Content = "Server selected!", Duration = 2})
+        end
     end
 })
 
--- ===== SERVER BROWSER =====
-local BrowserGroup = AdvancedJoinTab:AddLeftGroupbox("🔍 Server Browser")
-
-BrowserGroup:AddInput("BrowsePlaceId", {
-    Text = "Place ID to browse",
-    Default = tostring(game.PlaceId),
-    Placeholder = "Enter Place ID",
-    Numeric = true,
-    Finished = true,
-    Callback = function(value)
-        _G.BrowsePlaceId = tonumber(value) or game.PlaceId
-    end
-})
-
-BrowserGroup:AddButton({
-    Text = "📡 Fetch Active Servers",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "📡 Fetch Active Servers",
+    Callback = function()
         local placeId = _G.BrowsePlaceId or game.PlaceId
-        Library:Notify(string.format("Fetching servers for %d...", placeId), 2)
+        Rayfield:Notify({Title = "Fetching", Content = "Getting server list...", Duration = 2})
         
         local servers = FetchServers(placeId)
+        serverOptions = {}
+        serverData = {}
         
         if #servers == 0 then
-            Library:Notify("No active servers found!", 3)
+            Rayfield:Notify({Title = "No Servers", Content = "No active servers found!", Duration = 3})
             return
         end
-        
-        -- Store servers for dropdown
-        _G.FetchedServers = servers
-        local serverOptions = {}
         
         for i, server in ipairs(servers) do
-            table.insert(serverOptions, string.format("Server %d: %d/%d players", i, server.playing or 0, server.maxPlayers or 0))
+            local optionName = string.format("Server %d: %d/%d players", i, server.playing or 0, server.maxPlayers or 0)
+            table.insert(serverOptions, optionName)
+            serverData[optionName] = server.id
         end
         
-        -- Update dropdown
-        Options.ServerDropdown:SetValues(serverOptions)
-        Library:Notify(string.format("Found %d servers", #servers), 3)
+        -- Update dropdown (Rayfield doesn't have dynamic dropdown updates, so we'll just notify)
+        Rayfield:Notify({Title = "Success", Content = string.format("Found %d servers", #servers), Duration = 3})
+        _G.FetchedServers = servers
     end
 })
 
-BrowserGroup:AddDropdown("ServerDropdown", {
-    Text = "Select Server",
-    Values = {"No servers loaded"},
-    Default = 1,
-    Callback = function(value)
-        if _G.FetchedServers and _G.FetchedServers[tonumber(value:match("%d+"))] then
-            local index = tonumber(value:match("%d+"))
-            _G.SelectedServer = _G.FetchedServers[index]
-            Library:Notify("Server selected: " .. _G.SelectedServer.id, 2)
-        end
-    end
-})
-
-BrowserGroup:AddButton({
-    Text = "🚀 Join Selected Server",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "🚀 Join Selected Server",
+    Callback = function()
         if not _G.SelectedServer then
-            Library:Notify("No server selected!", 3)
+            Rayfield:Notify({Title = "Error", Content = "No server selected!", Duration = 3})
             return
         end
         
-        Library:Notify(string.format("Joining server %s...", _G.SelectedServer.id:sub(1, 8) .. "..."), 2)
+        Rayfield:Notify({Title = "Joining", Content = "Joining server...", Duration = 2})
         task.wait(0.5)
         
-        game:GetService("TeleportService"):TeleportToPlaceInstance(_G.BrowsePlaceId or game.PlaceId, _G.SelectedServer.id, LocalPlayer)
+        TeleportService:TeleportToPlaceInstance(_G.BrowsePlaceId or game.PlaceId, _G.SelectedServer, LocalPlayer)
     end
 })
 
-BrowserGroup:AddButton({
-    Text = "📋 Copy Selected Job ID",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "📋 Copy Selected Job ID",
+    Callback = function()
         if _G.SelectedServer then
-            setclipboard(_G.SelectedServer.id)
-            Library:Notify("Job ID copied to clipboard!", 2)
+            setclipboard(_G.SelectedServer)
+            Rayfield:Notify({Title = "Copied", Content = "Job ID copied!", Duration = 2})
         else
-            Library:Notify("No server selected!", 3)
+            Rayfield:Notify({Title = "Error", Content = "No server selected!", Duration = 3})
         end
     end
 })
 
-print("=== Advanced Server Joiner Loaded ===")
-print("• Join by Job ID")
-print("• Join by Player username")
-print("• Browse and join any server")
+-- ==================== INIT ====================
 
+Rayfield:Notify({
+    Title = "Mission Hunter ESP",
+    Content = "Script Loaded! Press Right Ctrl to toggle menu",
+    Duration = 5
+})
 
-
--- Keybind to toggle menu (F4)
-UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode == Enum.KeyCode.F4 then
-        Library:Toggle()
-    end
-end)
-
-print("=== Mission Hunter ESP Loaded ===")
-print("Press F4 to toggle menu")
-print("Features:")
-print("- Players: Lifeforce (Red) + Posture (Yellow) bars")
-print("- NPCs: Green health bar (no name)")
-print("- Walkspeed multiplier using attributes")
+print("=== Mission Hunter ESP (Rayfield) Loaded ===")
+print("Press Right Ctrl to toggle menu")
