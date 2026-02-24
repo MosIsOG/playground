@@ -1154,17 +1154,155 @@ print("• In-game teleport for current world")
 print("• Server teleport to other worlds")
 print("• Custom position teleporter")
 
--- ==================== ADVANCED SERVER JOINER ====================
--- Join by Job ID or by Player
+-- ==================== ADVANCED JOIN TAB ====================
 
-local AdvancedJoinTab = Window:AddTab("Advanced Join")
-local JobIdGroup = AdvancedJoinTab:AddLeftGroupbox("🔑 Join by Job ID")
-local PlayerJoinGroup = AdvancedJoinTab:AddRightGroupbox("👥 Join by Player")
+local AdvancedTab = Window:CreateTab("Advanced Join", "users")
+local JobIdSection = AdvancedTab:CreateSection("Join by Job ID (Requires Both)")
 
--- Function to fetch servers for a place
+AdvancedTab:CreateLabel("⚠️ You MUST enter BOTH Place ID and Job ID")
+
+AdvancedTab:CreateInput({
+    Name = "Place ID",
+    CurrentValue = "",
+    PlaceholderText = "Enter Place ID (required)",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetPlaceId = tonumber(Value)
+    end
+})
+
+AdvancedTab:CreateInput({
+    Name = "Job ID",
+    CurrentValue = "",
+    PlaceholderText = "Enter Job ID (required)",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetJobId = Value
+    end
+})
+
+AdvancedTab:CreateButton({
+    Name = "🚀 JOIN BY JOB ID",
+    Callback = function()
+        local placeId = _G.TargetPlaceId
+        local jobId = _G.TargetJobId
+        
+        if not placeId then
+            Rayfield:Notify({Title = "Error", Content = "Place ID is required!", Duration = 3})
+            return
+        end
+        
+        if not jobId or jobId == "" then
+            Rayfield:Notify({Title = "Error", Content = "Job ID is required!", Duration = 3})
+            return
+        end
+        
+        Rayfield:Notify({Title = "Joining", Content = "Joining server...", Duration = 2})
+        task.wait(0.5)
+        
+        local success, err = pcall(function()
+            game:GetService("TeleportService"):TeleportToPlaceInstance(placeId, jobId, game:GetService("Players").LocalPlayer)
+        end)
+        
+        if not success then
+            Rayfield:Notify({Title = "Failed", Content = "Error: " .. tostring(err), Duration = 4})
+        end
+    end
+})
+
+AdvancedTab:CreateLabel("Current Job ID: " .. game.JobId)
+AdvancedTab:CreateLabel("Current Place ID: " .. game.PlaceId)
+
+AdvancedTab:CreateButton({
+    Name = "📋 Copy Current Job ID",
+    Callback = function()
+        setclipboard(game.JobId)
+        Rayfield:Notify({Title = "Copied", Content = "Job ID copied to clipboard!", Duration = 2})
+    end
+})
+
+AdvancedTab:CreateButton({
+    Name = "📋 Copy Current Place ID",
+    Callback = function()
+        setclipboard(tostring(game.PlaceId))
+        Rayfield:Notify({Title = "Copied", Content = "Place ID copied to clipboard!", Duration = 2})
+    end
+})
+
+-- ==================== JOIN BY PLAYER SECTION ====================
+
+local PlayerJoinSection = AdvancedTab:CreateSection("Join by Player")
+
+AdvancedTab:CreateInput({
+    Name = "Username or User ID",
+    CurrentValue = "",
+    PlaceholderText = "Enter player username or user ID",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.TargetPlayerInput = Value
+    end
+})
+
+AdvancedTab:CreateButton({
+    Name = "🔍 FIND & JOIN PLAYER",
+    Callback = function()
+        local input = _G.TargetPlayerInput
+        if not input or input == "" then
+            Rayfield:Notify({Title = "Error", Content = "Enter a username or user ID!", Duration = 3})
+            return
+        end
+        
+        -- Try to get user ID
+        local userId
+        if tonumber(input) then
+            userId = tonumber(input)
+        else
+            local success, data = pcall(function()
+                local url = "https://users.roblox.com/v1/users/search?keyword=" .. input .. "&limit=1"
+                local response = game:HttpGet(url)
+                return game:GetService("HttpService"):JSONDecode(response)
+            end)
+            
+            if success and data and data.data and #data.data > 0 then
+                userId = data.data[1].id
+            else
+                Rayfield:Notify({Title = "Error", Content = "Could not find user!", Duration = 3})
+                return
+            end
+        end
+        
+        -- Get their server info
+        local success, placeId, jobId = pcall(function()
+            return game:GetService("TeleportService"):GetPlayerPlaceInstanceAsync(userId)
+        end)
+        
+        if success and placeId and jobId then
+            Rayfield:Notify({Title = "Found", Content = "Joining player's server...", Duration = 2})
+            task.wait(0.5)
+            game:GetService("TeleportService"):TeleportToPlaceInstance(placeId, jobId, game:GetService("Players").LocalPlayer)
+        else
+            Rayfield:Notify({Title = "Error", Content = "Player not in a joinable server!", Duration = 3})
+        end
+    end
+})
+
+-- ==================== SERVER BROWSER SECTION ====================
+
+local BrowserSection = AdvancedTab:CreateSection("Server Browser")
+
+AdvancedTab:CreateInput({
+    Name = "Place ID to browse",
+    CurrentValue = tostring(game.PlaceId),
+    PlaceholderText = "Enter Place ID",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Value)
+        _G.BrowsePlaceId = tonumber(Value) or game.PlaceId
+    end
+})
+
 local function FetchServers(placeId)
     local success, result = pcall(function()
-        local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?limit=50", placeId)
+        local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?limit=20", placeId)
         local response = game:HttpGet(url)
         return game:GetService("HttpService"):JSONDecode(response)
     end)
@@ -1175,258 +1313,63 @@ local function FetchServers(placeId)
     return {}
 end
 
--- Function to get player's current server info
-local function GetPlayerServerInfo(userId)
-    local success, result = pcall(function()
-        local url = string.format("https://games.roblox.com/v1/games/%d/players/%d", game.PlaceId, userId)
-        local response = game:HttpGet(url)
-        return game:GetService("HttpService"):JSONDecode(response)
-    end)
-    
-    if success and result and result.jobId then
-        return result
-    end
-    return nil
-end
-
--- ===== JOIN BY JOB ID =====
-JobIdGroup:AddLabel("Enter a Job ID to join a specific server")
-
-JobIdGroup:AddInput("JobIdInput", {
-    Text = "Job ID",
-    Default = "",
-    Placeholder = "Paste Job ID here",
-    Finished = true,
-    Callback = function(value)
-        _G.TargetJobId = value
-    end
-})
-
-JobIdGroup:AddInput("TargetPlaceId", {
-    Text = "Place ID (optional)",
-    Default = tostring(game.PlaceId),
-    Placeholder = "Leave blank for current game",
-    Numeric = true,
-    Finished = true,
-    Callback = function(value)
-        _G.TargetPlaceId = tonumber(value) or game.PlaceId
-    end
-})
-
-JobIdGroup:AddButton({
-    Text = "🚀 JOIN BY JOB ID",
-    Func = function()
-        local jobId = _G.TargetJobId
-        local placeId = _G.TargetPlaceId or game.PlaceId
-        
-        if not jobId or jobId == "" then
-            Library:Notify("Please enter a Job ID!", 3)
-            return
-        end
-        
-        Library:Notify(string.format("Joining server: %s...", jobId:sub(1, 8) .. "..."), 2)
-        task.wait(0.5)
-        
-        local success, err = pcall(function()
-            game:GetService("TeleportService"):TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
-        end)
-        
-        if not success then
-            Library:Notify("Failed to join: " .. tostring(err), 4)
-        end
-    end
-})
-
-JobIdGroup:AddDivider()
-JobIdGroup:AddLabel("📋 Current Server Info:")
-JobIdGroup:AddLabel("Current Job ID: " .. game.JobId)
-JobIdGroup:AddLabel("Current Place ID: " .. game.PlaceId)
-
-JobIdGroup:AddButton({
-    Text = "📋 Copy Current Job ID",
-    Func = function()
-        setclipboard(game.JobId)
-        Library:Notify("Job ID copied to clipboard!", 2)
-    end
-})
-
--- ===== JOIN BY PLAYER =====
-PlayerJoinGroup:AddLabel("Enter a username to join their server")
-
-PlayerJoinGroup:AddInput("TargetUsername", {
-    Text = "Username",
-    Default = "",
-    Placeholder = "Enter player username",
-    Finished = true,
-    Callback = function(value)
-        _G.TargetUsername = value
-    end
-})
-
-PlayerJoinGroup:AddButton({
-    Text = "🔍 FIND PLAYER",
-    Func = function()
-        local username = _G.TargetUsername
-        if not username or username == "" then
-            Library:Notify("Please enter a username!", 3)
-            return
-        end
-        
-        -- Try to find user
-        local success, userId = pcall(function()
-            local url = string.format("https://users.roblox.com/v1/users/search?keyword=%s&limit=1", username)
-            local response = game:HttpGet(url)
-            local data = game:GetService("HttpService"):JSONDecode(response)
-            if data.data and #data.data > 0 then
-                return data.data[1].id
-            end
-            return nil
-        end)
-        
-        if success and userId then
-            _G.TargetUserId = userId
-            Library:Notify(string.format("Found user: %s (ID: %d)", username, userId), 3)
-            
-            -- Check if they're in this game
-            local serverInfo = GetPlayerServerInfo(userId)
-            if serverInfo and serverInfo.jobId then
-                Library:Notify(string.format("✅ Player is in server: %s", serverInfo.jobId:sub(1, 8) .. "..."), 3)
-                _G.FoundJobId = serverInfo.jobId
-            else
-                Library:Notify("❌ Player is not in this game or server is private", 4)
-            end
-        else
-            Library:Notify("Could not find user: " .. username, 3)
-        end
-    end
-})
-
-PlayerJoinGroup:AddButton({
-    Text = "👥 JOIN PLAYER'S SERVER",
-    Func = function()
-        if not _G.FoundJobId then
-            Library:Notify("No player server found! Search for a player first.", 3)
-            return
-        end
-        
-        Library:Notify("Joining player's server...", 2)
-        task.wait(0.5)
-        
-        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, _G.FoundJobId, LocalPlayer)
-    end
-})
-
-PlayerJoinGroup:AddDivider()
-PlayerJoinGroup:AddLabel("📊 Online Friends:")
-
--- Function to list friends in game
-local function RefreshFriendsList()
-    local friends = {}
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(friends, player.Name)
-        end
-    end
-    
-    return friends
-end
-
-PlayerJoinGroup:AddDropdown("FriendsDropdown", {
-    Text = "Players in Current Server",
-    Values = RefreshFriendsList(),
-    Default = 1,
-    Callback = function(value)
-        _G.SelectedFriend = value
-    end
-})
-
-PlayerJoinGroup:AddButton({
-    Text = "🔄 Refresh List",
-    Func = function()
-        local friends = RefreshFriendsList()
-        Options.FriendsDropdown:SetValues(friends)
-        Library:Notify(string.format("Found %d players in server", #friends), 2)
-    end
-})
-
--- ===== SERVER BROWSER =====
-local BrowserGroup = AdvancedJoinTab:AddLeftGroupbox("🔍 Server Browser")
-
-BrowserGroup:AddInput("BrowsePlaceId", {
-    Text = "Place ID to browse",
-    Default = tostring(game.PlaceId),
-    Placeholder = "Enter Place ID",
-    Numeric = true,
-    Finished = true,
-    Callback = function(value)
-        _G.BrowsePlaceId = tonumber(value) or game.PlaceId
-    end
-})
-
-BrowserGroup:AddButton({
-    Text = "📡 Fetch Active Servers",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "📡 Fetch Active Servers",
+    Callback = function()
         local placeId = _G.BrowsePlaceId or game.PlaceId
-        Library:Notify(string.format("Fetching servers for %d...", placeId), 2)
+        Rayfield:Notify({Title = "Fetching", Content = "Getting server list...", Duration = 2})
         
         local servers = FetchServers(placeId)
         
         if #servers == 0 then
-            Library:Notify("No active servers found!", 3)
+            Rayfield:Notify({Title = "No Servers", Content = "No active servers found!", Duration = 3})
             return
         end
         
-        -- Store servers for dropdown
         _G.FetchedServers = servers
-        local serverOptions = {}
         
-        for i, server in ipairs(servers) do
-            table.insert(serverOptions, string.format("Server %d: %d/%d players", i, server.playing or 0, server.maxPlayers or 0))
+        -- Show first 5 servers
+        for i = 1, math.min(5, #servers) do
+            local server = servers[i]
+            local btnName = string.format("Server %d: %d/%d players", i, server.playing or 0, server.maxPlayers or 0)
+            
+            AdvancedTab:CreateButton({
+                Name = btnName,
+                Callback = function()
+                    _G.SelectedServer = server.id
+                    _G.SelectedPlaceId = placeId
+                    Rayfield:Notify({Title = "Selected", Content = "Server selected! Click Join to enter.", Duration = 2})
+                end
+            })
         end
         
-        -- Update dropdown
-        Options.ServerDropdown:SetValues(serverOptions)
-        Library:Notify(string.format("Found %d servers", #servers), 3)
+        Rayfield:Notify({Title = "Success", Content = string.format("Found %d servers (showing first 5)", #servers), Duration = 3})
     end
 })
 
-BrowserGroup:AddDropdown("ServerDropdown", {
-    Text = "Select Server",
-    Values = {"No servers loaded"},
-    Default = 1,
-    Callback = function(value)
-        if _G.FetchedServers and _G.FetchedServers[tonumber(value:match("%d+"))] then
-            local index = tonumber(value:match("%d+"))
-            _G.SelectedServer = _G.FetchedServers[index]
-            Library:Notify("Server selected: " .. _G.SelectedServer.id, 2)
-        end
-    end
-})
-
-BrowserGroup:AddButton({
-    Text = "🚀 Join Selected Server",
-    Func = function()
-        if not _G.SelectedServer then
-            Library:Notify("No server selected!", 3)
+AdvancedTab:CreateButton({
+    Name = "🚀 Join Selected Server",
+    Callback = function()
+        if not _G.SelectedServer or not _G.SelectedPlaceId then
+            Rayfield:Notify({Title = "Error", Content = "Select a server first!", Duration = 3})
             return
         end
         
-        Library:Notify(string.format("Joining server %s...", _G.SelectedServer.id:sub(1, 8) .. "..."), 2)
+        Rayfield:Notify({Title = "Joining", Content = "Joining server...", Duration = 2})
         task.wait(0.5)
         
-        game:GetService("TeleportService"):TeleportToPlaceInstance(_G.BrowsePlaceId or game.PlaceId, _G.SelectedServer.id, LocalPlayer)
+        game:GetService("TeleportService"):TeleportToPlaceInstance(_G.SelectedPlaceId, _G.SelectedServer, game:GetService("Players").LocalPlayer)
     end
 })
 
-BrowserGroup:AddButton({
-    Text = "📋 Copy Selected Job ID",
-    Func = function()
+AdvancedTab:CreateButton({
+    Name = "📋 Copy Selected Job ID",
+    Callback = function()
         if _G.SelectedServer then
-            setclipboard(_G.SelectedServer.id)
-            Library:Notify("Job ID copied to clipboard!", 2)
+            setclipboard(_G.SelectedServer)
+            Rayfield:Notify({Title = "Copied", Content = "Job ID copied!", Duration = 2})
         else
-            Library:Notify("No server selected!", 3)
+            Rayfield:Notify({Title = "Error", Content = "No server selected!", Duration = 3})
         end
     end
 })
