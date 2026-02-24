@@ -3,32 +3,6 @@
 -- NPCs = Custom Green Bar (Toggleable) - Names hidden
 -- Keybind: F4 to Toggle Menu
 
--- Add this near the top of your script
-local function OnCharacterAdded(character)
-    print("Character added/respawned - cleaning up...")
-    
-    -- Clear ESP cache to prevent stale references
-    for model, _ in pairs(ESP_Cache) do 
-        RemoveESP(model) 
-    end
-    
-    -- Reset any state that might cause issues
-    if EscortMission then
-        EscortMission.Active = false
-        EscortMission.CurrentNPC = nil
-        if EscortMission.Attachment then
-            EscortMission.Attachment:Destroy()
-            EscortMission.Attachment = nil
-        end
-    end
-    
-    -- Small delay before re-enabling ESP
-    task.wait(1)
-end
-
--- Connect to character added event
-LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
-
 -- Safely fetch and execute remote mod detector to avoid nil loadstring crashes
 local loader = loadstring or load
 local function safeRequire(url)
@@ -68,6 +42,34 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+
+
+
+-- Add this near the top of your script
+local function OnCharacterAdded(character)
+    print("Character added/respawned - cleaning up...")
+    
+    -- Clear ESP cache to prevent stale references
+    for model, _ in pairs(ESP_Cache) do 
+        RemoveESP(model) 
+    end
+    
+    -- Reset any state that might cause issues
+    if EscortMission then
+        EscortMission.Active = false
+        EscortMission.CurrentNPC = nil
+        if EscortMission.Attachment then
+            EscortMission.Attachment:Destroy()
+            EscortMission.Attachment = nil
+        end
+    end
+    
+    -- Small delay before re-enabling ESP
+    task.wait(1)
+end
+
+-- Connect to character added event
+LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
 -- Configuration (Default Settings)
 local Config = {
