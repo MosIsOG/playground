@@ -2021,10 +2021,27 @@ MiscGroup:AddButton({
     end
 })
 
--- ==================== BOSS HEALTH BARS (FIXED) ====================
+-- ==================== BOSS HEALTH BARS (HARDCODED CONFIG) ====================
 local BossBarTab = Window:AddTab("Boss Bars")
 
--- Helper to clear all elements from a groupbox (since Linoria lacks :Clear())
+-- Edit this table to add your permanent bosses.
+-- Format: { path = "full.lua.path.to.Humanoid" }
+local BossConfig = {
+    -- Example:
+     { path = 'workspace["Wooden Golem"].Humanoid' },
+     { path = 'workspace:GetChildren()[2816].Humanoid'},
+     { path = 'workspace["The Barbarian"].Humanoid'},
+     { path = 'workspace["Lava Snake"].Humanoid'},
+
+}
+
+-- Test entries (temporary, not saved)
+local TestEntries = {}  -- { path = string }
+
+-- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid }
+local ActiveBars = {}
+
+-- Helper to clear all elements from a groupbox (Linoria doesn't have :Clear())
 local function ClearGroupBox(group)
     if group and group.Container then
         for _, child in ipairs(group.Container:GetChildren()) do
@@ -2032,17 +2049,6 @@ local function ClearGroupBox(group)
         end
     end
 end
-
--- Permanent configuration (edit this table directly, or use UI to add/remove)
-local BossConfig = {
-    -- Example: { path = 'workspace["Wooden Golem"].Humanoid' },
-}
-
--- Test entries (temporary)
-local TestEntries = {}  -- { path = string }
-
--- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid }
-local ActiveBars = {}
 
 -- Create drawing objects for a bar
 local function CreateBarDrawing()
@@ -2168,48 +2174,12 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ===== UI =====
-local BOSS_CONFIG_FILE = "UniversalHub_BossBars.json"
-
--- Save permanent config
-local function SaveBossConfig()
-    local data = {}
-    for _, entry in ipairs(BossConfig) do
-        table.insert(data, { path = entry.path })
-    end
-    writefile(BOSS_CONFIG_FILE, game:GetService("HttpService"):JSONEncode(data))
-end
-
--- Load permanent config
-local function LoadBossConfig()
-    local success, content = pcall(readfile, BOSS_CONFIG_FILE)
-    if success then
-        local success2, data = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), content)
-        if success2 and type(data) == "table" then
-            BossConfig = {}
-            for _, item in ipairs(data) do
-                table.insert(BossConfig, { path = item.path })
-            end
-        end
-    end
-end
-LoadBossConfig()
-
--- Left group: Permanent bosses
+-- Left group: Permanent bosses (read‑only list)
 local PermGroup = BossBarTab:AddLeftGroupbox("Permanent Bosses")
-
 local function RefreshPermList()
-    ClearGroupBox(PermGroup)  -- remove old elements
+    ClearGroupBox(PermGroup)
     for i, entry in ipairs(BossConfig) do
         PermGroup:AddLabel(string.format("%d. %s", i, entry.path))
-        PermGroup:AddButton({
-            Text = "Remove",
-            Func = function()
-                RemoveBar(entry.path)
-                table.remove(BossConfig, i)
-                SaveBossConfig()
-                RefreshPermList()
-            end
-        })
     end
     if #BossConfig == 0 then
         PermGroup:AddLabel("No permanent bosses.")
@@ -2263,20 +2233,19 @@ TestGroup:AddButton({
 })
 
 TestGroup:AddButton({
-    Text = "Save All Tests as Permanent",
+    Text = "Promote All Tests to Permanent",
     Func = function()
         for _, entry in ipairs(TestEntries) do
             table.insert(BossConfig, { path = entry.path })
         end
-        SaveBossConfig()
         RefreshPermList()
-        -- Clear test bars
+        -- Clear test bars and entries
         for _, entry in ipairs(TestEntries) do
             RemoveBar("test_" .. entry.path)
         end
         TestEntries = {}
         RefreshTestList()
-        Library:Notify("Tests saved to permanent config", 2)
+        Library:Notify("Tests added to permanent list. Edit the script to keep them permanently.", 3)
     end
 })
 
