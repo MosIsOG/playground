@@ -1941,6 +1941,165 @@ MiscGroup:AddSlider("SkillNotifierMaxDist", {
 })
 
 MiscGroup:AddLabel("Currently tracking: Chakra Sense (ID: 9864206537)")
+
+-- ==================== TELEPORT TAB ====================
+local TeleportTab = Window:AddTab("Teleport")
+
+-- Data storage for teleports
+local TeleportData = {
+    Locations = {} -- { Name = string, Position = Vector3 }
+}
+
+-- Function to save teleports to file (using SaveManager's config system)
+-- We'll use a separate config file for teleports
+local function SaveTeleports()
+    local data = {
+        Locations = {}
+    }
+    for _, loc in ipairs(TeleportData.Locations) do
+        table.insert(data.Locations, {
+            Name = loc.Name,
+            X = loc.Position.X,
+            Y = loc.Position.Y,
+            Z = loc.Position.Z
+        })
+    end
+    writefile("UniversalHub_Teleports.json", game:GetService("HttpService"):JSONEncode(data))
+end
+
+-- Function to load teleports
+local function LoadTeleports()
+    local success, content = pcall(readfile, "UniversalHub_Teleports.json")
+    if success then
+        local success2, data = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), content)
+        if success2 and type(data) == "table" and data.Locations then
+            TeleportData.Locations = {}
+            for _, loc in ipairs(data.Locations) do
+                table.insert(TeleportData.Locations, {
+                    Name = loc.Name,
+                    Position = Vector3.new(loc.X, loc.Y, loc.Z)
+                })
+            end
+        end
+    end
+end
+
+-- Load teleports on script start
+LoadTeleports()
+
+-- Teleport function
+local function TeleportTo(pos)
+    local character = LocalPlayer.Character
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if rootPart then
+        rootPart.CFrame = CFrame.new(pos)
+    end
+end
+
+-- Helper to refresh the teleport list display
+local function RefreshTeleportList()
+    -- Clear existing list groupbox
+    TeleportListGroup:Clear()
+    
+    -- Add each teleport as a button with delete
+    for i, loc in ipairs(TeleportData.Locations) do
+        TeleportListGroup:AddButton({
+            Text = loc.Name .. " (" .. math.floor(loc.Position.X) .. ", " .. math.floor(loc.Position.Y) .. ", " .. math.floor(loc.Position.Z) .. ")",
+            Func = function()
+                TeleportTo(loc.Position)
+                Library:Notify("Teleported to " .. loc.Name, 2)
+            end
+        })
+        
+        -- Add delete button for this teleport
+        TeleportListGroup:AddButton({
+            Text = "Delete " .. loc.Name,
+            Func = function()
+                table.remove(TeleportData.Locations, i)
+                SaveTeleports()
+                RefreshTeleportList()
+                Library:Notify("Deleted " .. loc.Name, 2)
+            end
+        })
+        
+        -- Optional: add a spacer
+        TeleportListGroup:AddLabel("")
+    end
+    
+    if #TeleportData.Locations == 0 then
+        TeleportListGroup:AddLabel("No saved teleports")
+    end
+end
+
+-- Left groupbox: Current position and save controls
+local TeleportCurrentGroup = TeleportTab:AddLeftGroupbox("Current Position")
+
+-- Label to show coordinates (will be updated)
+local CoordLabel = TeleportCurrentGroup:AddLabel("X: 0, Y: 0, Z: 0")
+
+-- Update coordinates every frame
+RunService.RenderStepped:Connect(function()
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+        if rootPart then
+            local pos = rootPart.Position
+            CoordLabel:SetText(string.format("X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z))
+        else
+            CoordLabel:SetText("No character")
+        end
+    else
+        CoordLabel:SetText("No character")
+    end
+end)
+
+-- Button to save current location
+TeleportCurrentGroup:AddButton({
+    Text = "Save Current Location",
+    Func = function()
+        local character = LocalPlayer.Character
+        if not character then
+            Library:Notify("No character", 2)
+            return
+        end
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+        if not rootPart then
+            Library:Notify("No root part", 2)
+            return
+        end
+        
+        -- Prompt for name using a simple input dialog
+        Library:PromptInput("Teleport Name", "Enter a name for this teleport", "", function(name)
+            if name and #name > 0 then
+                table.insert(TeleportData.Locations, {
+                    Name = name,
+                    Position = rootPart.Position
+                })
+                SaveTeleports()
+                RefreshTeleportList()
+                Library:Notify("Saved " .. name, 2)
+            end
+        end)
+    end
+})
+
+-- Right groupbox: List of saved teleports
+local TeleportListGroup = TeleportTab:AddRightGroupbox("Saved Teleports")
+
+-- Initial refresh
+RefreshTeleportList()
+
+-- Add a button to clear all teleports (optional)
+TeleportListGroup:AddButton({
+    Text = "Clear All Teleports",
+    Func = function()
+        TeleportData.Locations = {}
+        SaveTeleports()
+        RefreshTeleportList()
+        Library:Notify("All teleports cleared", 2)
+    end
+})
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
 ThemeManager:SetLibrary(Library)
