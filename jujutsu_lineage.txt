@@ -1962,7 +1962,7 @@ local TeleportTab = Window:AddTab("Teleports")
 -- Hardcoded teleport locations (edit this table to add your own)
 local TeleportLocations = {
     -- Example entries (uncomment and modify as needed)
-    -- { Name = "Spawn Area", Pos = Vector3.new(0, 50, 0) },
+     { Name = "Wood Boss", Pos = Vector3.new(-4708.4, 336.9, -2986.2)},
     -- { Name = "Train Station", Pos = Vector3.new(636, 17, 1730) },
     -- { Name = "Rui Boss", Pos = Vector3.new(499, 12, -1076) },
     -- { Name = "Final Selection", Pos = Vector3.new(-729, 284, -432) },
