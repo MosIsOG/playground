@@ -1630,31 +1630,274 @@ HealthbarGroup:AddSlider("HealthbarOffset", {
 })
 
 -- Player Tab
-local PlayerGroup = Tabs.Player:AddLeftGroupbox("Player Modifiers")
+-- ==================== WALKSPEED MULTIPLIER ====================
+local WalkspeedMultiplier = {
+    Enabled = false,
+    Multiplier = 1.0,
+    BaseSpeed = 16,  -- fallback if no attribute
+    Humanoid = nil,
+    Connections = {}
+}
 
-PlayerGroup:AddToggle("SpeedHack", {
-    Text = "Speed Hack",
+-- Get base walkspeed from attribute (adjust attribute name as needed)
+local function GetBaseWalkspeedFromAttribute(humanoid)
+    if not humanoid then return 16 end
+    local attr = humanoid:GetAttribute("WalkSpeed")  -- change if different attribute
+    if attr and type(attr) == "number" then
+        return attr
+    end
+    return humanoid.WalkSpeed  -- fallback to current walkspeed
+end
+
+-- Apply multiplier to current character
+local function ApplyWalkspeed()
+    if not WalkspeedMultiplier.Enabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+
+    local base = GetBaseWalkspeedFromAttribute(hum)
+    WalkspeedMultiplier.BaseSpeed = base
+    local target = base * WalkspeedMultiplier.Multiplier
+    if math.abs(hum.WalkSpeed - target) > 0.1 then
+        hum.WalkSpeed = target
+    end
+end
+
+-- Monitor for attribute changes and re-apply
+local function SetupMonitoring(humanoid)
+    if WalkspeedMultiplier.Connections[humanoid] then
+        for _, conn in ipairs(WalkspeedMultiplier.Connections[humanoid]) do
+            conn:Disconnect()
+        end
+    end
+    local conns = {}
+    -- Attribute changed
+    local attrConn = humanoid:GetAttributeChangedSignal("WalkSpeed"):Connect(function()
+        task.wait(0.1)
+        ApplyWalkspeed()
+    end)
+    table.insert(conns, attrConn)
+    -- RenderStepped to catch external changes
+    local renderConn = RunService.RenderStepped:Connect(ApplyWalkspeed)
+    table.insert(conns, renderConn)
+    WalkspeedMultiplier.Connections[humanoid] = conns
+end
+
+-- Handle character added
+local function OnCharacterAdded(char)
+    local hum = char:WaitForChild("Humanoid")
+    task.wait(0.1)
+    WalkspeedMultiplier.Humanoid = hum
+    SetupMonitoring(hum)
+    ApplyWalkspeed()
+end
+
+-- Connect events
+LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+if LocalPlayer.Character then
+    OnCharacterAdded(LocalPlayer.Character)
+end
+
+-- Cleanup on character remove
+LocalPlayer.CharacterRemoving:Connect(function()
+    if WalkspeedMultiplier.Humanoid and WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid] then
+        for _, conn in ipairs(WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid]) do
+            conn:Disconnect()
+        end
+        WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid] = nil
+    end
+end)
+
+-- UI in Player Tab
+local WalkspeedGroup = Tabs.Player:AddLeftGroupbox("Walkspeed Multiplier")
+
+WalkspeedGroup:AddToggle("WalkspeedToggle", {
+    Text = "Enable Multiplier",
     Default = false,
     Callback = function(value)
-        _G.SpeedHack = value
-    end
-})
-
-PlayerGroup:AddSlider("SpeedValue", {
-    Text = "Walk Speed",
-    Default = 16,
-    Min = 16,
-    Max = 250,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(value)
-        if _G.SpeedHack and LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = value
+        WalkspeedMultiplier.Enabled = value
+        if value then
+            ApplyWalkspeed()
+        else
+            -- Restore base speed? We'll just let game take over
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChild("Humanoid")
+                if hum then
+                    hum.WalkSpeed = GetBaseWalkspeedFromAttribute(hum)
+                end
             end
         end
     end
+})
+
+WalkspeedGroup:AddSlider("WalkspeedMultiplier", {
+    Text = "Multiplier",
+    Default = 1.0,
+    Min = 0.1,
+    Max = 25,
+    Rounding = 1,  -- 1 decimal place
+    Suffix = "x",
+    Callback = function(value)
+        WalkspeedMultiplier.Multiplier = value
+        if WalkspeedMultiplier.Enabled then
+            ApplyWalkspeed()
+        end
+    end
+})
+
+WalkspeedGroup:AddLabel("Reads base speed from humanoid attribute 'WalkSpeed'.")
+WalkspeedGroup:AddLabel("Adjust multiplier from 0.1x to 25x.")
+
+-- ==================== NO FALL DAMAGE ====================
+local NoFall = {
+    Enabled = false,
+    Connection = nil,
+    Character = nil
+}
+
+local function SetupNoFall(character)
+    if not character then return end
+    local root = character:WaitForChild("HumanoidRootPart", 5)
+    if not root then return end
+
+    if NoFall.Connection then
+        NoFall.Connection:Disconnect()
+        NoFall.Connection = nil
+    end
+
+    NoFall.Connection = RunService.Heartbeat:Connect(function()
+        if not NoFall.Enabled or not root or not root.Parent then
+            if NoFall.Connection then
+                NoFall.Connection:Disconnect()
+                NoFall.Connection = nil
+            end
+            return
+        end
+        local oldVel = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.zero
+        RunService.RenderStepped:Wait()
+        root.AssemblyLinearVelocity = oldVel
+    end)
+end
+
+-- Handle character respawns
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if NoFall.Enabled then
+        task.wait(0.5) -- wait for character to load
+        SetupNoFall(char)
+    end
+end)
+
+if LocalPlayer.Character and NoFall.Enabled then
+    SetupNoFall(LocalPlayer.Character)
+end
+
+-- UI in Player Tab
+local NoFallGroup = Tabs.Player:AddLeftGroupbox("No Fall Damage")
+NoFallGroup:AddToggle("NoFallToggle", {
+    Text = "Enable No Fall Damage",
+    Default = false,
+    Callback = function(value)
+        NoFall.Enabled = value
+        if value then
+            if LocalPlayer.Character then
+                SetupNoFall(LocalPlayer.Character)
+            end
+        else
+            if NoFall.Connection then
+                NoFall.Connection:Disconnect()
+                NoFall.Connection = nil
+            end
+        end
+    end
+})
+NoFallGroup:AddLabel("Prevents fall damage by resetting velocity each frame.")
+
+-- ==================== RESET BUTTON ====================
+local PlayerUtilities = Tabs.Player:AddLeftGroupbox("Utilities")
+
+PlayerUtilities:AddButton({
+    Text = "Reset Character",
+    Func = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.Health = 0
+            task.wait(1)
+            char:BreakJoints()
+        end
+    end
+})
+
+-- ==================== HOLD M1 AUTOCLICKER ====================
+local AutoClicker = {
+    Enabled = false,
+    Holding = false,
+    Delay = 0.1,
+    Thread = nil
+}
+
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+local function ClickLoop()
+    while AutoClicker.Holding and AutoClicker.Enabled do
+        if DataEvent then
+            pcall(function()
+                DataEvent:FireServer("startSkill", "Chakra Sense", true, "MouseButton1")
+                -- Change the arguments above to match the skill you want
+            end)
+        end
+        task.wait(AutoClicker.Delay)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not AutoClicker.Enabled or gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        AutoClicker.Holding = true
+        AutoClicker.Thread = task.spawn(ClickLoop)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        AutoClicker.Holding = false
+        if AutoClicker.Thread then
+            task.cancel(AutoClicker.Thread)
+            AutoClicker.Thread = nil
+        end
+    end
+end)
+
+-- UI for autoclicker
+local ClickerGroup = Tabs.Player:AddLeftGroupbox("Auto Clicker")
+
+ClickerGroup:AddToggle("AutoClickerToggle", {
+    Text = "Enable Hold M1 Autoclicker",
+    Default = false,
+    Callback = function(v)
+        AutoClicker.Enabled = v
+        if not v then
+            AutoClicker.Holding = false
+            if AutoClicker.Thread then
+                task.cancel(AutoClicker.Thread)
+                AutoClicker.Thread = nil
+            end
+        end
+    end
+})
+
+ClickerGroup:AddSlider("AutoClickerDelay", {
+    Text = "Click Delay (s)",
+    Default = 0.1,
+    Min = 0.02,
+    Max = 1,
+    Rounding = 2,
+    Suffix = "s",
+    Callback = function(v) AutoClicker.Delay = v end
 })
 
 -- Movement Tab
@@ -1777,6 +2020,286 @@ MiscGroup:AddButton({
         game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end
 })
+
+-- ==================== BOSS HEALTH BARS (FIXED) ====================
+local BossBarTab = Window:AddTab("Boss Bars")
+
+-- Helper to clear all elements from a groupbox (since Linoria lacks :Clear())
+local function ClearGroupBox(group)
+    if group and group.Container then
+        for _, child in ipairs(group.Container:GetChildren()) do
+            child:Destroy()
+        end
+    end
+end
+
+-- Permanent configuration (edit this table directly, or use UI to add/remove)
+local BossConfig = {
+    -- Example: { path = 'workspace["Wooden Golem"].Humanoid' },
+}
+
+-- Test entries (temporary)
+local TestEntries = {}  -- { path = string }
+
+-- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid }
+local ActiveBars = {}
+
+-- Create drawing objects for a bar
+local function CreateBarDrawing()
+    local bg = Drawing.new("Square")
+    bg.Filled = true
+    bg.Color = Color3.fromRGB(30, 30, 30)
+    bg.Transparency = 0.7
+    bg.Visible = false
+
+    local fill = Drawing.new("Square")
+    fill.Filled = true
+    fill.Color = Color3.fromRGB(128, 0, 128)  -- purple
+    fill.Transparency = 0.9
+    fill.Visible = false
+
+    local txt = Drawing.new("Text")
+    txt.Center = true
+    txt.Outline = true
+    txt.Color = Color3.new(1, 1, 1)
+    txt.Size = 16
+    txt.Visible = false
+
+    return { bg = bg, fill = fill, txt = txt }
+end
+
+-- Update a bar for a given humanoid
+local function UpdateBar(bar, humanoid)
+    if not humanoid or not humanoid.Parent then
+        bar.bg.Visible = false
+        bar.fill.Visible = false
+        bar.txt.Visible = false
+        return false
+    end
+
+    local rootPart = humanoid.Parent:FindFirstChild("HumanoidRootPart") or humanoid.Parent:FindFirstChild("Head")
+    if not rootPart then return false end
+
+    local pos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+    if not onScreen then
+        bar.bg.Visible = false
+        bar.fill.Visible = false
+        bar.txt.Visible = false
+        return false
+    end
+
+    local health = humanoid.Health
+    local maxHealth = humanoid.MaxHealth
+    local percent = math.clamp(health / maxHealth, 0, 1)
+
+    local barWidth = 200
+    local barHeight = 20
+    local x = pos.X - barWidth/2
+    local y = pos.Y - 70  -- above the boss
+
+    -- Background
+    bar.bg.Position = Vector2.new(x, y)
+    bar.bg.Size = Vector2.new(barWidth, barHeight)
+    bar.bg.Visible = true
+
+    -- Fill
+    bar.fill.Position = Vector2.new(x, y)
+    bar.fill.Size = Vector2.new(barWidth * percent, barHeight)
+    bar.fill.Visible = true
+
+    -- Text
+    bar.txt.Position = Vector2.new(pos.X, y + barHeight/2 - 8)
+    bar.txt.Text = string.format("%d / %d", math.floor(health), math.floor(maxHealth))
+    bar.txt.Visible = true
+
+    return true
+end
+
+-- Remove a bar (cleanup)
+local function RemoveBar(key)
+    local bar = ActiveBars[key]
+    if bar then
+        pcall(function()
+            bar.bg:Remove()
+            bar.fill:Remove()
+            bar.txt:Remove()
+        end)
+        ActiveBars[key] = nil
+    end
+end
+
+-- Main update loop
+RunService.RenderStepped:Connect(function()
+    -- Permanent entries
+    for _, entry in ipairs(BossConfig) do
+        local key = entry.path
+        if not ActiveBars[key] then
+            local success, humanoid = pcall(function()
+                return loadstring("return " .. key)()
+            end)
+            if success and humanoid and humanoid:IsA("Humanoid") then
+                ActiveBars[key] = CreateBarDrawing()
+                ActiveBars[key].humanoid = humanoid
+            end
+        end
+        local bar = ActiveBars[key]
+        if bar then
+            UpdateBar(bar, bar.humanoid)
+        end
+    end
+
+    -- Test entries
+    for _, entry in ipairs(TestEntries) do
+        local key = "test_" .. entry.path
+        if not ActiveBars[key] then
+            local success, humanoid = pcall(function()
+                return loadstring("return " .. entry.path)()
+            end)
+            if success and humanoid and humanoid:IsA("Humanoid") then
+                ActiveBars[key] = CreateBarDrawing()
+                ActiveBars[key].humanoid = humanoid
+            end
+        end
+        local bar = ActiveBars[key]
+        if bar then
+            UpdateBar(bar, bar.humanoid)
+        end
+    end
+end)
+
+-- ===== UI =====
+local BOSS_CONFIG_FILE = "UniversalHub_BossBars.json"
+
+-- Save permanent config
+local function SaveBossConfig()
+    local data = {}
+    for _, entry in ipairs(BossConfig) do
+        table.insert(data, { path = entry.path })
+    end
+    writefile(BOSS_CONFIG_FILE, game:GetService("HttpService"):JSONEncode(data))
+end
+
+-- Load permanent config
+local function LoadBossConfig()
+    local success, content = pcall(readfile, BOSS_CONFIG_FILE)
+    if success then
+        local success2, data = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), content)
+        if success2 and type(data) == "table" then
+            BossConfig = {}
+            for _, item in ipairs(data) do
+                table.insert(BossConfig, { path = item.path })
+            end
+        end
+    end
+end
+LoadBossConfig()
+
+-- Left group: Permanent bosses
+local PermGroup = BossBarTab:AddLeftGroupbox("Permanent Bosses")
+
+local function RefreshPermList()
+    ClearGroupBox(PermGroup)  -- remove old elements
+    for i, entry in ipairs(BossConfig) do
+        PermGroup:AddLabel(string.format("%d. %s", i, entry.path))
+        PermGroup:AddButton({
+            Text = "Remove",
+            Func = function()
+                RemoveBar(entry.path)
+                table.remove(BossConfig, i)
+                SaveBossConfig()
+                RefreshPermList()
+            end
+        })
+    end
+    if #BossConfig == 0 then
+        PermGroup:AddLabel("No permanent bosses.")
+    end
+end
+RefreshPermList()
+
+-- Right group: Test a boss
+local TestGroup = BossBarTab:AddRightGroupbox("Test a Boss")
+
+TestGroup:AddInput("TestPath", {
+    Text = "Path to Humanoid",
+    Default = "",
+    Placeholder = 'e.g., workspace["Wooden Golem"].Humanoid',
+    Numeric = false,
+    Finished = false,
+    Callback = function(val) _G.TestPath = val end
+})
+
+TestGroup:AddButton({
+    Text = "Add Test",
+    Func = function()
+        local path = _G.TestPath or ""
+        if path == "" then
+            Library:Notify("Enter a path", 3)
+            return
+        end
+        local success, humanoid = pcall(function()
+            return loadstring("return " .. path)()
+        end)
+        if not success or not humanoid or not humanoid:IsA("Humanoid") then
+            Library:Notify("Invalid path or not a Humanoid", 3)
+            return
+        end
+        table.insert(TestEntries, { path = path })
+        RefreshTestList()
+        Library:Notify("Test boss added", 2)
+    end
+})
+
+TestGroup:AddButton({
+    Text = "Clear Tests",
+    Func = function()
+        for _, entry in ipairs(TestEntries) do
+            RemoveBar("test_" .. entry.path)
+        end
+        TestEntries = {}
+        RefreshTestList()
+        Library:Notify("Test entries cleared", 2)
+    end
+})
+
+TestGroup:AddButton({
+    Text = "Save All Tests as Permanent",
+    Func = function()
+        for _, entry in ipairs(TestEntries) do
+            table.insert(BossConfig, { path = entry.path })
+        end
+        SaveBossConfig()
+        RefreshPermList()
+        -- Clear test bars
+        for _, entry in ipairs(TestEntries) do
+            RemoveBar("test_" .. entry.path)
+        end
+        TestEntries = {}
+        RefreshTestList()
+        Library:Notify("Tests saved to permanent config", 2)
+    end
+})
+
+-- Test list display
+local TestListGroup = BossBarTab:AddRightGroupbox("Current Tests", 2)
+local function RefreshTestList()
+    ClearGroupBox(TestListGroup)
+    for i, entry in ipairs(TestEntries) do
+        TestListGroup:AddLabel(string.format("%d. %s", i, entry.path))
+        TestListGroup:AddButton({
+            Text = "Remove",
+            Func = function()
+                RemoveBar("test_" .. entry.path)
+                table.remove(TestEntries, i)
+                RefreshTestList()
+            end
+        })
+    end
+    if #TestEntries == 0 then
+        TestListGroup:AddLabel("No active tests.")
+    end
+end
+RefreshTestList()
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
     ActiveUsers = {},
@@ -1956,6 +2479,332 @@ end)
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Skill Status")
 ChakraTracker.Label = MiscGroup:AddLabel("No one using Chakra Sense")
 UpdateLabel()
+
+-- ==================== AUTO PERFECT BLOCK (FIXED) ====================
+-- Permanent config (edit this table directly)
+local BlockRules = {
+    -- Example: { animID = "9864206537", delay = 0.3, distance = 50 },
+}
+
+-- Test rule (temporary)
+local TestRule = nil
+
+-- Runtime data
+local AutoBlock = {
+    Enabled = false,
+    Connections = {},
+    Triggered = {}
+}
+
+-- Remote events
+local DataFunction = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                    game:GetService("ReplicatedStorage").Events:FindFirstChild("DataFunction")
+
+local function GetDistanceToPlayer(player)
+    local localChar = LocalPlayer.Character
+    local targetChar = player.Character
+    if not localChar or not targetChar then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not localRoot or not targetRoot then return nil end
+    return (localRoot.Position - targetRoot.Position).Magnitude
+end
+
+local function Block()
+    if not DataFunction then return end
+    pcall(function() DataFunction:InvokeServer("Block") end)
+end
+
+local function Unblock()
+    if not DataFunction then return end
+    pcall(function() DataFunction:InvokeServer("EndBlock") end)
+end
+
+local function ScheduleBlock(playerName, delay)
+    if AutoBlock.Triggered[playerName] then return end
+    AutoBlock.Triggered[playerName] = true
+    task.delay(delay, function()
+        if not AutoBlock.Enabled then
+            AutoBlock.Triggered[playerName] = nil
+            return
+        end
+        Block()
+        task.delay(0.5, function()
+            if AutoBlock.Enabled then Unblock() end
+            AutoBlock.Triggered[playerName] = nil
+        end)
+    end)
+end
+
+local function MonitorPlayerBlock(player, character)
+    if not character or player == LocalPlayer then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    local function onAnimPlayed(track)
+        if not AutoBlock.Enabled then return end
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+
+        -- Check permanent rules
+        for _, rule in ipairs(BlockRules) do
+            if assetId == rule.animID then
+                if rule.distance then
+                    local dist = GetDistanceToPlayer(player)
+                    if not dist or dist > rule.distance then return end
+                end
+                ScheduleBlock(player.Name, rule.delay or 0.3)
+                return
+            end
+        end
+
+        -- Check test rule
+        if TestRule and assetId == TestRule.animID then
+            if TestRule.distance then
+                local dist = GetDistanceToPlayer(player)
+                if not dist or dist > TestRule.distance then return end
+            end
+            ScheduleBlock(player.Name, TestRule.delay or 0.3)
+        end
+    end
+
+    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
+    if not AutoBlock.Connections[player] then AutoBlock.Connections[player] = {} end
+    table.insert(AutoBlock.Connections[player], conn)
+
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        onAnimPlayed(track)
+    end
+end
+
+-- Initialize players (same as before)
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(char)
+            task.wait(0.5)
+            MonitorPlayerBlock(player, char)
+        end)
+        if player.Character then
+            MonitorPlayerBlock(player, player.Character)
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player == LocalPlayer then return end
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        MonitorPlayerBlock(player, char)
+    end)
+    if player.Character then
+        MonitorPlayerBlock(player, player.Character)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if AutoBlock.Connections[player] then
+        for _, conn in ipairs(AutoBlock.Connections[player]) do
+            conn:Disconnect()
+        end
+        AutoBlock.Connections[player] = nil
+    end
+    AutoBlock.Triggered[player.Name] = nil
+end)
+
+-- ===== UI =====
+local BlockGroup = Tabs.Misc:AddLeftGroupbox("Auto Perfect Block")
+
+BlockGroup:AddToggle("AutoBlockToggle", {
+    Text = "Enable Auto Block",
+    Default = false,
+    Callback = function(v) AutoBlock.Enabled = v end
+})
+
+-- Test section
+local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
+
+-- Inputs
+TestGroup:AddInput("TestAnimID", {
+    Text = "Animation ID",
+    Default = "",
+    Placeholder = "e.g., 9864206537",
+    Numeric = true,
+    Finished = false,
+    Callback = function(v) _G.TestAnimID = v end
+})
+
+TestGroup:AddSlider("TestDelay", {
+    Text = "Block Delay (s)",
+    Default = 0.3,
+    Min = 0, Max = 2, Rounding = 2, Suffix = "s",
+    Callback = function(v) _G.TestDelay = v end
+})
+
+TestGroup:AddSlider("TestDistance", {
+    Text = "Max Distance (0 = no limit)",
+    Default = 0, Min = 0, Max = 500, Rounding = 0, Suffix = "studs",
+    Callback = function(v) _G.TestDistance = v end
+})
+
+-- Test rule status display
+local TestStatus = TestGroup:AddLabel("No test rule active.")
+
+local function UpdateTestStatus()
+    if TestRule then
+        TestStatus:SetText(string.format("ID: %s | Delay: %.1fs | Distance: %s",
+            TestRule.animID,
+            TestRule.delay,
+            TestRule.distance and (TestRule.distance.." studs") or "No limit"))
+    else
+        TestStatus:SetText("No test rule active.")
+    end
+end
+
+TestGroup:AddButton({
+    Text = "Apply Test Rule",
+    Func = function()
+        local id = _G.TestAnimID or ""
+        if id == "" then Library:Notify("Enter an ID", 3); return end
+        TestRule = {
+            animID = id,
+            delay = _G.TestDelay or 0.3,
+            distance = (_G.TestDistance and _G.TestDistance > 0) and _G.TestDistance or nil
+        }
+        UpdateTestStatus()
+        Library:Notify("Test rule applied", 2)
+    end
+})
+
+TestGroup:AddButton({
+    Text = "Clear Test Rule",
+    Func = function()
+        TestRule = nil
+        UpdateTestStatus()
+        Library:Notify("Test rule cleared", 2)
+    end
+})
+
+TestGroup:AddButton({
+    Text = "Copy Rule as Lua",
+    Func = function()
+        if not TestRule then Library:Notify("No rule to copy", 3); return end
+        local dist = TestRule.distance and (", distance = " .. TestRule.distance) or ""
+        local code = string.format('{ animID = "%s", delay = %.1f%s },', TestRule.animID, TestRule.delay, dist)
+        setclipboard(code)
+        Library:Notify("Lua code copied", 2)
+    end
+})
+
+-- Permanent rules display
+local PermGroup = Tabs.Misc:AddLeftGroupbox("Permanent Rules")
+local permText = ""
+for i, rule in ipairs(BlockRules) do
+    permText = permText .. string.format("%d. ID: %s, Delay: %.1fs, Dist: %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any")
+end
+if permText == "" then permText = "No permanent rules." end
+PermGroup:AddLabel(permText)
+PermGroup:AddLabel("Edit BlockRules table in script to add/modify.")
+-- ==================== ANIMATION FETCHER ====================
+local AnimFetcher = {
+    Enabled = false,
+    MaxDistance = 50,
+    Connections = {}
+}
+
+local function GetDistanceToPlayer(player)
+    local localChar = LocalPlayer.Character
+    local targetChar = player.Character
+    if not localChar or not targetChar then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not localRoot or not targetRoot then return nil end
+    return (localRoot.Position - targetRoot.Position).Magnitude
+end
+
+local function MonitorPlayerAnim(player, character)
+    if not character or player == LocalPlayer then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    local function onAnimPlayed(track)
+        if not AnimFetcher.Enabled then return end
+        local distance = GetDistanceToPlayer(player)
+        if not distance or distance > AnimFetcher.MaxDistance then return end
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        Library:Notify(string.format("[%d studs] %s: %s", math.floor(distance), player.Name, assetId), 5)
+    end
+
+    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
+    if not AnimFetcher.Connections[player] then AnimFetcher.Connections[player] = {} end
+    table.insert(AnimFetcher.Connections[player], conn)
+
+    -- Also log currently playing animations
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        onAnimPlayed(track)
+    end
+end
+
+-- Initialize existing players (same as before)
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(char)
+            task.wait(0.5)
+            MonitorPlayerAnim(player, char)
+        end)
+        if player.Character then
+            MonitorPlayerAnim(player, player.Character)
+        end
+    end
+end
+
+-- New players
+Players.PlayerAdded:Connect(function(player)
+    if player == LocalPlayer then return end
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        MonitorPlayerAnim(player, char)
+    end)
+    if player.Character then
+        MonitorPlayerAnim(player, player.Character)
+    end
+end)
+
+-- Cleanup
+Players.PlayerRemoving:Connect(function(player)
+    if AnimFetcher.Connections[player] then
+        for _, conn in ipairs(AnimFetcher.Connections[player]) do
+            conn:Disconnect()
+        end
+        AnimFetcher.Connections[player] = nil
+    end
+end)
+
+-- UI Controls
+local FetcherGroup = Tabs.Misc:AddLeftGroupbox("Animation Fetcher")
+FetcherGroup:AddToggle("AnimFetcherToggle", {
+    Text = "Log Animations",
+    Default = false,
+    Callback = function(value)
+        AnimFetcher.Enabled = value
+    end
+})
+FetcherGroup:AddSlider("AnimFetcherDistance", {
+    Text = "Max Distance",
+    Default = 50,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(value)
+        AnimFetcher.MaxDistance = value
+    end
+})
+FetcherGroup:AddLabel("Only logs animations within this range.")
 -- ==================== TELEPORT TAB ====================
 local TeleportTab = Window:AddTab("Teleports")
 
