@@ -2021,27 +2021,29 @@ MiscGroup:AddButton({
     end
 })
 
--- ==================== BOSS HEALTH BARS (HARDCODED CONFIG) ====================
+-- ==================== BOSS HEALTH BARS (WITH DISTANCE) ====================
 local BossBarTab = Window:AddTab("Boss Bars")
 
+-- Global default max distance (studs)
+local DEFAULT_MAX_DISTANCE = 500
+
 -- Edit this table to add your permanent bosses.
--- Format: { path = "full.lua.path.to.Humanoid" }
+-- Format: { path = "full.lua.path.to.Humanoid", maxDistance = 500 }  (maxDistance optional, defaults to global)
 local BossConfig = {
     -- Example:
      { path = 'workspace["Wooden Golem"].Humanoid' },
      { path = 'workspace:GetChildren()[2816].Humanoid'},
      { path = 'workspace["The Barbarian"].Humanoid'},
      { path = 'workspace["Lava Snake"].Humanoid'},
-
 }
 
--- Test entries (temporary, not saved)
-local TestEntries = {}  -- { path = string }
+-- Test entries (temporary, not saved) – each entry can also have maxDistance
+local TestEntries = {}  -- { path = string, maxDistance = number? }
 
--- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid }
+-- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid, maxDist }
 local ActiveBars = {}
 
--- Helper to clear all elements from a groupbox (Linoria doesn't have :Clear())
+-- Helper to clear groupbox
 local function ClearGroupBox(group)
     if group and group.Container then
         for _, child in ipairs(group.Container:GetChildren()) do
@@ -2074,9 +2076,31 @@ local function CreateBarDrawing()
     return { bg = bg, fill = fill, txt = txt }
 end
 
--- Update a bar for a given humanoid
-local function UpdateBar(bar, humanoid)
+-- Calculate distance from local player to a humanoid's root
+local function GetDistanceToHumanoid(humanoid)
+    local char = humanoid.Parent
+    if not char then return nil end
+    local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    if not rootPart then return nil end
+    local localChar = LocalPlayer.Character
+    if not localChar then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    if not localRoot then return nil end
+    return (localRoot.Position - rootPart.Position).Magnitude
+end
+
+-- Update a bar for a given humanoid with distance check
+local function UpdateBar(bar, humanoid, maxDist)
     if not humanoid or not humanoid.Parent then
+        bar.bg.Visible = false
+        bar.fill.Visible = false
+        bar.txt.Visible = false
+        return false
+    end
+
+    -- Distance check
+    local dist = GetDistanceToHumanoid(humanoid)
+    if not dist or dist > maxDist then
         bar.bg.Visible = false
         bar.fill.Visible = false
         bar.txt.Visible = false
@@ -2144,13 +2168,15 @@ RunService.RenderStepped:Connect(function()
                 return loadstring("return " .. key)()
             end)
             if success and humanoid and humanoid:IsA("Humanoid") then
+                local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
                 ActiveBars[key] = CreateBarDrawing()
                 ActiveBars[key].humanoid = humanoid
+                ActiveBars[key].maxDist = maxDist
             end
         end
         local bar = ActiveBars[key]
         if bar then
-            UpdateBar(bar, bar.humanoid)
+            UpdateBar(bar, bar.humanoid, bar.maxDist)
         end
     end
 
@@ -2162,13 +2188,15 @@ RunService.RenderStepped:Connect(function()
                 return loadstring("return " .. entry.path)()
             end)
             if success and humanoid and humanoid:IsA("Humanoid") then
+                local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
                 ActiveBars[key] = CreateBarDrawing()
                 ActiveBars[key].humanoid = humanoid
+                ActiveBars[key].maxDist = maxDist
             end
         end
         local bar = ActiveBars[key]
         if bar then
-            UpdateBar(bar, bar.humanoid)
+            UpdateBar(bar, bar.humanoid, bar.maxDist)
         end
     end
 end)
@@ -2179,7 +2207,8 @@ local PermGroup = BossBarTab:AddLeftGroupbox("Permanent Bosses")
 local function RefreshPermList()
     ClearGroupBox(PermGroup)
     for i, entry in ipairs(BossConfig) do
-        PermGroup:AddLabel(string.format("%d. %s", i, entry.path))
+        local distText = entry.maxDistance and (" (max " .. entry.maxDistance .. " studs)") or (" (default " .. DEFAULT_MAX_DISTANCE .. " studs)")
+        PermGroup:AddLabel(string.format("%d. %s%s", i, entry.path, distText))
     end
     if #BossConfig == 0 then
         PermGroup:AddLabel("No permanent bosses.")
@@ -2199,6 +2228,16 @@ TestGroup:AddInput("TestPath", {
     Callback = function(val) _G.TestPath = val end
 })
 
+TestGroup:AddSlider("TestMaxDistance", {
+    Text = "Max Distance (studs)",
+    Default = DEFAULT_MAX_DISTANCE,
+    Min = 50,
+    Max = 2000,
+    Rounding = 0,
+    Suffix = "studs",
+    Callback = function(val) _G.TestMaxDist = val end
+})
+
 TestGroup:AddButton({
     Text = "Add Test",
     Func = function()
@@ -2214,9 +2253,10 @@ TestGroup:AddButton({
             Library:Notify("Invalid path or not a Humanoid", 3)
             return
         end
-        table.insert(TestEntries, { path = path })
+        local maxDist = _G.TestMaxDist or DEFAULT_MAX_DISTANCE
+        table.insert(TestEntries, { path = path, maxDistance = maxDist })
         RefreshTestList()
-        Library:Notify("Test boss added", 2)
+        Library:Notify("Test boss added (max " .. maxDist .. " studs)", 2)
     end
 })
 
@@ -2236,7 +2276,7 @@ TestGroup:AddButton({
     Text = "Promote All Tests to Permanent",
     Func = function()
         for _, entry in ipairs(TestEntries) do
-            table.insert(BossConfig, { path = entry.path })
+            table.insert(BossConfig, { path = entry.path, maxDistance = entry.maxDistance })
         end
         RefreshPermList()
         -- Clear test bars and entries
@@ -2254,7 +2294,8 @@ local TestListGroup = BossBarTab:AddRightGroupbox("Current Tests", 2)
 local function RefreshTestList()
     ClearGroupBox(TestListGroup)
     for i, entry in ipairs(TestEntries) do
-        TestListGroup:AddLabel(string.format("%d. %s", i, entry.path))
+        local distText = " (max " .. (entry.maxDistance or DEFAULT_MAX_DISTANCE) .. " studs)"
+        TestListGroup:AddLabel(string.format("%d. %s%s", i, entry.path, distText))
         TestListGroup:AddButton({
             Text = "Remove",
             Func = function()
