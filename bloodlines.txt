@@ -1630,58 +1630,56 @@ HealthbarGroup:AddSlider("HealthbarOffset", {
 })
 
 -- Player Tab
--- ==================== WALKSPEED MULTIPLIER ====================
+-- ==================== WALKSPEED MULTIPLIER (FIXED) ====================
 local WalkspeedMultiplier = {
     Enabled = false,
     Multiplier = 1.0,
-    BaseSpeed = 16,  -- fallback if no attribute
+    BaseSpeed = 16,
     Humanoid = nil,
     Connections = {}
 }
 
--- Get base walkspeed from attribute (adjust attribute name as needed)
-local function GetBaseWalkspeedFromAttribute(humanoid)
-    if not humanoid then return 16 end
-    local attr = humanoid:GetAttribute("WalkSpeed")  -- change if different attribute
-    if attr and type(attr) == "number" then
-        return attr
-    end
-    return humanoid.WalkSpeed  -- fallback to current walkspeed
+-- Get current walkspeed (if humanoid exists)
+local function GetCurrentSpeed(hum)
+    return hum and hum.WalkSpeed or 16
 end
 
 -- Apply multiplier to current character
 local function ApplyWalkspeed()
     if not WalkspeedMultiplier.Enabled then return end
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChild("Humanoid")
+    local hum = WalkspeedMultiplier.Humanoid
     if not hum then return end
 
-    local base = GetBaseWalkspeedFromAttribute(hum)
-    WalkspeedMultiplier.BaseSpeed = base
-    local target = base * WalkspeedMultiplier.Multiplier
+    local current = GetCurrentSpeed(hum)
+    local target = WalkspeedMultiplier.BaseSpeed * WalkspeedMultiplier.Multiplier
+
+    -- If current speed is significantly different from target, the game changed base
+    if math.abs(current - target) > 0.5 then
+        -- Recalculate base: assume current is the new base (before multiplier)
+        WalkspeedMultiplier.BaseSpeed = current / WalkspeedMultiplier.Multiplier
+        target = current  -- will be overwritten next line
+    end
+
+    -- Set to target
     if math.abs(hum.WalkSpeed - target) > 0.1 then
         hum.WalkSpeed = target
     end
 end
 
--- Monitor for attribute changes and re-apply
+-- Setup monitoring for a humanoid
 local function SetupMonitoring(humanoid)
+    -- Clean old connections for this humanoid
     if WalkspeedMultiplier.Connections[humanoid] then
         for _, conn in ipairs(WalkspeedMultiplier.Connections[humanoid]) do
             conn:Disconnect()
         end
     end
+
     local conns = {}
-    -- Attribute changed
-    local attrConn = humanoid:GetAttributeChangedSignal("WalkSpeed"):Connect(function()
-        task.wait(0.1)
-        ApplyWalkspeed()
-    end)
-    table.insert(conns, attrConn)
-    -- RenderStepped to catch external changes
+    -- RenderStepped to apply multiplier continuously
     local renderConn = RunService.RenderStepped:Connect(ApplyWalkspeed)
     table.insert(conns, renderConn)
+
     WalkspeedMultiplier.Connections[humanoid] = conns
 end
 
@@ -1690,6 +1688,7 @@ local function OnCharacterAdded(char)
     local hum = char:WaitForChild("Humanoid")
     task.wait(0.1)
     WalkspeedMultiplier.Humanoid = hum
+    WalkspeedMultiplier.BaseSpeed = GetCurrentSpeed(hum) / (WalkspeedMultiplier.Enabled and WalkspeedMultiplier.Multiplier or 1)
     SetupMonitoring(hum)
     ApplyWalkspeed()
 end
@@ -1708,6 +1707,7 @@ LocalPlayer.CharacterRemoving:Connect(function()
         end
         WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid] = nil
     end
+    WalkspeedMultiplier.Humanoid = nil
 end)
 
 -- UI in Player Tab
@@ -1719,15 +1719,14 @@ WalkspeedGroup:AddToggle("WalkspeedToggle", {
     Callback = function(value)
         WalkspeedMultiplier.Enabled = value
         if value then
-            ApplyWalkspeed()
+            if WalkspeedMultiplier.Humanoid then
+                WalkspeedMultiplier.BaseSpeed = GetCurrentSpeed(WalkspeedMultiplier.Humanoid) / WalkspeedMultiplier.Multiplier
+                ApplyWalkspeed()
+            end
         else
-            -- Restore base speed? We'll just let game take over
-            local char = LocalPlayer.Character
-            if char then
-                local hum = char:FindFirstChild("Humanoid")
-                if hum then
-                    hum.WalkSpeed = GetBaseWalkspeedFromAttribute(hum)
-                end
+            -- Restore to base speed (multiplier removed)
+            if WalkspeedMultiplier.Humanoid then
+                WalkspeedMultiplier.Humanoid.WalkSpeed = WalkspeedMultiplier.BaseSpeed
             end
         end
     end
@@ -1738,18 +1737,22 @@ WalkspeedGroup:AddSlider("WalkspeedMultiplier", {
     Default = 1.0,
     Min = 0.1,
     Max = 25,
-    Rounding = 1,  -- 1 decimal place
+    Rounding = 1,  -- 0.1 increments
     Suffix = "x",
     Callback = function(value)
+        local oldMult = WalkspeedMultiplier.Multiplier
         WalkspeedMultiplier.Multiplier = value
-        if WalkspeedMultiplier.Enabled then
+        if WalkspeedMultiplier.Enabled and WalkspeedMultiplier.Humanoid then
+            -- Adjust base so speed doesn't jump abruptly
+            local current = GetCurrentSpeed(WalkspeedMultiplier.Humanoid)
+            WalkspeedMultiplier.BaseSpeed = current / value
             ApplyWalkspeed()
         end
     end
 })
 
-WalkspeedGroup:AddLabel("Reads base speed from humanoid attribute 'WalkSpeed'.")
-WalkspeedGroup:AddLabel("Adjust multiplier from 0.1x to 25x.")
+WalkspeedGroup:AddLabel("Multiplies your current walkspeed.")
+WalkspeedGroup:AddLabel("Automatically adapts to game speed changes.")
 
 -- ==================== NO FALL DAMAGE ====================
 local NoFall = {
@@ -2030,11 +2033,12 @@ local DEFAULT_MAX_DISTANCE = 500
 -- Edit this table to add your permanent bosses.
 -- Format: { path = "full.lua.path.to.Humanoid", maxDistance = 500 }  (maxDistance optional, defaults to global)
 local BossConfig = {
-    -- Example:
      { path = 'workspace["Wooden Golem"].Humanoid' },
      { path = 'workspace:GetChildren()[2816].Humanoid'},
      { path = 'workspace["The Barbarian"].Humanoid'},
      { path = 'workspace["Lava Snake"].Humanoid'},
+     { path = 'workspace.Manda.Humanoid'},
+     { path = 'workspace["Barbarit The Rose"].Humanoid'},
 }
 
 -- Test entries (temporary, not saved) – each entry can also have maxDistance
