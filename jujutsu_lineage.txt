@@ -1777,274 +1777,218 @@ MiscGroup:AddButton({
         game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end
 })
-
--- ==================== SKILL NOTIFIER (ANIMATION-BASED) WITH FRIENDLY NAMES ====================
-local SkillNotifierAnim = {
-    Enabled = false,
-    ShowStop = true,
-    MinDistance = 0,
-    MaxDistance = 10000,
+-- ==================== CHAKRA SENSE TRACKER ====================
+local ChakraTracker = {
+    ActiveUsers = {},
+    ScreenAlerts = {},   -- Drawing.new("Text") per player — persistent on-screen indicators we fully control
+    Tracks = {},
     Connections = {},
-    PlayerData = {},
-    SkillNameMap = {
-        ["9864206537"] = "Chakra Sense"
-        -- Add more skill IDs here as you discover them
-    }
+    PendingStops = {},
+    SkillID = "9864206537",
+    Label = nil
 }
 
--- Function to calculate distance between local player and another player
-local function GetPlayerDistance(player)
-    local localChar = LocalPlayer.Character
-    local targetChar = player.Character
-    if not localChar or not targetChar then return nil end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
-    if not localRoot or not targetRoot then return nil end
-    return (localRoot.Position - targetRoot.Position).Magnitude
-end
-
--- Check if distance is within range
-local function DistanceInRange(dist)
-    if not dist then return false end
-    return dist >= SkillNotifierAnim.MinDistance and dist <= SkillNotifierAnim.MaxDistance
-end
-
--- Monitor a player's animator
-local function MonitorPlayer(player, character)
-    if not character or player == LocalPlayer then return end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    -- Clean up old connections
-    if SkillNotifierAnim.PlayerData[player] then
-        for _, conn in ipairs(SkillNotifierAnim.PlayerData[player].Connections or {}) do
-            conn:Disconnect()
-        end
+-- Persistent on-screen alert management (Drawing objects, not Library:Notify)
+local function CreateScreenAlert(playerName)
+    if ChakraTracker.ScreenAlerts[playerName] then return end -- already exists
+    local alert = Drawing.new("Text")
+    alert.Text = playerName .. " is using Chakra Sense"
+    alert.Size = 18
+    alert.Center = true
+    alert.Outline = true
+    alert.OutlineColor = Color3.new(0, 0, 0)
+    alert.Color = Color3.fromRGB(255, 100, 100)
+    alert.Visible = true
+    alert.Position = Vector2.new(Camera.ViewportSize.X / 2, 50)
+    ChakraTracker.ScreenAlerts[playerName] = alert
+    -- Reposition all alerts so they stack vertically
+    local idx = 0
+    for _, a in pairs(ChakraTracker.ScreenAlerts) do
+        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
+        idx = idx + 1
     end
-    
-    local conns = {}
-    
-    -- Animation started
-    local animPlayedConn = animator.AnimationPlayed:Connect(function(animationTrack)
-        if not SkillNotifierAnim.Enabled then return end
-        local animId = animationTrack.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-        
-        -- Check if this animation ID is in our map
-        local skillName = SkillNotifierAnim.SkillNameMap[assetId]
-        if skillName then
-            local distance = GetPlayerDistance(player)
-            if DistanceInRange(distance) then
-                Library:Notify(string.format("%s started %s", player.Name, skillName), 3)
+end
+
+local function RemoveScreenAlert(playerName)
+    local alert = ChakraTracker.ScreenAlerts[playerName]
+    if alert then
+        alert.Visible = false
+        alert:Remove()
+        ChakraTracker.ScreenAlerts[playerName] = nil
+    end
+    -- Reposition remaining alerts
+    local idx = 0
+    for _, a in pairs(ChakraTracker.ScreenAlerts) do
+        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
+        idx = idx + 1
+    end
+end
+
+local function UpdateLabel()
+    if not ChakraTracker.Label then return end
+    local names = {}
+    for name, _ in pairs(ChakraTracker.ActiveUsers) do
+        table.insert(names, name)
+    end
+    if #names == 0 then
+        ChakraTracker.Label:SetText("No one using Chakra Sense")
+    else
+        ChakraTracker.Label:SetText("Chakra Sense: " .. table.concat(names, ", "))
+    end
+end
+
+local function StopTracking(player)
+    if ChakraTracker.ActiveUsers[player.Name] then
+        ChakraTracker.ActiveUsers[player.Name] = nil
+        ChakraTracker.Tracks[player.Name] = nil
+        RemoveScreenAlert(player.Name)
+        UpdateLabel()
+        Library:Notify(player.Name .. " stopped Chakra Sense", 3)
+    end
+end
+
+local function MonitorPlayer(player)
+    if player == LocalPlayer then return end
+    local function onCharacterAdded(character)
+        task.wait(0.5)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if not animator then return end
+
+        -- Clean up old connections for this player
+        if ChakraTracker.Connections[player] then
+            for _, conn in ipairs(ChakraTracker.Connections[player]) do
+                conn:Disconnect()
             end
         end
-        
-        -- Optional: track stop
-        if SkillNotifierAnim.ShowStop then
-            local stoppedConn = animationTrack.Stopped:Connect(function()
-                if not SkillNotifierAnim.Enabled then return end
-                if skillName then
-                    local distance = GetPlayerDistance(player)
-                    if DistanceInRange(distance) then
-                        Library:Notify(string.format("%s stopped %s", player.Name, skillName), 3)
+        ChakraTracker.Connections[player] = {}
+
+        local function onAnimPlayed(track)
+            local assetId = track.Animation.AnimationId:match("rbxassetid://(%d+)")
+            if assetId ~= ChakraTracker.SkillID then return end
+
+            -- Cancel any pending stop (animation re-fired before grace period expired)
+            if ChakraTracker.PendingStops[player.Name] then
+                ChakraTracker.PendingStops[player.Name] = nil
+            end
+
+            -- If already active, just update the track reference (animation re-fired) — don't create another notification
+            if ChakraTracker.ActiveUsers[player.Name] then
+                ChakraTracker.Tracks[player.Name] = track
+                return
+            end
+
+            -- Activate
+            ChakraTracker.ActiveUsers[player.Name] = true
+            ChakraTracker.Tracks[player.Name] = track
+            UpdateLabel()
+            CreateScreenAlert(player.Name)  -- persistent on-screen Drawing text, removed only when they stop
+
+            -- Monitor this track for stopping with grace period
+            local trackConnections = {}
+
+            -- Heartbeat check with 1-second grace period
+            local heartbeatConn
+            heartbeatConn = RunService.Heartbeat:Connect(function()
+                if not track or not track.IsPlaying then
+                    -- Don't stop immediately — set a pending stop with grace period
+                    if ChakraTracker.ActiveUsers[player.Name] and not ChakraTracker.PendingStops[player.Name] then
+                        ChakraTracker.PendingStops[player.Name] = tick()
                     end
+                    -- If grace period (1 second) expired and still pending, actually stop
+                    if ChakraTracker.PendingStops[player.Name] and (tick() - ChakraTracker.PendingStops[player.Name]) > 1 then
+                        ChakraTracker.PendingStops[player.Name] = nil
+                        StopTracking(player)
+                        heartbeatConn:Disconnect()
+                    end
+                else
+                    -- Animation is playing again, cancel any pending stop
+                    ChakraTracker.PendingStops[player.Name] = nil
                 end
             end)
-            table.insert(conns, stoppedConn)
+            table.insert(trackConnections, heartbeatConn)
+
+            -- Store track-specific connections for cleanup
+            ChakraTracker.Connections[player] = ChakraTracker.Connections[player] or {}
+            for _, conn in ipairs(trackConnections) do
+                table.insert(ChakraTracker.Connections[player], conn)
+            end
         end
-    end)
-    table.insert(conns, animPlayedConn)
-    
-    SkillNotifierAnim.PlayerData[player] = {
-        Connections = conns,
-        Character = character
-    }
+
+        local playedConn = animator.AnimationPlayed:Connect(onAnimPlayed)
+        table.insert(ChakraTracker.Connections[player], playedConn)
+
+        -- Check existing tracks
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            onAnimPlayed(track)
+        end
+    end
+
+    player.CharacterAdded:Connect(onCharacterAdded)
+    if player.Character then
+        onCharacterAdded(player.Character)
+    end
 end
 
 -- Initialize existing players
 for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        player.CharacterAdded:Connect(function(character)
-            task.wait(0.5)
-            MonitorPlayer(player, character)
-        end)
-        if player.Character then
-            MonitorPlayer(player, player.Character)
-        end
-    end
+    MonitorPlayer(player)
 end
 
 -- New players
-Players.PlayerAdded:Connect(function(player)
-    if player == LocalPlayer then return end
-    player.CharacterAdded:Connect(function(character)
-        task.wait(0.5)
-        MonitorPlayer(player, character)
-    end)
-    if player.Character then
-        MonitorPlayer(player, player.Character)
-    end
-end)
+Players.PlayerAdded:Connect(MonitorPlayer)
 
 -- Cleanup on player leave
 Players.PlayerRemoving:Connect(function(player)
-    if SkillNotifierAnim.PlayerData[player] then
-        for _, conn in ipairs(SkillNotifierAnim.PlayerData[player].Connections or {}) do
+    if ChakraTracker.Connections[player] then
+        for _, conn in ipairs(ChakraTracker.Connections[player]) do
             conn:Disconnect()
         end
-        SkillNotifierAnim.PlayerData[player] = nil
+        ChakraTracker.Connections[player] = nil
+    end
+    if ChakraTracker.ActiveUsers[player.Name] then
+        StopTracking(player)
     end
 end)
 
--- UI Controls in Misc tab
-MiscGroup:AddToggle("SkillNotifierAnimToggle", {
-    Text = "Skill Notifier (Animation)",
-    Default = false,
-    Callback = function(value)
-        SkillNotifierAnim.Enabled = value
-    end
-})
-
-MiscGroup:AddToggle("SkillNotifierShowStop", {
-    Text = "Show Stop Events",
-    Default = true,
-    Callback = function(value)
-        SkillNotifierAnim.ShowStop = value
-    end
-})
-
--- Optional distance filter (you can hide these if not needed)
-MiscGroup:AddSlider("SkillNotifierMinDist", {
-    Text = "Min Distance",
-    Default = 0,
-    Min = 0,
-    Max = 5000,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(value)
-        SkillNotifierAnim.MinDistance = value
-    end
-})
-
-MiscGroup:AddSlider("SkillNotifierMaxDist", {
-    Text = "Max Distance",
-    Default = 10000,
-    Min = 10,
-    Max = 10000,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(value)
-        SkillNotifierAnim.MaxDistance = value
-    end
-})
-
-MiscGroup:AddLabel("Currently tracking: Chakra Sense (ID: 9864206537)")
-
+-- Add UI to Misc tab
+local MiscGroup = Tabs.Misc:AddLeftGroupbox("Skill Status")
+ChakraTracker.Label = MiscGroup:AddLabel("No one using Chakra Sense")
+UpdateLabel()
 -- ==================== TELEPORT TAB ====================
-local TeleportTab = Window:AddTab("Teleport")
+local TeleportTab = Window:AddTab("Teleports")
 
--- Data storage for teleports
-local TeleportData = {
-    Locations = {} -- { Name = string, Position = Vector3 }
+-- Hardcoded teleport locations (edit this table to add your own)
+local TeleportLocations = {
+    -- Example entries (uncomment and modify as needed)
+    -- { Name = "Spawn Area", Pos = Vector3.new(0, 50, 0) },
+    -- { Name = "Train Station", Pos = Vector3.new(636, 17, 1730) },
+    -- { Name = "Rui Boss", Pos = Vector3.new(499, 12, -1076) },
+    -- { Name = "Final Selection", Pos = Vector3.new(-729, 284, -432) },
 }
 
--- Function to save teleports to file (using SaveManager's config system)
--- We'll use a separate config file for teleports
-local function SaveTeleports()
-    local data = {
-        Locations = {}
-    }
-    for _, loc in ipairs(TeleportData.Locations) do
-        table.insert(data.Locations, {
-            Name = loc.Name,
-            X = loc.Position.X,
-            Y = loc.Position.Y,
-            Z = loc.Position.Z
-        })
-    end
-    writefile("UniversalHub_Teleports.json", game:GetService("HttpService"):JSONEncode(data))
-end
-
--- Function to load teleports
-local function LoadTeleports()
-    local success, content = pcall(readfile, "UniversalHub_Teleports.json")
-    if success then
-        local success2, data = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), content)
-        if success2 and type(data) == "table" and data.Locations then
-            TeleportData.Locations = {}
-            for _, loc in ipairs(data.Locations) do
-                table.insert(TeleportData.Locations, {
-                    Name = loc.Name,
-                    Position = Vector3.new(loc.X, loc.Y, loc.Z)
-                })
-            end
-        end
-    end
-end
-
--- Load teleports on script start
-LoadTeleports()
-
--- Teleport function
+-- Function to teleport
 local function TeleportTo(pos)
-    local character = LocalPlayer.Character
-    if not character then return end
-    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-    if rootPart then
-        rootPart.CFrame = CFrame.new(pos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    if root then
+        root.CFrame = CFrame.new(pos)
     end
 end
 
--- Helper to refresh the teleport list display
-local function RefreshTeleportList()
-    -- Clear existing list groupbox
-    TeleportListGroup:Clear()
-    
-    -- Add each teleport as a button with delete
-    for i, loc in ipairs(TeleportData.Locations) do
-        TeleportListGroup:AddButton({
-            Text = loc.Name .. " (" .. math.floor(loc.Position.X) .. ", " .. math.floor(loc.Position.Y) .. ", " .. math.floor(loc.Position.Z) .. ")",
-            Func = function()
-                TeleportTo(loc.Position)
-                Library:Notify("Teleported to " .. loc.Name, 2)
-            end
-        })
-        
-        -- Add delete button for this teleport
-        TeleportListGroup:AddButton({
-            Text = "Delete " .. loc.Name,
-            Func = function()
-                table.remove(TeleportData.Locations, i)
-                SaveTeleports()
-                RefreshTeleportList()
-                Library:Notify("Deleted " .. loc.Name, 2)
-            end
-        })
-        
-        -- Optional: add a spacer
-        TeleportListGroup:AddLabel("")
-    end
-    
-    if #TeleportData.Locations == 0 then
-        TeleportListGroup:AddLabel("No saved teleports")
-    end
-end
+-- Left group: Current position and copy
+local CurrentGroup = TeleportTab:AddLeftGroupbox("Current Position")
 
--- Left groupbox: Current position and save controls
-local TeleportCurrentGroup = TeleportTab:AddLeftGroupbox("Current Position")
-
--- Label to show coordinates (will be updated)
-local CoordLabel = TeleportCurrentGroup:AddLabel("X: 0, Y: 0, Z: 0")
-
--- Update coordinates every frame
+-- Live coordinate display
+local CoordLabel = CurrentGroup:AddLabel("X: 0, Y: 0, Z: 0")
 RunService.RenderStepped:Connect(function()
-    local character = LocalPlayer.Character
-    if character then
-        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-        if rootPart then
-            local pos = rootPart.Position
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+        if root then
+            local pos = root.Position
             CoordLabel:SetText(string.format("X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z))
         else
             CoordLabel:SetText("No character")
@@ -2054,52 +1998,40 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Button to save current location
-TeleportCurrentGroup:AddButton({
-    Text = "Save Current Location",
+-- Button to copy current position as Vector3
+CurrentGroup:AddButton({
+    Text = "Copy Position as Vector3",
     Func = function()
-        local character = LocalPlayer.Character
-        if not character then
-            Library:Notify("No character", 2)
-            return
-        end
-        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
-        if not rootPart then
-            Library:Notify("No root part", 2)
-            return
-        end
-        
-        -- Prompt for name using a simple input dialog
-        Library:PromptInput("Teleport Name", "Enter a name for this teleport", "", function(name)
-            if name and #name > 0 then
-                table.insert(TeleportData.Locations, {
-                    Name = name,
-                    Position = rootPart.Position
-                })
-                SaveTeleports()
-                RefreshTeleportList()
-                Library:Notify("Saved " .. name, 2)
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+            if root then
+                local pos = root.Position
+                local text = string.format("Vector3.new(%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z)
+                setclipboard(text)
+                Library:Notify("Coordinates copied to clipboard", 2)
             end
-        end)
+        end
     end
 })
 
--- Right groupbox: List of saved teleports
-local TeleportListGroup = TeleportTab:AddRightGroupbox("Saved Teleports")
+-- Right group: Hardcoded teleport list
+local TeleportListGroup = TeleportTab:AddRightGroupbox("Teleport Locations")
 
--- Initial refresh
-RefreshTeleportList()
+-- Populate list from hardcoded table
+for _, loc in ipairs(TeleportLocations) do
+    TeleportListGroup:AddButton({
+        Text = loc.Name .. " (" .. math.floor(loc.Pos.X) .. ", " .. math.floor(loc.Pos.Y) .. ", " .. math.floor(loc.Pos.Z) .. ")",
+        Func = function()
+            TeleportTo(loc.Pos)
+            Library:Notify("Teleported to " .. loc.Name, 2)
+        end
+    })
+end
 
--- Add a button to clear all teleports (optional)
-TeleportListGroup:AddButton({
-    Text = "Clear All Teleports",
-    Func = function()
-        TeleportData.Locations = {}
-        SaveTeleports()
-        RefreshTeleportList()
-        Library:Notify("All teleports cleared", 2)
-    end
-})
+if #TeleportLocations == 0 then
+    TeleportListGroup:AddLabel("No locations defined. Edit the script to add them.")
+end
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
 ThemeManager:SetLibrary(Library)
