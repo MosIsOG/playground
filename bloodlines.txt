@@ -2010,19 +2010,6 @@ end)
 -- Misc Tab
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Misc")
 
-MiscGroup:AddButton({
-    Text = "Rejoin",
-    Func = function()
-        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
-    end
-})
-
-MiscGroup:AddButton({
-    Text = "Server Hop",
-    Func = function()
-        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-    end
-})
 
 -- ==================== BOSS HEALTH BARS (WITH DISTANCE) ====================
 local BossBarTab = Window:AddTab("Boss Bars")
@@ -2819,6 +2806,43 @@ FetcherGroup:AddSlider("AnimFetcherDistance", {
     end
 })
 FetcherGroup:AddLabel("Only logs animations within this range.")
+
+-- ==================== ANTI-CHEAT BYPASS & SERVER UTILITIES ====================
+local MiscGroup = Tabs.Misc:AddLeftGroupbox("Anti-Cheat & Server")
+
+-- Anti-Cheat bypass toggle
+local AntiCheat = {
+    Enabled = false,
+    Connections = {}
+}
+
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+if DataEvent then
+    -- Block outgoing "BanMe" calls (if client tries to trigger it)
+    local oldFireServer
+    oldFireServer = hookfunction(DataEvent.FireServer, function(self, ...)
+        if AntiCheat.Enabled then
+            local args = {...}
+            if args[1] == "BanMe" then
+                Library:Notify("Blocked BanMe remote", 2)
+                return -- block
+            end
+        end
+        return oldFireServer(self, ...)
+    end)
+end
+
+
+MiscGroup:AddToggle("ACToggle", {
+    Text = "Enable Anti-Cheat Bypass",
+    Default = false,
+    Callback = function(v)
+        AntiCheat.Enabled = v
+    end
+})
+
 -- ==================== TELEPORT TAB ====================
 local TeleportTab = Window:AddTab("Teleports")
 
