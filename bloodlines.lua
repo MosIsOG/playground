@@ -3236,8 +3236,12 @@ PermGroup:AddLabel("Edit BlockRules table in script to add/modify.")
 -- ==================== ANIMATION FETCHER ====================
 local AnimFetcher = {
     Enabled = false,
+    MobEnabled = false,
     MaxDistance = 50,
-    Connections = {}
+    Connections = {},
+    MobConnections = {},    -- key = model instance
+    MobScanThread = nil,
+    MobScanInterval = 2,
 }
 
 local function GetDistanceToPlayer(player)
@@ -3247,6 +3251,16 @@ local function GetDistanceToPlayer(player)
     local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
     if not localRoot or not targetRoot then return nil end
+    return (localRoot.Position - targetRoot.Position).Magnitude
+end
+
+local function GetDistanceToModel(model)
+    local localChar = LocalPlayer.Character
+    if not localChar then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    if not localRoot then return nil end
+    local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+    if not targetRoot then return nil end
     return (localRoot.Position - targetRoot.Position).Magnitude
 end
 
@@ -3274,6 +3288,79 @@ local function MonitorPlayerAnim(player, character)
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
         onAnimPlayed(track)
     end
+end
+
+-- Monitor a mob/NPC model for animations
+local function MonitorMobAnim(model)
+    if AnimFetcher.MobConnections[model] then return end -- already monitoring
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    local function onAnimPlayed(track)
+        if not AnimFetcher.MobEnabled then return end
+        local distance = GetDistanceToModel(model)
+        if not distance or distance > AnimFetcher.MaxDistance then return end
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        Library:Notify(string.format("[MOB %d studs] %s: %s", math.floor(distance), model.Name, assetId), 5)
+    end
+
+    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
+    AnimFetcher.MobConnections[model] = {conn}
+
+    -- Log currently playing
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        onAnimPlayed(track)
+    end
+end
+
+local function ScanForMobs()
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
+            local player = Players:GetPlayerFromCharacter(obj.Parent)
+            if not player then
+                local model = obj.Parent
+                if not AnimFetcher.MobConnections[model] then
+                    local dist = GetDistanceToModel(model)
+                    if dist and dist <= AnimFetcher.MaxDistance then
+                        MonitorMobAnim(model)
+                    end
+                end
+            end
+        end
+    end
+    -- Clean up dead mobs
+    for model, conns in pairs(AnimFetcher.MobConnections) do
+        if not model or not model.Parent then
+            for _, c in ipairs(conns) do c:Disconnect() end
+            AnimFetcher.MobConnections[model] = nil
+        end
+    end
+end
+
+local function StartMobScan()
+    if AnimFetcher.MobScanThread then pcall(task.cancel, AnimFetcher.MobScanThread) end
+    AnimFetcher.MobScanThread = task.spawn(function()
+        while AnimFetcher.MobEnabled do
+            ScanForMobs()
+            task.wait(AnimFetcher.MobScanInterval)
+        end
+    end)
+end
+
+local function StopMobScan()
+    if AnimFetcher.MobScanThread then
+        pcall(task.cancel, AnimFetcher.MobScanThread)
+        AnimFetcher.MobScanThread = nil
+    end
+    for model, conns in pairs(AnimFetcher.MobConnections) do
+        for _, c in ipairs(conns) do c:Disconnect() end
+    end
+    AnimFetcher.MobConnections = {}
 end
 
 -- Initialize existing players (same as before)
@@ -3332,6 +3419,19 @@ FetcherGroup:AddSlider("AnimFetcherDistance", {
     end
 })
 FetcherGroup:AddLabel("Only logs animations within this range.")
+FetcherGroup:AddToggle("AnimFetcherMobToggle", {
+    Text = "Log Mob/NPC Animations",
+    Default = false,
+    Callback = function(value)
+        AnimFetcher.MobEnabled = value
+        if value then
+            StartMobScan()
+        else
+            StopMobScan()
+        end
+    end
+})
+FetcherGroup:AddLabel("Mob anims shown as [MOB] in notifications.")
 
 -- ==================== ANIMATION PLAYER ====================
 local AnimPlayer = {
