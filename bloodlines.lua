@@ -4220,6 +4220,7 @@ local function CollectTrinket(spawn)
     -- Check if trinket is occupied (available to collect)
     local occupied = spawn:FindFirstChild("Occupied")
     if not occupied then
+        Library:Notify("No Occupied value in " .. spawn.Name, 2)
         return false
     end
     
@@ -4232,8 +4233,10 @@ local function CollectTrinket(spawn)
     end
     
     if not isOccupied then
-        return false
+        return false -- No trinket spawned here
     end
+    
+    Library:Notify("Found occupied trinket at " .. spawn.Name .. "!", 2)
     
     -- Get spawn position
     local trinketPos = nil
@@ -4254,7 +4257,10 @@ local function CollectTrinket(spawn)
         end
     end)
     
-    if not trinketPos then return false end
+    if not trinketPos then 
+        Library:Notify("Could not get position for " .. spawn.Name, 2)
+        return false 
+    end
     
     -- Check distance to player
     local char = LocalPlayer.Character
@@ -4266,20 +4272,23 @@ local function CollectTrinket(spawn)
     
     -- If too far, check against max scan distance
     if distance > TrinketCollector.MaxDistance then
+        Library:Notify(spawn.Name .. " too far: " .. math.floor(distance) .. " studs", 2)
         return false
     end
     
     -- Teleport close to the trinket
+    Library:Notify("Teleporting to " .. spawn.Name, 2)
     root.CFrame = CFrame.new(trinketPos)
-    task.wait(0.2)
+    task.wait(0.3)
     
     -- Now check if it's within pickup range (hitbox)
     distance = (root.Position - trinketPos).Magnitude
     if distance > TrinketCollector.PickupRange then
-        return false -- Not in pickup range
+        Library:Notify("Not in pickup range after teleport", 2)
+        return false
     end
     
-    -- Use the proper pickup remote
+    -- Use the proper pickup remote - no second argument needed
     local success = false
     local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
     if DataEvent then
@@ -4287,23 +4296,21 @@ local function CollectTrinket(spawn)
     end
     
     if DataEvent then
-        -- Try different arguments for the pickup remote
-        pcall(function()
-            -- Try with the trinket part/spawn object
-            DataEvent:FireServer("PickUp", trinketPart or spawn)
+        -- Fire pickup remote without object argument
+        local result = pcall(function()
+            DataEvent:FireServer("PickUp")
             success = true
         end)
         
-        task.wait(0.1)
-        
-        -- If not successful, try alternative methods
-        if not success then
-            pcall(function()
-                -- Try with just the spawn
-                DataEvent:FireServer("PickUp", spawn)
-                success = true
-            end)
+        if not result then
+            Library:Notify("Failed to fire PickUp remote", 2)
+        else
+            Library:Notify("Fired PickUp remote for " .. spawn.Name, 2)
         end
+        
+        task.wait(0.2)
+    else
+        Library:Notify("DataEvent not found!", 2)
     end
     
     -- Fallback: Try click detector method
@@ -4313,6 +4320,7 @@ local function CollectTrinket(spawn)
             pcall(function()
                 fireclickdetector(clickDetector)
                 success = true
+                Library:Notify("Used fireclickdetector on " .. spawn.Name, 2)
             end)
         end
     end
