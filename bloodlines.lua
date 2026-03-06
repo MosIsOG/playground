@@ -2106,7 +2106,7 @@ local PredefinedBosses = {
     { name = "Wooden Golem", path = 'workspace["Wooden Golem"]', maxDistance = 500 },
     { name = "Manda", path = 'workspace.Manda', maxDistance = 500, allowDuplicates = true },
     { name = "Chakra Knight", path = 'workspace["Chakra Knight"]', maxDistance = 500 },
-    { name = "The Barbarian", path = 'workspace["The Barbarian"]', maxDistance = 500 },
+    { name = "The Barbarian", path = 'workspace["The Barbarian"]', maxDistance = 500, allowDuplicates = true }, -- Allow multiple Barbarians
     { name = "Barbarit The Rose", path = 'workspace["Barbarit The Rose"]', maxDistance = 500 },
     { name = "Lava Snake", path = 'workspace["Lava Snake"]', maxDistance = 500 },
 }
@@ -2161,7 +2161,11 @@ end
 local function GetDistanceToHumanoid(humanoid)
     local char = humanoid.Parent
     if not char then return nil end
-    local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    local rootPart = char:FindFirstChild("HumanoidRootPart") 
+                  or char:FindFirstChild("Head")
+                  or char:FindFirstChild("Torso")
+                  or char:FindFirstChild("UpperTorso")
+                  or char:FindFirstChildWhichIsA("BasePart")
     if not rootPart then return nil end
     local localChar = LocalPlayer.Character
     if not localChar then return nil end
@@ -2188,7 +2192,11 @@ local function UpdateBar(bar, humanoid, maxDist)
         return false
     end
 
-    local rootPart = humanoid.Parent:FindFirstChild("HumanoidRootPart") or humanoid.Parent:FindFirstChild("Head")
+    local rootPart = humanoid.Parent:FindFirstChild("HumanoidRootPart") 
+                  or humanoid.Parent:FindFirstChild("Head")
+                  or humanoid.Parent:FindFirstChild("Torso")
+                  or humanoid.Parent:FindFirstChild("UpperTorso")
+                  or humanoid.Parent:FindFirstChildWhichIsA("BasePart")
     if not rootPart then return false end
 
     local pos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
@@ -2411,7 +2419,7 @@ local function ScanBossFarmTargets()
     if not localRoot then return results end
     local playerPos = localRoot.Position
 
-    -- Check specific folders instead of entire workspace
+    -- Check specific folders AND workspace itself
     local foldersToCheck = {"NPCs", "Mobs", "Enemies"}
     
     for _, folderName in ipairs(foldersToCheck) do
@@ -2436,6 +2444,30 @@ local function ScanBossFarmTargets()
                                 })
                             end
                         end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- ALSO check workspace directly (for bosses not in folders)
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") then
+            local hum = model:FindFirstChildWhichIsA("Humanoid")
+            if hum and hum.Health > 0 and hum.MaxHealth >= BossFarm.MinHealth then
+                local root = model:FindFirstChild("HumanoidRootPart") 
+                          or model:FindFirstChild("Head")
+                          or model:FindFirstChild("Torso")
+                          or model:FindFirstChild("UpperTorso")
+                          or model:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    local dist = (playerPos - root.Position).Magnitude
+                    if dist <= BossFarm.ScanRange then
+                        table.insert(results, {
+                            humanoid = hum,
+                            name = model.Name,
+                            distance = math.floor(dist)
+                        })
                     end
                 end
             end
@@ -3640,6 +3672,7 @@ local TeleportLocations = {
      { Name = "Sorythia Village", Pos = Vector3.new(-113.2, 50.9, -283.8)},
      { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
+     { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
 }
 
 -- Function to teleport
