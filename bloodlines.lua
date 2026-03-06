@@ -2834,6 +2834,13 @@ Players.PlayerRemoving:Connect(function(player)
         AutoBlock.Connections[player] = nil
     end
     AutoBlock.Triggered[player.Name] = nil
+    -- Clean up continuous monitors for this player
+    for key, conn in pairs(AutoBlock.ContinuousMonitors) do
+        if key:find("^" .. player.Name .. "_") then
+            conn:Disconnect()
+            AutoBlock.ContinuousMonitors[key] = nil
+        end
+    end
 end)
 
 -- ===== UI =====
@@ -2871,15 +2878,23 @@ TestGroup:AddSlider("TestDistance", {
     Callback = function(v) _G.TestDistance = v end
 })
 
+TestGroup:AddToggle("TestContinuous", {
+    Text = "Continuous (long anim)",
+    Default = false,
+    Tooltip = "Keep blocking while animation plays and player is in range",
+    Callback = function(v) _G.TestContinuous = v end
+})
+
 -- Test rule status display
 local TestStatus = TestGroup:AddLabel("No test rule active.")
 
 local function UpdateTestStatus()
     if TestRule then
-        TestStatus:SetText(string.format("ID: %s | Delay: %.1fs | Distance: %s",
+        TestStatus:SetText(string.format("ID: %s | Delay: %.1fs | Dist: %s | %s",
             TestRule.animID,
             TestRule.delay,
-            TestRule.distance and (TestRule.distance.." studs") or "No limit"))
+            TestRule.distance and (TestRule.distance.." studs") or "No limit",
+            TestRule.continuous and "Continuous" or "One-shot"))
     else
         TestStatus:SetText("No test rule active.")
     end
@@ -2893,7 +2908,8 @@ TestGroup:AddButton({
         TestRule = {
             animID = id,
             delay = _G.TestDelay or 0.3,
-            distance = (_G.TestDistance and _G.TestDistance > 0) and _G.TestDistance or nil
+            distance = (_G.TestDistance and _G.TestDistance > 0) and _G.TestDistance or nil,
+            continuous = _G.TestContinuous or false
         }
         UpdateTestStatus()
         Library:Notify("Test rule applied", 2)
@@ -2914,7 +2930,8 @@ TestGroup:AddButton({
     Func = function()
         if not TestRule then Library:Notify("No rule to copy", 3); return end
         local dist = TestRule.distance and (", distance = " .. TestRule.distance) or ""
-        local code = string.format('{ animID = "%s", delay = %.1f%s },', TestRule.animID, TestRule.delay, dist)
+        local cont = TestRule.continuous and ", continuous = true" or ""
+        local code = string.format('{ animID = "%s", delay = %.1f%s%s },', TestRule.animID, TestRule.delay, dist, cont)
         setclipboard(code)
         Library:Notify("Lua code copied", 2)
     end
@@ -2924,7 +2941,8 @@ TestGroup:AddButton({
 local PermGroup = Tabs.Misc:AddLeftGroupbox("Permanent Rules")
 local permText = ""
 for i, rule in ipairs(BlockRules) do
-    permText = permText .. string.format("%d. ID: %s, Delay: %.1fs, Dist: %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any")
+    local mode = rule.continuous and "Continuous" or "One-shot"
+    permText = permText .. string.format("%d. ID: %s, Delay: %.1fs, Dist: %s, %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any", mode)
 end
 if permText == "" then permText = "No permanent rules." end
 PermGroup:AddLabel(permText)
