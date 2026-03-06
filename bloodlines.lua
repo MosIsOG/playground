@@ -2101,14 +2101,14 @@ local BossBarTab = Window:AddTab("Boss Bars")
 -- Global default max distance (studs) for auto detection
 local DEFAULT_MAX_DISTANCE = 500
 
--- Predefined boss list - checks every 30 seconds
+-- Predefined boss list - scans folders and workspace by name
 local PredefinedBosses = {
-    { name = "Wooden Golem", path = 'workspace["Wooden Golem"]', maxDistance = 500 },
-    { name = "Manda", path = 'workspace.Manda', maxDistance = 500, allowDuplicates = true },
-    { name = "Chakra Knight", path = 'workspace["Chakra Knight"]', maxDistance = 500 },
-    { name = "The Barbarian", path = 'workspace["The Barbarian"]', maxDistance = 500, allowDuplicates = true }, -- Allow multiple Barbarians
-    { name = "Barbarit The Rose", path = 'workspace["Barbarit The Rose"]', maxDistance = 500 },
-    { name = "Lava Snake", path = 'workspace["Lava Snake"]', maxDistance = 500 },
+    { name = "Wooden Golem", maxDistance = 500 },
+    { name = "Manda", maxDistance = 500, allowDuplicates = true },
+    { name = "Chakra Knight", maxDistance = 500 },
+    { name = "The Barbarian", maxDistance = 500, allowDuplicates = true },
+    { name = "Barbarit The Rose", maxDistance = 500 },
+    { name = "Lava Snake", maxDistance = 500 },
 }
 
 -- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
@@ -2261,6 +2261,7 @@ local function RemoveTrackedBoss(bossInstance)
 end
 
 -- Scan for predefined bosses only (called every 30 seconds)
+-- Uses robust scanning like boss farm - checks folders AND workspace directly
 local function ScanForPredefinedBosses()
     if not BossDetect.Enabled then return end
 
@@ -2268,45 +2269,86 @@ local function ScanForPredefinedBosses()
     if not localChar then return end
     local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
     if not localRoot then return end
+    local playerPos = localRoot.Position
 
-    for _, bossConfig in ipairs(PredefinedBosses) do
-        local success, bossModel = pcall(function()
-            return loadstring("return " .. bossConfig.path)()
-        end)
-        
-        if success and bossModel then
-            -- Handle duplicates for Manda (workspace.Manda can return multiple)
-            local modelsToCheck = {}
-            
-            if bossConfig.allowDuplicates then
-                -- Find all instances with this name in workspace
-                for _, obj in ipairs(workspace:GetChildren()) do
-                    if obj.Name == bossConfig.name and obj:IsA("Model") then
-                        table.insert(modelsToCheck, obj)
+    -- Scan specific folders AND workspace directly (like boss farm scanner)
+    local foldersToCheck = {"NPCs", "Mobs", "Enemies"}
+    local checkedModels = {} -- Prevent duplicates
+    
+    -- Check folders first
+    for _, folderName in ipairs(foldersToCheck) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if model:IsA("Model") and not checkedModels[model] then
+                    checkedModels[model] = true
+                    
+                    -- Check if this model matches any predefined boss
+                    for _, bossConfig in ipairs(PredefinedBosses) do
+                        if model.Name == bossConfig.name then
+                            -- Found a boss match
+                            if not TrackedBosses[model] then
+                                local humanoid = model:FindFirstChildOfClass("Humanoid")
+                                if humanoid and humanoid.Health > 0 then
+                                    local rootPart = model:FindFirstChild("HumanoidRootPart") 
+                                                  or model:FindFirstChild("Head")
+                                                  or model:FindFirstChild("Torso")
+                                                  or model:FindFirstChild("UpperTorso")
+                                                  or model:FindFirstChildWhichIsA("BasePart")
+                                    if rootPart then
+                                        local distance = (playerPos - rootPart.Position).Magnitude
+                                        if distance <= (bossConfig.maxDistance or DEFAULT_MAX_DISTANCE) then
+                                            -- New boss detected - create bar
+                                            TrackedBosses[model] = {
+                                                bar = CreateBarDrawing(),
+                                                humanoid = humanoid,
+                                                maxDist = bossConfig.maxDistance or DEFAULT_MAX_DISTANCE,
+                                                name = bossConfig.name
+                                            }
+                                            Library:Notify("Detected: " .. bossConfig.name .. " (" .. math.floor(distance) .. " studs)", 3)
+                                        end
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
-            else
-                -- Single instance
-                if bossModel:IsA("Model") then
-                    table.insert(modelsToCheck, bossModel)
-                end
             end
+        end
+    end
+    
+    -- ALSO check workspace directly (for bosses not in folders)
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and not checkedModels[model] then
+            checkedModels[model] = true
             
-            -- Process each found model
-            for _, model in ipairs(modelsToCheck) do
-                if model and model.Parent and not TrackedBosses[model] then
-                    local humanoid = model:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        local dist = GetDistanceToHumanoid(humanoid)
-                        if dist and dist <= (bossConfig.maxDistance or DEFAULT_MAX_DISTANCE) then
-                            -- New boss detected - create bar
-                            TrackedBosses[model] = {
-                                bar = CreateBarDrawing(),
-                                humanoid = humanoid,
-                                maxDist = bossConfig.maxDistance or DEFAULT_MAX_DISTANCE,
-                                name = bossConfig.name
-                            }
-                            Library:Notify("Detected: " .. bossConfig.name, 3)
+            -- Check if this model matches any predefined boss
+            for _, bossConfig in ipairs(PredefinedBosses) do
+                if model.Name == bossConfig.name then
+                    -- Check if duplicates are allowed OR if we haven't tracked this boss yet
+                    local canTrack = bossConfig.allowDuplicates or not TrackedBosses[model]
+                    
+                    if canTrack and not TrackedBosses[model] then
+                        local humanoid = model:FindFirstChildOfClass("Humanoid")
+                        if humanoid and humanoid.Health > 0 then
+                            local rootPart = model:FindFirstChild("HumanoidRootPart") 
+                                          or model:FindFirstChild("Head")
+                                          or model:FindFirstChild("Torso")
+                                          or model:FindFirstChild("UpperTorso")
+                                          or model:FindFirstChildWhichIsA("BasePart")
+                            if rootPart then
+                                local distance = (playerPos - rootPart.Position).Magnitude
+                                if distance <= (bossConfig.maxDistance or DEFAULT_MAX_DISTANCE) then
+                                    -- New boss detected - create bar
+                                    TrackedBosses[model] = {
+                                        bar = CreateBarDrawing(),
+                                        humanoid = humanoid,
+                                        maxDist = bossConfig.maxDistance or DEFAULT_MAX_DISTANCE,
+                                        name = bossConfig.name
+                                    }
+                                    Library:Notify("Detected: " .. bossConfig.name .. " (" .. math.floor(distance) .. " studs)", 3)
+                                end
+                            end
                         end
                     end
                 end
@@ -2314,9 +2356,9 @@ local function ScanForPredefinedBosses()
         end
     end
 
-    -- Remove tracked bosses that are no longer valid
+    -- Remove tracked bosses that are no longer valid or dead
     for bossInstance, entry in pairs(TrackedBosses) do
-        if not bossInstance.Parent or not entry.humanoid or not entry.humanoid.Parent then
+        if not bossInstance.Parent or not entry.humanoid or not entry.humanoid.Parent or entry.humanoid.Health <= 0 then
             RemoveTrackedBoss(bossInstance)
         end
     end
@@ -2384,10 +2426,11 @@ BossGroup:AddSlider("BossScanInterval", {
     Tooltip = "How often to check for predefined bosses."
 })
 BossGroup:AddLabel("Scans for predefined bosses every 30s.")
+BossGroup:AddLabel("Checks NPCs/Mobs/Enemies folders + workspace.")
 BossGroup:AddLabel("Bosses: Wooden Golem, Manda, Chakra Knight,")
 BossGroup:AddLabel("The Barbarian, Barbarit The Rose, Lava Snake")
 BossGroup:AddLabel("Boss bars update at 15 FPS (optimized).")
-BossGroup:AddLabel("Once detected, will not scan again until boss dies.")
+BossGroup:AddLabel("Auto-detects bosses by name anywhere in game.")
 
 -- Start scanning on load
 if BossDetect.Enabled then
@@ -4055,6 +4098,14 @@ local trinketNames = {
     "Ring Of Resistance",
     "Ring Of Nourishment",
     "Ring Of Favor",
+    "Aqua Gem",
+    "Flame Gem",
+    "Spark Gem",
+    "Black Flame Gem",
+    "Ground Gem",
+    "Ice Gem",
+    "Wind Gem",
+    "Poison Gem",
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
