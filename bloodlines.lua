@@ -1865,36 +1865,6 @@ M1Group:AddToggle("M1SpamToggle", {
     Callback = function(v)
         M1Spam.Enabled = v
         if v then
-
-M1Group:AddToggle("RemoteAttackSpamToggle", {
-    Text = "Remote Attack Spam",
-    Default = false,
-    Callback = function(v)
-        RemoteAttackSpam.Enabled = v
-        if v then
-            StartRemoteAttackSpam()
-        else
-            StopRemoteAttackSpam()
-        end
-    end
-}):AddKeyPicker("RemoteAttackSpamKey", {
-    Default = "K",
-    SyncToggleState = true,
-    Mode = "Toggle",
-    Text = "Remote Attack Spam"
-})
-
-M1Group:AddSlider("RemoteAttackDelay", {
-    Text = "Remote Attack Delay",
-    Default = 0.12,
-    Min = 0.05,
-    Max = 0.5,
-    Rounding = 2,
-    Suffix = "s",
-    Callback = function(v) RemoteAttackSpam.Delay = v end
-})
-
-M1Group:AddLabel("Spams melee attack remote (CheckMeleeHit).")
             StartSpam()
         else
             StopSpam()
@@ -1918,6 +1888,40 @@ M1Group:AddSlider("M1SpamDelay", {
 })
 
 M1Group:AddLabel("Toggle with L. Hold M1 to spam clicks.")
+
+-- Remote Attack Spam (independent)
+local RemoteAttackGroup = Tabs.Player:AddLeftGroupbox("Remote Attack Spam")
+
+RemoteAttackGroup:AddToggle("RemoteAttackSpamToggle", {
+    Text = "Enable Remote Attack",
+    Default = false,
+    Callback = function(v)
+        RemoteAttackSpam.Enabled = v
+        if v then
+            StartRemoteAttackSpam()
+        else
+            StopRemoteAttackSpam()
+        end
+    end
+}):AddKeyPicker("RemoteAttackSpamKey", {
+    Default = "K",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Remote Attack Spam"
+})
+
+RemoteAttackGroup:AddSlider("RemoteAttackDelay", {
+    Text = "Attack Delay",
+    Default = 0.12,
+    Min = 0.05,
+    Max = 0.5,
+    Rounding = 2,
+    Suffix = "s",
+    Callback = function(v) RemoteAttackSpam.Delay = v end
+})
+
+RemoteAttackGroup:AddLabel("Spams melee attack remote (CheckMeleeHit).")
+RemoteAttackGroup:AddLabel("Toggle with K. No targeting required.")
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
@@ -1944,38 +1948,13 @@ MovementGroup:AddToggle("InfiniteJump", {
         _G.InfiniteJump = value
     end
 })
-
-MovementGroup:AddToggle("Fly", {
-    Text = "Fly",
-    Default = false,
-    Callback = function(value)
-        flying = value
-        local character = LocalPlayer.Character
-        if not character then return end
-        local humanoid = character:FindFirstChild("Humanoid")
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if not (humanoid and rootPart) then return end
-        if flying then
-            humanoid.PlatformStand = true
-            bodyVelocity = Instance.new("BodyVelocity")
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-            bodyVelocity.Parent = rootPart
-            bodyGyro = Instance.new("BodyGyro")
-            bodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
-            bodyGyro.Parent = rootPart
-        else
-            if bodyVelocity then bodyVelocity:Destroy() end
-            if bodyGyro then bodyGyro:Destroy() end
-            humanoid.PlatformStand = false
-        end
-    end
-}):AddKeyPicker("FlyKey", {
-    Default = "F",
+:AddKeyPicker("InfiniteJumpKey", {
+    Default = ".",
     SyncToggleState = true,
     Mode = "Toggle",
-    Text = "Fly",
+    Text = "Infinite Jump",
 })
+
 
 -- ==================== WALKSPEED MULTIPLIER ====================
 local WalkspeedMultiplier = {
@@ -2992,6 +2971,7 @@ local function MonitorEntity(model)
         -- Check permanent rules
         for _, rule in ipairs(BlockRules) do
             if assetId == rule.animID then
+                Library:Notify("Blocking " .. (model.Name or "entity") .. " (ID: " .. assetId .. ")", 2)
                 if rule.continuous then
                     StartContinuousBlock(model, track, rule)
                 else
@@ -3007,6 +2987,7 @@ local function MonitorEntity(model)
 
         -- Check test rule
         if TestRule and assetId == TestRule.animID then
+            Library:Notify("Blocking " .. (model.Name or "entity") .. " (Test ID: " .. assetId .. ")", 2)
             if TestRule.continuous then
                 StartContinuousBlock(model, track, TestRule)
             else
@@ -3026,9 +3007,15 @@ local function MonitorEntity(model)
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
         onAnimPlayed(track)
     end
+    
+    -- Debug: notify when entity is monitored
+    local dist = GetDistanceToEntity(model)
+    if dist then
+        Library:Notify("Monitoring: " .. (model.Name or "Unknown") .. " (" .. math.floor(dist) .. " studs)", 2)
+    end
 end
 
--- Scan for all entities to monitor (optimized spatial search)
+-- Scan for all entities to monitor (optimized distance-based filtering)
 local function ScanForEntities()
     local localChar = LocalPlayer.Character
     if not localChar then return end
@@ -3036,21 +3023,78 @@ local function ScanForEntities()
     if not localRoot then return end
     
     local playerPos = localRoot.Position
-    local scanRadius = 150 -- Only scan within 150 studs
+    local scanRadius = 500 -- Only scan within 500 studs
     
-    -- Use spatial query to find parts near player (much faster than GetDescendants)
-    local nearbyParts = workspace:GetPartBoundsInRadius(playerPos, scanRadius, 500) -- Max 500 parts
+    -- Optimized: Check specific folders first, then workspace if needed
+    local scanTargets = {
+        workspace:FindFirstChild("NPCs"),
+        workspace:FindFirstChild("Mobs"),
+        workspace:FindFirstChild("Enemies")
+    }
     
     local checkedModels = {}
-    for _, part in ipairs(nearbyParts) do
-        local model = part.Parent
-        if model and model:IsA("Model") and model ~= localChar and not checkedModels[model] then
-            checkedModels[model] = true
-            
-            -- Check if this model has a humanoid and isn't already monitored
-            local humanoid = model:FindFirstChildOfClass("Humanoid")
-            if humanoid and not AutoBlock.MonitoredEntities[model] then
-                MonitorEntity(model)
+    local foundDedicatedFolder = false
+    
+    -- Check dedicated folders first
+    for _, folder in ipairs(scanTargets) do
+        if folder then
+            foundDedicatedFolder = true
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("Model") and obj ~= localChar and not checkedModels[obj] then
+                    checkedModels[obj] = true
+                    
+                    -- FIRST check distance BEFORE checking for Humanoid (optimization)
+                    local objRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+                    if objRoot then
+                        local distance = (playerPos - objRoot.Position).Magnitude
+                        if distance <= scanRadius then
+                            -- Now check if it has humanoid and isn't already monitored
+                            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                            if humanoid and not AutoBlock.MonitoredEntities[obj] then
+                                MonitorEntity(obj)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- If no dedicated folders found, scan workspace children
+    if not foundDedicatedFolder then
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if obj:IsA("Model") and obj ~= localChar and not checkedModels[obj] then
+                checkedModels[obj] = true
+                
+                local objRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+                if objRoot then
+                    local distance = (playerPos - objRoot.Position).Magnitude
+                    if distance <= scanRadius then
+                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                        if humanoid and not AutoBlock.MonitoredEntities[obj] then
+                            MonitorEntity(obj)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Also check for player characters nearby
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            if not checkedModels[char] then
+                local charRoot = char:FindFirstChild("HumanoidRootPart")
+                if charRoot then
+                    local distance = (playerPos - charRoot.Position).Magnitude
+                    if distance <= scanRadius then
+                        local humanoid = char:FindFirstChildOfClass("Humanoid")
+                        if humanoid and not AutoBlock.MonitoredEntities[char] then
+                            MonitorEntity(char)
+                        end
+                    end
+                end
             end
         end
     end
@@ -3082,6 +3126,7 @@ end
 
 local function StartAutoBlock()
     if AutoBlock.ScanThread then pcall(task.cancel, AutoBlock.ScanThread) end
+    Library:Notify("AutoBlock enabled - scanning for entities within 500 studs", 3)
     AutoBlock.ScanThread = task.spawn(function()
         while AutoBlock.Enabled do
             ScanForEntities()
@@ -3125,8 +3170,8 @@ BlockGroup:AddToggle("AutoBlockToggle", {
 
 BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
 BlockGroup:AddLabel("a registered animation ID within distance.")
-BlockGroup:AddLabel("Uses spatial scan (150 studs) every 1 second.")
-BlockGroup:AddLabel("Optimized: Only scans nearby entities.")
+BlockGroup:AddLabel("Scans NPCs/Mobs/Players within 500 studs.")
+BlockGroup:AddLabel("Optimized: Distance check before monitoring.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
