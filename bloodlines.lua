@@ -2933,7 +2933,10 @@ local AutoBlock = {
     Enabled = false,
     Connections = {},
     Triggered = {},
-    ContinuousMonitors = {} -- key = playerName..animID, value = RBXScriptConnection
+    ContinuousMonitors = {}, -- key = playerName..animID, value = RBXScriptConnection
+    MobConnections = {},     -- key = model, value = {connections}
+    MobScanThread = nil,
+    MobScanInterval = 2,
 }
 
 -- Remote events
