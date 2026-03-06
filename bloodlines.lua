@@ -2574,9 +2574,9 @@ local function StartBossFarm()
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
 
-        -- Position above the boss, facing down at it
+        -- Position above the boss, standing upright
         local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-        root.CFrame = CFrame.new(targetPos, bossRoot.Position)
+        root.CFrame = CFrame.new(targetPos)
     end)
 
     -- Attack spam loop (fires remote)
