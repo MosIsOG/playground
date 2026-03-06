@@ -68,7 +68,7 @@ local Connections = { Active = {} }
 local Signal = {} Signal.__index = Signal
 local GetCharacter, Spectating
 
-local Mouse = LocalPlayer:GetMouse()
+local Mouse = pcall(function() return LocalPlayer:GetMouse() end) and LocalPlayer:GetMouse() or nil
 local Terrain = workspace:FindFirstChild'Terrain'
 local QUAD_SUPPORTED_EXPLOIT = pcall(function() Drawing.new('Quad'):Remove() end)
 
@@ -961,7 +961,7 @@ local function CheckRay(Instance, Distance, Position, Unit)
         table.clear(RayIgnoreList)
         table.insert(RayIgnoreList, LocalPlayer.Character)
         table.insert(RayIgnoreList, Camera)
-        if Mouse.TargetFilter then table.insert(RayIgnoreList, Mouse.TargetFilter) end
+        if Mouse and Mouse.TargetFilter then table.insert(RayIgnoreList, Mouse.TargetFilter) end
         if #IgnoreList > 64 then
             while #IgnoreList > 64 do
                 table.remove(IgnoreList, 1)
@@ -2648,7 +2648,7 @@ local BlockRules = {
    { animID = "6360969229", delay = 0.18, distance = 15 },
    { animID = "11330795390", delay = 0.1, distance = 6 },
    { animID = "7275651023", delay = 0.2, distance = 19 },
-   { animID = "86213040968703", delay = 0.1, distance= 10 },
+   { animID = "86213040968703", delay = 0.1, distance = 10, continuous = true },
 }
 
 -- Test rule (temporary)
@@ -2658,7 +2658,8 @@ local TestRule = nil
 local AutoBlock = {
     Enabled = false,
     Connections = {},
-    Triggered = {}
+    Triggered = {},
+    ContinuousMonitors = {} -- key = playerName..animID, value = RBXScriptConnection
 }
 
 -- Remote events
@@ -2701,6 +2702,54 @@ local function ScheduleBlock(playerName, delay)
     end)
 end
 
+-- Continuous block: monitors a long-running animation and blocks whenever the player is within distance
+local function StartContinuousBlock(player, track, rule)
+    local key = player.Name .. "_" .. rule.animID
+    -- Don't duplicate if already monitoring this animation for this player
+    if AutoBlock.ContinuousMonitors[key] then return end
+
+    local isBlocking = false
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        -- Stop monitoring if disabled, track stopped, or player/character gone
+        if not AutoBlock.Enabled or not track or not track.IsPlaying or not player.Character then
+            if isBlocking then
+                Unblock()
+                isBlocking = false
+            end
+            conn:Disconnect()
+            AutoBlock.ContinuousMonitors[key] = nil
+            return
+        end
+
+        local dist = GetDistanceToPlayer(player)
+        if dist and dist <= (rule.distance or 999) then
+            if not isBlocking then
+                task.delay(rule.delay or 0.1, function()
+                    -- Re-check conditions after delay
+                    if AutoBlock.Enabled and track and track.IsPlaying then
+                        local d = GetDistanceToPlayer(player)
+                        if d and d <= (rule.distance or 999) then
+                            Block()
+                            isBlocking = true
+                        end
+                    end
+                end)
+            end
+        else
+            if isBlocking then
+                Unblock()
+                isBlocking = false
+            end
+        end
+    end)
+
+    AutoBlock.ContinuousMonitors[key] = conn
+    -- Also store in player connections for cleanup
+    if not AutoBlock.Connections[player] then AutoBlock.Connections[player] = {} end
+    table.insert(AutoBlock.Connections[player], conn)
+end
+
 local function MonitorPlayerBlock(player, character)
     if not character or player == LocalPlayer then return end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -2716,22 +2765,31 @@ local function MonitorPlayerBlock(player, character)
         -- Check permanent rules
         for _, rule in ipairs(BlockRules) do
             if assetId == rule.animID then
-                if rule.distance then
-                    local dist = GetDistanceToPlayer(player)
-                    if not dist or dist > rule.distance then return end
+                if rule.continuous then
+                    -- Long-running animation: continuously monitor distance while it plays
+                    StartContinuousBlock(player, track, rule)
+                else
+                    if rule.distance then
+                        local dist = GetDistanceToPlayer(player)
+                        if not dist or dist > rule.distance then return end
+                    end
+                    ScheduleBlock(player.Name, rule.delay or 0.3)
                 end
-                ScheduleBlock(player.Name, rule.delay or 0.3)
                 return
             end
         end
 
         -- Check test rule
         if TestRule and assetId == TestRule.animID then
-            if TestRule.distance then
-                local dist = GetDistanceToPlayer(player)
-                if not dist or dist > TestRule.distance then return end
+            if TestRule.continuous then
+                StartContinuousBlock(player, track, TestRule)
+            else
+                if TestRule.distance then
+                    local dist = GetDistanceToPlayer(player)
+                    if not dist or dist > TestRule.distance then return end
+                end
+                ScheduleBlock(player.Name, TestRule.delay or 0.3)
             end
-            ScheduleBlock(player.Name, TestRule.delay or 0.3)
         end
     end
 
@@ -2970,6 +3028,135 @@ FetcherGroup:AddSlider("AnimFetcherDistance", {
     end
 })
 FetcherGroup:AddLabel("Only logs animations within this range.")
+
+-- ==================== ANIMATION PLAYER ====================
+local AnimPlayer = {
+    CurrentTrack = nil,
+    AnimId = "",
+    Looping = false,
+    Speed = 1
+}
+
+local AnimPlayerGroup = Tabs.Misc:AddRightGroupbox("Animation Player")
+
+AnimPlayerGroup:AddInput("AnimPlayerId", {
+    Default = "",
+    Numeric = false,
+    Finished = false,
+    Text = "Animation ID",
+    Tooltip = "Enter a Roblox animation asset ID (numbers only or rbxassetid://...)",
+    Placeholder = "e.g. 12345678",
+    Callback = function(value)
+        AnimPlayer.AnimId = value
+    end
+})
+
+AnimPlayerGroup:AddToggle("AnimPlayerLoop", {
+    Text = "Loop Animation",
+    Default = false,
+    Callback = function(value)
+        AnimPlayer.Looping = value
+        if AnimPlayer.CurrentTrack then
+            AnimPlayer.CurrentTrack.Looped = value
+        end
+    end
+})
+
+AnimPlayerGroup:AddSlider("AnimPlayerSpeed", {
+    Text = "Playback Speed",
+    Default = 1,
+    Min = 0.1,
+    Max = 3,
+    Rounding = 1,
+    Suffix = "x",
+    Callback = function(value)
+        AnimPlayer.Speed = value
+        if AnimPlayer.CurrentTrack and AnimPlayer.CurrentTrack.IsPlaying then
+            AnimPlayer.CurrentTrack:AdjustSpeed(value)
+        end
+    end
+})
+
+AnimPlayerGroup:AddButton({
+    Text = "Play Animation",
+    Func = function()
+        local id = AnimPlayer.AnimId
+        if not id or id == "" then
+            Library:Notify("Enter an animation ID first!", 3)
+            return
+        end
+
+        -- Normalize the ID
+        if not id:match("rbxassetid://") then
+            id = "rbxassetid://" .. id:match("%d+")
+        end
+
+        local char = LocalPlayer.Character
+        if not char then
+            Library:Notify("No character found!", 3)
+            return
+        end
+
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then
+            Library:Notify("No humanoid found!", 3)
+            return
+        end
+
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if not animator then
+            animator = Instance.new("Animator")
+            animator.Parent = humanoid
+        end
+
+        -- Stop previous preview
+        if AnimPlayer.CurrentTrack then
+            pcall(function() AnimPlayer.CurrentTrack:Stop() end)
+            pcall(function() AnimPlayer.CurrentTrack:Destroy() end)
+            AnimPlayer.CurrentTrack = nil
+        end
+
+        local anim = Instance.new("Animation")
+        anim.AnimationId = id
+
+        local ok, track = pcall(function()
+            return animator:LoadAnimation(anim)
+        end)
+
+        if not ok or not track then
+            Library:Notify("Failed to load animation: " .. tostring(id), 3)
+            anim:Destroy()
+            return
+        end
+
+        track.Looped = AnimPlayer.Looping
+        track:Play()
+        track:AdjustSpeed(AnimPlayer.Speed)
+        AnimPlayer.CurrentTrack = track
+
+        Library:Notify("Playing animation: " .. id, 3)
+    end,
+    DoubleClick = false,
+    Tooltip = "Play the animation on your character"
+})
+
+AnimPlayerGroup:AddButton({
+    Text = "Stop Animation",
+    Func = function()
+        if AnimPlayer.CurrentTrack then
+            pcall(function() AnimPlayer.CurrentTrack:Stop() end)
+            pcall(function() AnimPlayer.CurrentTrack:Destroy() end)
+            AnimPlayer.CurrentTrack = nil
+            Library:Notify("Animation stopped", 2)
+        else
+            Library:Notify("No animation is playing", 2)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = "Stop the currently previewed animation"
+})
+
+AnimPlayerGroup:AddLabel("Paste an ID from the fetcher to preview it.")
 
 -- ==================== ANTI-CHEAT BYPASS & SERVER UTILITIES ====================
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Anti-Cheat & Server")
