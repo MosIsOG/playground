@@ -1687,8 +1687,44 @@ local NoFall = {
     Enabled = false,
     Connection = nil,
     StateConnection = nil,
-    VelocityThreshold = -50  -- Cap falling speed (adjust if needed)
+    GroundDistance = 10,
+    BlockDamageRemote = true,  -- Block TakeDamage remote calls
+    JustLanded = false,
 }
+
+-- Hook DataEvent to block fall damage
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") 
+    and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+local OldNamecall
+OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    -- Intercept DataEvent:FireServer calls
+    if method == "FireServer" and self == DataEvent and NoFall.Enabled and NoFall.BlockDamageRemote then
+        -- Check if this is a TakeDamage call
+        if args[1] == "TakeDamage" then
+            -- Check if player is falling or just landed (indicating fall damage)
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChild("Humanoid")
+                if humanoid then
+                    local state = humanoid:GetState()
+                    -- Block if in freefall, landing, or just landed
+                    if state == Enum.HumanoidStateType.Freefall or 
+                       state == Enum.HumanoidStateType.Landed or 
+                       NoFall.JustLanded then
+                        -- Block this damage call
+                        return
+                    end
+                end
+            end
+        end
+    end
+    
+    return OldNamecall(self, ...)
+end)
 
 local function SetupNoFall(character)
     if not character then return end
@@ -1706,7 +1742,7 @@ local function SetupNoFall(character)
         NoFall.StateConnection = nil
     end
 
-    -- Method 1: Cap downward velocity to prevent lethal falls
+    -- Aggressive velocity control when falling and near ground
     NoFall.Connection = RunService.Heartbeat:Connect(function()
         if not NoFall.Enabled or not root or not root.Parent then
             if NoFall.Connection then NoFall.Connection:Disconnect(); NoFall.Connection = nil end
@@ -1714,17 +1750,46 @@ local function SetupNoFall(character)
         end
         
         local velocity = root.AssemblyLinearVelocity
-        if velocity.Y < NoFall.VelocityThreshold then
-            root.AssemblyLinearVelocity = Vector3.new(velocity.X, NoFall.VelocityThreshold, velocity.Z)
+        
+        -- Check if falling (negative Y velocity)
+        if velocity.Y < -5 then
+            -- Raycast downward to detect ground proximity
+            local rayOrigin = root.Position
+            local rayDirection = Vector3.new(0, -NoFall.GroundDistance, 0)
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+            raycastParams.FilterDescendantsInstances = {character}
+            
+            local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+            
+            -- If close to ground, zero out falling velocity
+            if rayResult then
+                root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+            end
+        end
+        
+        -- Reset landed flag after a moment
+        if NoFall.JustLanded then
+            task.delay(0.5, function() NoFall.JustLanded = false end)
         end
     end)
 
-    -- Method 2: Change state on landing to prevent damage calculation
+    -- Prevent landing state damage calculation
     NoFall.StateConnection = humanoid.StateChanged:Connect(function(oldState, newState)
         if not NoFall.Enabled then return end
         
-        -- When landing, immediately switch to another state
+        -- Mark that we just landed to help block the damage remote
         if newState == Enum.HumanoidStateType.Landed then
+            NoFall.JustLanded = true
+        end
+        
+        -- Block the landed state entirely
+        if newState == Enum.HumanoidStateType.Landed then
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end
+        
+        -- Also handle freefall -> landing transition
+        if oldState == Enum.HumanoidStateType.Freefall and newState == Enum.HumanoidStateType.Landed then
             humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
     end)
@@ -1739,6 +1804,7 @@ local function StopNoFall()
         NoFall.StateConnection:Disconnect()
         NoFall.StateConnection = nil
     end
+    NoFall.JustLanded = false
 end
 
 -- Handle character respawns
@@ -1770,19 +1836,30 @@ NoFallGroup:AddToggle("NoFallToggle", {
     end
 })
 
-NoFallGroup:AddSlider("NoFallVelocityCap", {
-    Text = "Velocity Cap",
-    Default = -50,
-    Min = -100,
-    Max = -10,
+NoFallGroup:AddSlider("NoFallGroundDist", {
+    Text = "Ground Detection",
+    Default = 10,
+    Min = 5,
+    Max = 30,
     Rounding = 0,
+    Suffix = " studs",
     Callback = function(v)
-        NoFall.VelocityThreshold = v
+        NoFall.GroundDistance = v
     end,
-    Tooltip = "Maximum falling speed (less negative = safer)"
+    Tooltip = "Distance threshold for velocity reset"
 })
 
-NoFallGroup:AddLabel("Caps fall velocity & blocks landing state.")
+NoFallGroup:AddToggle("BlockDamageRemote", {
+    Text = "Block Damage Remote",
+    Default = true,
+    Callback = function(v)
+        NoFall.BlockDamageRemote = v
+    end,
+    Tooltip = "Blocks DataEvent TakeDamage calls when falling"
+})
+
+NoFallGroup:AddLabel("Hooks DataEvent to block fall damage.")
+NoFallGroup:AddLabel("Combines velocity reset + state blocking.")
 
 -- ==================== RESET BUTTON ====================
 local PlayerUtilities = Tabs.Player:AddLeftGroupbox("Utilities")
