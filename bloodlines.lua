@@ -4038,14 +4038,63 @@ ChakraGroup:AddLabel("Teleports to each ChakraPoint and presses E.")
 local TrinketCollector = {
     Running = false,
     Thread = nil,
-    ClickDelay = 0.5,      -- delay after clicking
-    CheckInterval = 2,      -- how often to scan for trinkets (seconds)
-    MaxDistance = 100,      -- max distance to consider a trinket
+    RenderThread = nil,
+    ClickDelay = 0.5,
+    CheckInterval = 2,
+    PickupRange = 15,        -- Pickup range (hitbox size)
+    MaxDistance = 100,       -- Max scan distance
     CollectedCount = 0,
+    ShowHitbox = false,
+    HitboxCircle = nil,
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Auto Collector")
 local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle")
+
+-- Create hitbox visualization
+local function CreateHitboxVisual()
+    if TrinketCollector.HitboxCircle then
+        TrinketCollector.HitboxCircle:Remove()
+    end
+    
+    local circle = Drawing.new("Circle")
+    circle.Thickness = 2
+    circle.NumSides = 32
+    circle.Radius = 100
+    circle.Color = Color3.fromRGB(0, 255, 255)
+    circle.Transparency = 0.7
+    circle.Visible = false
+    circle.Filled = false
+    
+    TrinketCollector.HitboxCircle = circle
+    return circle
+end
+
+-- Update hitbox position on screen
+local function UpdateHitboxVisual()
+    if not TrinketCollector.ShowHitbox or not TrinketCollector.HitboxCircle then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local camera = workspace.CurrentCamera
+    local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+    
+    if onScreen then
+        -- Calculate radius based on distance and range
+        local distance = (camera.CFrame.Position - root.Position).Magnitude
+        local scale = 1 / distance * 1000
+        local radius = TrinketCollector.PickupRange * scale
+        
+        TrinketCollector.HitboxCircle.Position = Vector2.new(screenPos.X, screenPos.Y)
+        TrinketCollector.HitboxCircle.Radius = math.clamp(radius, 20, 300)
+        TrinketCollector.HitboxCircle.Visible = true
+    else
+        TrinketCollector.HitboxCircle.Visible = false
+    end
+end
 
 -- Function to find all TrinketSpawn objects in workspace
 local function FindAllTrinketSpawns()
@@ -4058,6 +4107,35 @@ local function FindAllTrinketSpawns()
     return spawns
 end
 
+-- Simulate mouse click using VirtualInputManager
+local function SimulateMouseClick(target)
+    local VIM = game:GetService("VirtualInputManager")
+    
+    -- Get the camera and calculate screen position
+    local camera = workspace.CurrentCamera
+    local targetPos
+    
+    if target:IsA("Model") then
+        targetPos = target:GetPivot().Position
+    elseif target:IsA("BasePart") then
+        targetPos = target.Position
+    else
+        return false
+    end
+    
+    local screenPos, onScreen = camera:WorldToViewportPoint(targetPos)
+    if not onScreen then return false end
+    
+    -- Simulate left mouse button click at target position
+    pcall(function()
+        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
+        task.wait(0.05)
+        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
+    end)
+    
+    return true
+end
+
 -- Function to check and collect a trinket spawn
 local function CollectTrinket(spawn)
     if not spawn or not spawn.Parent then return false end
@@ -4065,7 +4143,7 @@ local function CollectTrinket(spawn)
     -- Check if trinket is occupied (available to collect)
     local occupied = spawn:FindFirstChild("Occupied")
     if not occupied then
-        return false -- No Occupied indicator
+        return false
     end
     
     -- Check if occupied is true (trinket present)
@@ -4077,13 +4155,7 @@ local function CollectTrinket(spawn)
     end
     
     if not isOccupied then
-        return false -- No trinket spawned here
-    end
-    
-    -- Find ClickDetector
-    local clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
-    if not clickDetector then
-        return false -- No way to click it
+        return false
     end
     
     -- Get spawn position
@@ -4094,7 +4166,6 @@ local function CollectTrinket(spawn)
         elseif spawn:IsA("BasePart") then
             trinketPos = spawn.Position
         else
-            -- Try to find a part in the spawn
             local part = spawn:FindFirstChildWhichIsA("BasePart", true)
             if part then
                 trinketPos = part.Position
@@ -4104,33 +4175,55 @@ local function CollectTrinket(spawn)
     
     if not trinketPos then return false end
     
-    -- Check distance
+    -- Check distance to player
     local char = LocalPlayer.Character
     if not char then return false end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
     
     local distance = (root.Position - trinketPos).Magnitude
+    
+    -- If too far, check against max scan distance
     if distance > TrinketCollector.MaxDistance then
-        return false -- Too far away
+        return false
     end
     
-    -- Teleport to trinket
+    -- Teleport close to the trinket
     root.CFrame = CFrame.new(trinketPos)
-    task.wait(0.3) -- Wait for position to register
+    task.wait(0.2)
     
-    -- Click the trinket
-    local success = pcall(function()
-        fireclickdetector(clickDetector)
-    end)
+    -- Now check if it's within pickup range (hitbox)
+    distance = (root.Position - trinketPos).Magnitude
+    if distance > TrinketCollector.PickupRange then
+        return false -- Not in pickup range
+    end
     
-    if not success then return false end
+    -- Try multiple click methods
+    local success = false
+    
+    -- Method 1: Mouse click simulation
+    success = SimulateMouseClick(spawn)
+    task.wait(0.1)
+    
+    -- Method 2: Fireclickdetector (fallback)
+    if not success then
+        local clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
+        if clickDetector then
+            pcall(function()
+                fireclickdetector(clickDetector)
+                success = true
+            end)
+        end
+    end
     
     task.wait(TrinketCollector.ClickDelay)
     
-    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-    Library:Notify("Collected trinket at " .. spawn.Name, 2)
-    return true
+    if success then
+        TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+        Library:Notify("Collected trinket at " .. spawn.Name, 2)
+    end
+    
+    return success
 end
 
 -- Main collection loop
@@ -4169,6 +4262,37 @@ local function TrinketCollectionLoop()
     end
     
     TrinketStatusLabel:SetText(string.format("Status: Stopped (%d total collected)", TrinketCollector.CollectedCount))
+end
+
+-- Hitbox render loop
+local function StartHitboxRender()
+    if not TrinketCollector.HitboxCircle then
+        CreateHitboxVisual()
+    end
+    
+    if TrinketCollector.RenderThread then
+        task.cancel(TrinketCollector.RenderThread)
+    end
+    
+    TrinketCollector.RenderThread = task.spawn(function()
+        while TrinketCollector.ShowHitbox do
+            UpdateHitboxVisual()
+            RunService.RenderStepped:Wait()
+        end
+        if TrinketCollector.HitboxCircle then
+            TrinketCollector.HitboxCircle.Visible = false
+        end
+    end)
+end
+
+local function StopHitboxRender()
+    if TrinketCollector.RenderThread then
+        task.cancel(TrinketCollector.RenderThread)
+        TrinketCollector.RenderThread = nil
+    end
+    if TrinketCollector.HitboxCircle then
+        TrinketCollector.HitboxCircle.Visible = false
+    end
 end
 
 -- UI Controls
@@ -4227,8 +4351,33 @@ TrinketGroup:AddSlider("TrinketMaxDistance", {
     Callback = function(v) TrinketCollector.MaxDistance = v end
 })
 
-TrinketGroup:AddLabel("Scans TrinketSpawn1-12 for trinkets.")
-TrinketGroup:AddLabel("Toggle with T key. Auto-clicks when found.")
+TrinketGroup:AddSlider("TrinketPickupRange", {
+    Text = "Pickup Range",
+    Default = 15,
+    Min = 5,
+    Max = 50,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(v) TrinketCollector.PickupRange = v end,
+    Tooltip = "Hitbox radius for collection"
+})
+
+TrinketGroup:AddToggle("ShowTrinketHitbox", {
+    Text = "Show Pickup Hitbox",
+    Default = false,
+    Callback = function(v)
+        TrinketCollector.ShowHitbox = v
+        if v then
+            StartHitboxRender()
+        else
+            StopHitboxRender()
+        end
+    end,
+    Tooltip = "Visualize the pickup range around your character"
+})
+
+TrinketGroup:AddLabel("Uses MouseButton1 + fireclickdetector.")
+TrinketGroup:AddLabel("Checks Occupied value before collecting.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
