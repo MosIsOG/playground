@@ -2402,27 +2402,36 @@ local BossFarm = {
 
 local BossFarmGroup = BossBarTab:AddLeftGroupbox("Boss Farm")
 
--- Scan for nearby bosses and return a list
+-- Scan for nearby bosses and return a list (OPTIMIZED)
 local function ScanBossFarmTargets()
     local results = {}
     local localChar = LocalPlayer.Character
     if not localChar then return results end
     local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
     if not localRoot then return results end
+    local playerPos = localRoot.Position
 
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Parent and obj.Health > 0 and obj.MaxHealth >= BossFarm.MinHealth then
-            local player = Players:GetPlayerFromCharacter(obj.Parent)
-            if not player then
-                local root = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent:FindFirstChild("Head")
-                if root then
-                    local dist = (localRoot.Position - root.Position).Magnitude
-                    if dist <= BossFarm.ScanRange then
-                        table.insert(results, {
-                            humanoid = obj,
-                            name = obj.Parent.Name,
-                            distance = math.floor(dist)
-                        })
+    -- Check specific folders instead of entire workspace
+    local foldersToCheck = {"NPCs", "Mobs", "Enemies"}
+    
+    for _, folderName in ipairs(foldersToCheck) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if model:IsA("Model") then
+                    local hum = model:FindFirstChildWhichIsA("Humanoid")
+                    if hum and hum.Health > 0 and hum.MaxHealth >= BossFarm.MinHealth then
+                        local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+                        if root then
+                            local dist = (playerPos - root.Position).Magnitude
+                            if dist <= BossFarm.ScanRange then
+                                table.insert(results, {
+                                    humanoid = hum,
+                                    name = model.Name,
+                                    distance = math.floor(dist)
+                                })
+                            end
+                        end
                     end
                 end
             end
@@ -3343,29 +3352,10 @@ local function MonitorMobAnim(model)
 end
 
 local function ScanForMobs()
-    local localChar = LocalPlayer.Character
-    if not localChar then return end
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
-            local player = Players:GetPlayerFromCharacter(obj.Parent)
-            if not player then
-                local model = obj.Parent
-                if not AnimFetcher.MobConnections[model] then
-                    local dist = GetDistanceToModel(model)
-                    if dist and dist <= AnimFetcher.MaxDistance then
-                        MonitorMobAnim(model)
-                    end
-                end
-            end
-        end
-    end
-    -- Clean up dead mobs
-    for model, conns in pairs(AnimFetcher.MobConnections) do
-        if not model or not model.Parent then
-            for _, c in ipairs(conns) do c:Disconnect() end
-            AnimFetcher.MobConnections[model] = nil
-        end
-    end
+    -- DISABLED TO IMPROVE PERFORMANCE
+    -- This was causing lag by scanning entire workspace repeatedly
+    -- Autoblock system already handles entity detection
+    return
 end
 
 local function StartMobScan()
@@ -3992,6 +3982,247 @@ RiftGroup:AddSlider("RiftDelay", {
 
 RiftGroup:AddLabel("Teleports to each Unstable Rift in workspace.Rifts.")
 RiftGroup:AddLabel("Presses E at each location.")
+
+-- ==================== TRINKET COLLECTOR ====================
+local TrinketCollector = {
+    Enabled = false,
+    ScanInterval = 1.5,  -- Slower to reduce lag
+    PickupRadius = 100,
+    Thread = nil,
+    CollectedCount = 0,
+}
+
+local trinketNames = {
+    "Gold Bracelet",
+    "Gold Ring",
+    "Silver Ring",
+    "Silver Bracelet",
+    "Silver Necklace",
+    "Gold Necklace",
+    "Gold Enclosed Ring",
+    "Silver Enclosed Ring",
+    "Ring Schematics",
+    "Ring Of The Neoncat",
+    "Ring Of Resistance",
+    "Ring Of Nourishment",
+    "Ring Of Favor",
+}
+
+local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
+
+local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle (0 collected)")
+
+local function IsTrinket(obj)
+    if not obj then return false end
+    -- Check any object type, not just Models
+    for _, name in ipairs(trinketNames) do
+        if obj.Name == name then 
+            print("[TRINKET] Found:", obj.Name, "Type:", obj.ClassName)
+            return true 
+        end
+    end
+    return false
+end
+
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+local function CollectTrinket(trinket)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    
+    -- Check distance first - only collect if already close (NO TELEPORTING)
+    local distance = (root.Position - trinket.Position).Magnitude
+    if distance > TrinketCollector.PickupRadius then
+        return false -- Too far, don't attempt
+    end
+    
+    print("[TRINKET] Attempting collection:", trinket.Name, "Distance:", math.floor(distance))
+    
+    -- METHOD 1: Fire the remote with the trinket's ID
+    if DataEvent then
+        local idValue = trinket:FindFirstChild("ID")
+        if idValue and idValue:IsA("NumberValue") then
+            print("[TRINKET] Firing remote with ID:", idValue.Value)
+            local success, err = pcall(function()
+                DataEvent:FireServer("PickUp", idValue.Value)
+            end)
+            if success then
+                print("[TRINKET] Remote fired successfully")
+                task.wait(0.1)
+                if not trinket.Parent then
+                    print("[TRINKET] Remote method worked!")
+                    return true
+                end
+            else
+                print("[TRINKET] Remote error:", err)
+            end
+        end
+    end
+    
+    -- METHOD 2: Mouse click at trinket's screen position (no teleporting needed)
+    print("[TRINKET] Trying mouse click...")
+    local part = trinket:IsA("BasePart") and trinket or trinket:FindFirstChildWhichIsA("BasePart")
+    if part then
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if onScreen then
+            pcall(function()
+                VirtualInput:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInput:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
+            end)
+            task.wait(0.1)
+            if not trinket.Parent then
+                print("[TRINKET] Mouse click worked!")
+                return true
+            end
+        end
+    end
+    
+    print("[TRINKET] All methods failed for", trinket.Name)
+    return false
+end
+
+-- Event-based trinket detection (optimized, no lag)
+local TrinketSpawnConnection = nil
+local TrackedTrinkets = {} -- Cache of known trinkets
+
+local function OnTrinketSpawned(obj)
+    if not TrinketCollector.Enabled then return end
+    if not obj:IsA("MeshPart") then return end
+    if not IsTrinket(obj) then return end
+    if TrackedTrinkets[obj] then return end -- Already tracking
+    
+    TrackedTrinkets[obj] = true
+    print("[TRINKET] New trinket detected:", obj.Name)
+    
+    -- Try to collect it immediately if in range
+    task.spawn(function()
+        task.wait(0.1) -- Let it fully load
+        if obj.Parent and TrinketCollector.Enabled then
+            if CollectTrinket(obj) then
+                TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+                TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+            end
+        end
+        TrackedTrinkets[obj] = nil
+    end)
+end
+
+local function ScanAndCollectTrinkets()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local playerPos = root.Position
+    local collected = 0
+    
+    -- Only scan nearby region, not entire workspace
+    local region = Region3.new(
+        playerPos - Vector3.new(TrinketCollector.PickupRadius, TrinketCollector.PickupRadius, TrinketCollector.PickupRadius),
+        playerPos + Vector3.new(TrinketCollector.PickupRadius, TrinketCollector.PickupRadius, TrinketCollector.PickupRadius)
+    )
+    region = region:ExpandToGrid(4)
+    
+    -- Scan only MeshParts in workspace children (faster than GetDescendants)
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if TrinketCollector.Enabled and obj:IsA("MeshPart") and IsTrinket(obj) and not TrackedTrinkets[obj] then
+            local distance = (playerPos - obj.Position).Magnitude
+            
+            if distance <= TrinketCollector.PickupRadius then
+                TrackedTrinkets[obj] = true
+                if CollectTrinket(obj) then
+                    collected = collected + 1
+                    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+                end
+                TrackedTrinkets[obj] = nil
+            end
+        end
+    end
+    
+    if collected > 0 then
+        TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+    end
+end
+
+local function StartTrinketCollector()
+    if TrinketCollector.Thread then
+        pcall(task.cancel, TrinketCollector.Thread)
+    end
+    
+    -- Setup event-based detection for instant pickup (optimized)
+    if TrinketSpawnConnection then
+        TrinketSpawnConnection:Disconnect()
+    end
+    TrinketSpawnConnection = workspace.DescendantAdded:Connect(OnTrinketSpawned)
+    print("[TRINKET] Event detection enabled (optimized)")
+    
+    -- Periodic scan as backup (slower interval to reduce lag)
+    TrinketCollector.Thread = task.spawn(function()
+        while TrinketCollector.Enabled do
+            ScanAndCollectTrinkets()
+            task.wait(TrinketCollector.ScanInterval)
+        end
+    end)
+end
+
+local function StopTrinketCollector()
+    TrinketCollector.Enabled = false
+    
+    if TrinketCollector.Thread then
+        pcall(task.cancel, TrinketCollector.Thread)
+        TrinketCollector.Thread = nil
+    end
+    
+    if TrinketSpawnConnection then
+        TrinketSpawnConnection:Disconnect()
+        TrinketSpawnConnection = nil
+    end
+    
+    TrackedTrinkets = {}
+    TrinketStatusLabel:SetText("Status: Stopped (" .. TrinketCollector.CollectedCount .. " total)")
+end
+
+TrinketGroup:AddToggle("TrinketCollectorToggle", {
+    Text = "Auto Collect Trinkets",
+    Default = false,
+    Callback = function(v)
+        TrinketCollector.Enabled = v
+        if v then
+            StartTrinketCollector()
+        else
+            StopTrinketCollector()
+        end
+    end
+})
+
+TrinketGroup:AddSlider("TrinketScanInterval", {
+    Text = "Scan Interval",
+    Default = 1.5,
+    Min = 0.5,
+    Max = 5,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) TrinketCollector.ScanInterval = v end,
+    Tooltip = "How often to scan (slower = less lag)"
+})
+
+TrinketGroup:AddSlider("TrinketPickupRadius", {
+    Text = "Pickup Radius",
+    Default = 100,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Suffix = "studs",
+    Callback = function(v) TrinketCollector.PickupRadius = v end,
+    Tooltip = "Maximum distance to collect trinkets"
+})
+
+TrinketGroup:AddLabel("Proximity-based auto-pickup (no teleporting).")
+TrinketGroup:AddLabel("Event-based detection for instant collection.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
