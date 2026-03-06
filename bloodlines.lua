@@ -2596,6 +2596,7 @@ UpdateLabel()
 local BlockRules = {
    { animID = "6360969229", delay = 0.18, distance = 15 },
    { animID = "11330795390", delay = 0.1, distance = 6 },
+   { animID = "7275651023", delay = 0.2, distance = 19 },
 }
 
 -- Test rule (temporary)
