@@ -2594,7 +2594,8 @@ UpdateLabel()
 -- ==================== AUTO PERFECT BLOCK (FIXED) ====================
 -- Permanent config (edit this table directly)
 local BlockRules = {
-    -- Example: { animID = "9864206537", delay = 0.3, distance = 50 },
+   { animID = "6360969229", delay = 0.18, distance = 15 },
+   { animID = "11330795390", delay = 0.1, distance = 6 },
 }
 
 -- Test rule (temporary)
