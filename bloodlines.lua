@@ -3334,7 +3334,7 @@ local TestStatus = TestGroup:AddLabel("No test rule active.")
 
 local function UpdateTestStatus()
     if TestRule then
-        TestStatus:SetText(string.format("ID: %s | Delay: %.1fs | Dist: %s | %s",
+        TestStatus:SetText(string.format("ID: %s | Delay: %.3fs | Dist: %s | %s",
             TestRule.animID,
             TestRule.delay,
             TestRule.distance and (TestRule.distance.." studs") or "No limit",
@@ -3375,7 +3375,7 @@ TestGroup:AddButton({
         if not TestRule then Library:Notify("No rule to copy", 3); return end
         local dist = TestRule.distance and (", distance = " .. TestRule.distance) or ""
         local cont = TestRule.continuous and ", continuous = true" or ""
-        local code = string.format('{ animID = "%s", delay = %.1f%s%s },', TestRule.animID, TestRule.delay, dist, cont)
+        local code = string.format('{ animID = "%s", delay = %.3f%s%s },', TestRule.animID, TestRule.delay, dist, cont)
         setclipboard(code)
         Library:Notify("Lua code copied", 2)
     end
@@ -3386,7 +3386,7 @@ local PermGroup = Tabs.Misc:AddLeftGroupbox("Permanent Rules")
 local permText = ""
 for i, rule in ipairs(BlockRules) do
     local mode = rule.continuous and "Continuous" or "One-shot"
-    permText = permText .. string.format("%d. ID: %s, Delay: %.1fs, Dist: %s, %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any", mode)
+    permText = permText .. string.format("%d. ID: %s, Delay: %.3fs, Dist: %s, %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any", mode)
 end
 if permText == "" then permText = "No permanent rules." end
 PermGroup:AddLabel(permText)
