@@ -2053,28 +2053,27 @@ local BossBarTab = Window:AddTab("Boss Bars")
 
 -- Global default max distance (studs) for auto detection
 local DEFAULT_MAX_DISTANCE = 500
-local BOSS_MIN_HEALTH = 450  -- minimum max health to be considered a boss
 
--- Edit this table to add your permanent bosses manually (optional)
-local BossConfig = {
-    -- Example: { path = 'workspace["Wooden Golem"].Humanoid', maxDistance = 300 },
+-- Predefined boss list - checks every 30 seconds
+local PredefinedBosses = {
+    { name = "Wooden Golem", path = 'workspace["Wooden Golem"]', maxDistance = 500 },
+    { name = "Manda", path = 'workspace.Manda', maxDistance = 500, allowDuplicates = true },
+    { name = "Chakra Knight", path = 'workspace["Chakra Knight"]', maxDistance = 500 },
+    { name = "The Barbarian", path = 'workspace["The Barbarian"]', maxDistance = 500 },
+    { name = "Barbarit The Rose", path = 'workspace["Barbarit The Rose"]', maxDistance = 500 },
+    { name = "Lava Snake", path = 'workspace["Lava Snake"]', maxDistance = 500 },
 }
 
--- Test entries (temporary)
-local TestEntries = {}  -- { path = string, maxDistance = number? }
-
--- Auto‑detected bosses: key = humanoid (unique), value = { bar, humanoid, maxDist }
-local AutoBosses = {}
+-- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
+local TrackedBosses = {}
 
 -- Active bars for manual/test entries: key = path (or "test_"..path), value = { bg, fill, txt, humanoid, maxDist }
 local ManualBars = {}
 
 -- Settings
-local AutoDetect = {
+local BossDetect = {
     Enabled = true,
-    Range = DEFAULT_MAX_DISTANCE,
-    ScanInterval = 2,  -- seconds
-    LastScan = 0,
+    ScanInterval = 30,  -- seconds (only checks every 30 seconds)
     ScanThread = nil,
 }
 
@@ -2193,9 +2192,9 @@ local function RemoveManualBar(key)
     end
 end
 
--- Remove an auto bar by humanoid reference
-local function RemoveAutoBar(humanoid)
-    local entry = AutoBosses[humanoid]
+-- Remove a tracked boss bar
+local function RemoveTrackedBoss(bossInstance)
+    local entry = TrackedBosses[bossInstance]
     if entry and entry.bar then
         pcall(function()
             entry.bar.bg:Remove()
@@ -2203,263 +2202,142 @@ local function RemoveAutoBar(humanoid)
             entry.bar.txt:Remove()
         end)
     end
-    AutoBosses[humanoid] = nil
+    TrackedBosses[bossInstance] = nil
 end
 
--- Scan for new bosses (called periodically)
-local function ScanForBosses()
-    if not AutoDetect.Enabled then return end
+-- Scan for predefined bosses only (called every 30 seconds)
+local function ScanForPredefinedBosses()
+    if not BossDetect.Enabled then return end
 
     local localChar = LocalPlayer.Character
     if not localChar then return end
     local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
     if not localRoot then return end
 
-    -- Get all humanoids in workspace (excluding players)
-    local allHumanoids = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
-            -- Skip players (they have Player instances)
-            local player = Players:GetPlayerFromCharacter(obj.Parent)
-            if not player then
-                table.insert(allHumanoids, obj)
+    for _, bossConfig in ipairs(PredefinedBosses) do
+        local success, bossModel = pcall(function()
+            return loadstring("return " .. bossConfig.path)()
+        end)
+        
+        if success and bossModel then
+            -- Handle duplicates for Manda (workspace.Manda can return multiple)
+            local modelsToCheck = {}
+            
+            if bossConfig.allowDuplicates then
+                -- Find all instances with this name in workspace
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if obj.Name == bossConfig.name and obj:IsA("Model") then
+                        table.insert(modelsToCheck, obj)
+                    end
+                end
+            else
+                -- Single instance
+                if bossModel:IsA("Model") then
+                    table.insert(modelsToCheck, bossModel)
+                end
             end
-        end
-    end
-
-    -- Mark existing auto bosses as seen
-    local seen = {}
-    for _, hum in ipairs(allHumanoids) do
-        if hum.MaxHealth >= BOSS_MIN_HEALTH then
-            local dist = GetDistanceToHumanoid(hum)
-            if dist and dist <= AutoDetect.Range then
-                seen[hum] = true
-                if not AutoBosses[hum] then
-                    -- New boss: create bar
-                    AutoBosses[hum] = {
-                        bar = CreateBarDrawing(),
-                        humanoid = hum,
-                        maxDist = AutoDetect.Range
-                    }
+            
+            -- Process each found model
+            for _, model in ipairs(modelsToCheck) do
+                if model and model.Parent and not TrackedBosses[model] then
+                    local humanoid = model:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        local dist = GetDistanceToHumanoid(humanoid)
+                        if dist and dist <= (bossConfig.maxDistance or DEFAULT_MAX_DISTANCE) then
+                            -- New boss detected - create bar
+                            TrackedBosses[model] = {
+                                bar = CreateBarDrawing(),
+                                humanoid = humanoid,
+                                maxDist = bossConfig.maxDistance or DEFAULT_MAX_DISTANCE,
+                                name = bossConfig.name
+                            }
+                            Library:Notify("Detected: " .. bossConfig.name, 3)
+                        end
+                    end
                 end
             end
         end
     end
 
-    -- Remove auto bosses that are no longer valid
-    for hum, entry in pairs(AutoBosses) do
-        if not seen[hum] or not hum.Parent then
-            RemoveAutoBar(hum)
+    -- Remove tracked bosses that are no longer valid
+    for bossInstance, entry in pairs(TrackedBosses) do
+        if not bossInstance.Parent or not entry.humanoid or not entry.humanoid.Parent then
+            RemoveTrackedBoss(bossInstance)
         end
     end
 end
 
--- Start the auto‑scan loop
-local function StartAutoScan()
-    if AutoDetect.ScanThread then
-        task.cancel(AutoDetect.ScanThread)
+-- Start the predefined boss scan loop (every 30 seconds)
+local function StartBossScan()
+    if BossDetect.ScanThread then
+        task.cancel(BossDetect.ScanThread)
     end
-    AutoDetect.ScanThread = task.spawn(function()
-        while AutoDetect.Enabled do
-            ScanForBosses()
-            task.wait(AutoDetect.ScanInterval)
+    BossDetect.ScanThread = task.spawn(function()
+        while BossDetect.Enabled do
+            ScanForPredefinedBosses()
+            task.wait(BossDetect.ScanInterval)
         end
     end)
 end
 
--- Main render loop (runs every frame)
-RunService.RenderStepped:Connect(function()
-    -- Manual permanent entries
-    for _, entry in ipairs(BossConfig) do
-        local key = entry.path
-        if not ManualBars[key] then
-            local success, humanoid = pcall(function()
-                return loadstring("return " .. key)()
-            end)
-            if success and humanoid and humanoid:IsA("Humanoid") then
-                local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
-                ManualBars[key] = CreateBarDrawing()
-                ManualBars[key].humanoid = humanoid
-                ManualBars[key].maxDist = maxDist
+-- Main render loop (throttled to reduce lag)
+local BossBarUpdateThread = task.spawn(function()
+    while true do
+        -- Tracked predefined bosses
+        for bossInstance, entry in pairs(TrackedBosses) do
+            if bossInstance and bossInstance.Parent and entry.humanoid and entry.humanoid.Parent then
+                UpdateBar(entry.bar, entry.humanoid, entry.maxDist)
+            else
+                RemoveTrackedBoss(bossInstance)
             end
         end
-        local bar = ManualBars[key]
-        if bar then
-            UpdateBar(bar, bar.humanoid, bar.maxDist)
-        end
-    end
-
-    -- Test entries
-    for _, entry in ipairs(TestEntries) do
-        local key = "test_" .. entry.path
-        if not ManualBars[key] then
-            local success, humanoid = pcall(function()
-                return loadstring("return " .. entry.path)()
-            end)
-            if success and humanoid and humanoid:IsA("Humanoid") then
-                local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
-                ManualBars[key] = CreateBarDrawing()
-                ManualBars[key].humanoid = humanoid
-                ManualBars[key].maxDist = maxDist
-            end
-        end
-        local bar = ManualBars[key]
-        if bar then
-            UpdateBar(bar, bar.humanoid, bar.maxDist)
-        end
-    end
-
-    -- Auto‑detected bosses
-    for hum, entry in pairs(AutoBosses) do
-        if hum and hum.Parent then
-            UpdateBar(entry.bar, hum, entry.maxDist)
-        else
-            RemoveAutoBar(hum)
-        end
+        
+        task.wait(0.067) -- Update ~15 times per second instead of 60
     end
 end)
 
 -- ===== UI =====
--- Left group: Auto detection settings
-local AutoGroup = BossBarTab:AddLeftGroupbox("Auto Boss Detection")
-AutoGroup:AddToggle("AutoDetectToggle", {
-    Text = "Enable Auto Detection",
-    Default = false,
+-- Boss detection settings
+local BossGroup = BossBarTab:AddLeftGroupbox("Predefined Boss Detection")
+BossGroup:AddToggle("BossDetectToggle", {
+    Text = "Enable Boss Detection",
+    Default = true,
     Callback = function(v)
-        AutoDetect.Enabled = v
+        BossDetect.Enabled = v
         if v then
-            StartAutoScan()
+            StartBossScan()
         else
-            -- Clear all auto bars
-            for hum, _ in pairs(AutoBosses) do
-                RemoveAutoBar(hum)
+            -- Clear all tracked bosses
+            for bossInstance, _ in pairs(TrackedBosses) do
+                RemoveTrackedBoss(bossInstance)
             end
-            if AutoDetect.ScanThread then
-                task.cancel(AutoDetect.ScanThread)
-                AutoDetect.ScanThread = nil
+            if BossDetect.ScanThread then
+                task.cancel(BossDetect.ScanThread)
+                BossDetect.ScanThread = nil
             end
         end
     end
 })
-AutoGroup:AddSlider("AutoDetectRange", {
-    Text = "Detection Range",
-    Default = DEFAULT_MAX_DISTANCE,
-    Min = 100,
-    Max = 2000,
+BossGroup:AddSlider("BossScanInterval", {
+    Text = "Scan Interval",
+    Default = 30,
+    Min = 10,
+    Max = 120,
     Rounding = 0,
-    Suffix = "studs",
-    Callback = function(v) AutoDetect.Range = v end
+    Suffix = "s",
+    Callback = function(v) BossDetect.ScanInterval = v end,
+    Tooltip = "How often to check for predefined bosses."
 })
-AutoGroup:AddLabel(string.format("Auto‑detects NPCs with ≥ %d max health.", BOSS_MIN_HEALTH))
+BossGroup:AddLabel("Scans for predefined bosses every 30s.")
+BossGroup:AddLabel("Bosses: Wooden Golem, Manda, Chakra Knight,")
+BossGroup:AddLabel("The Barbarian, Barbarit The Rose, Lava Snake")
+BossGroup:AddLabel("Boss bars update at 15 FPS (optimized).")
+BossGroup:AddLabel("Once detected, will not scan again until boss dies.")
 
--- Manual permanent bosses (read‑only)
-local PermGroup = BossBarTab:AddLeftGroupbox("Manual Permanent Bosses")
-local function RefreshPermList()
-    ClearGroupBox(PermGroup)
-    for i, entry in ipairs(BossConfig) do
-        local distText = entry.maxDistance and (" (max " .. entry.maxDistance .. " studs)") or (" (default " .. DEFAULT_MAX_DISTANCE .. " studs)")
-        PermGroup:AddLabel(string.format("%d. %s%s", i, entry.path, distText))
-    end
-    if #BossConfig == 0 then
-        PermGroup:AddLabel("No manual bosses.")
-    end
+-- Start scanning on load
+if BossDetect.Enabled then
+    StartBossScan()
 end
-RefreshPermList()
-
--- Test section (same as before)
-local TestGroup = BossBarTab:AddRightGroupbox("Test a Boss")
-
-TestGroup:AddInput("TestPath", {
-    Text = "Path to Humanoid",
-    Default = "",
-    Placeholder = 'e.g., workspace["Wooden Golem"].Humanoid',
-    Numeric = false,
-    Finished = false,
-    Callback = function(val) _G.TestPath = val end
-})
-
-TestGroup:AddSlider("TestMaxDistance", {
-    Text = "Max Distance (studs)",
-    Default = DEFAULT_MAX_DISTANCE,
-    Min = 50,
-    Max = 2000,
-    Rounding = 0,
-    Suffix = "studs",
-    Callback = function(val) _G.TestMaxDist = val end
-})
-
-TestGroup:AddButton({
-    Text = "Add Test",
-    Func = function()
-        local path = _G.TestPath or ""
-        if path == "" then
-            Library:Notify("Enter a path", 3)
-            return
-        end
-        local success, humanoid = pcall(function()
-            return loadstring("return " .. path)()
-        end)
-        if not success or not humanoid or not humanoid:IsA("Humanoid") then
-            Library:Notify("Invalid path or not a Humanoid", 3)
-            return
-        end
-        local maxDist = _G.TestMaxDist or DEFAULT_MAX_DISTANCE
-        table.insert(TestEntries, { path = path, maxDistance = maxDist })
-        RefreshTestList()
-        Library:Notify("Test boss added (max " .. maxDist .. " studs)", 2)
-    end
-})
-
-TestGroup:AddButton({
-    Text = "Clear Tests",
-    Func = function()
-        for _, entry in ipairs(TestEntries) do
-            RemoveManualBar("test_" .. entry.path)
-        end
-        TestEntries = {}
-        RefreshTestList()
-        Library:Notify("Test entries cleared", 2)
-    end
-})
-
-TestGroup:AddButton({
-    Text = "Promote All Tests to Permanent",
-    Func = function()
-        for _, entry in ipairs(TestEntries) do
-            table.insert(BossConfig, { path = entry.path, maxDistance = entry.maxDistance })
-        end
-        RefreshPermList()
-        -- Clear test bars and entries
-        for _, entry in ipairs(TestEntries) do
-            RemoveManualBar("test_" .. entry.path)
-        end
-        TestEntries = {}
-        RefreshTestList()
-        Library:Notify("Tests added to permanent list. Edit the script to keep them permanently.", 3)
-    end
-})
-
--- Test list display
-local TestListGroup = BossBarTab:AddRightGroupbox("Current Tests", 2)
-local function RefreshTestList()
-    ClearGroupBox(TestListGroup)
-    for i, entry in ipairs(TestEntries) do
-        local distText = " (max " .. (entry.maxDistance or DEFAULT_MAX_DISTANCE) .. " studs)"
-        TestListGroup:AddLabel(string.format("%d. %s%s", i, entry.path, distText))
-        TestListGroup:AddButton({
-            Text = "Remove",
-            Func = function()
-                RemoveManualBar("test_" .. entry.path)
-                table.remove(TestEntries, i)
-                RefreshTestList()
-            end
-        })
-    end
-    if #TestEntries == 0 then
-        TestListGroup:AddLabel("No active tests.")
-    end
-end
-RefreshTestList()
 
 -- ==================== BOSS FARM (ANCHOR + M1 SPAM) ====================
 local BossFarm = {
@@ -2572,9 +2450,9 @@ local function StartBossFarm()
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
 
-        -- Position above the boss, standing upright
+        -- Position above the boss, facing down at it
         local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-        root.CFrame = CFrame.new(targetPos)
+        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
     end)
 
     -- Attack spam loop (fires remote)
@@ -2994,49 +2872,46 @@ local function StartContinuousBlock(player, track, rule)
     if AutoBlock.ContinuousMonitors[key] then return end
 
     local isBlocking = false
-    local conn
-    conn = RunService.Heartbeat:Connect(function()
-        -- Stop monitoring if disabled, track stopped, or player/character gone
-        if not AutoBlock.Enabled or not track or not track.IsPlaying or not player.Character then
-            if isBlocking then
-                Unblock()
-                isBlocking = false
-            end
-            conn:Disconnect()
-            AutoBlock.ContinuousMonitors[key] = nil
-            return
-        end
-
-        local dist = GetDistanceToPlayer(player)
-        if dist and dist <= (rule.distance or 999) then
-            if not isBlocking then
-                local function doContBlock()
-                    if AutoBlock.Enabled and track and track.IsPlaying then
-                        local d = GetDistanceToPlayer(player)
-                        if d and d <= (rule.distance or 999) then
-                            Block()
-                            isBlocking = true
+    local thread = task.spawn(function()
+        while AutoBlock.Enabled and track and track.IsPlaying and player.Character do
+            local dist = GetDistanceToPlayer(player)
+            if dist and dist <= (rule.distance or 999) then
+                if not isBlocking then
+                    local function doContBlock()
+                        if AutoBlock.Enabled and track and track.IsPlaying then
+                            local d = GetDistanceToPlayer(player)
+                            if d and d <= (rule.distance or 999) then
+                                Block()
+                                isBlocking = true
+                            end
                         end
                     end
+                    if (rule.delay or 0.1) <= 0.01 then
+                        task.spawn(doContBlock)
+                    else
+                        task.delay(rule.delay or 0.1, doContBlock)
+                    end
                 end
-                if (rule.delay or 0.1) <= 0.01 then
-                    task.spawn(doContBlock)
-                else
-                    task.delay(rule.delay or 0.1, doContBlock)
+            else
+                if isBlocking then
+                    Unblock()
+                    isBlocking = false
                 end
             end
-        else
-            if isBlocking then
-                Unblock()
-                isBlocking = false
-            end
+            task.wait(0.033) -- Check ~30 times per second instead of 60
         end
+        
+        -- Cleanup when done
+        if isBlocking then
+            Unblock()
+        end
+        AutoBlock.ContinuousMonitors[key] = nil
     end)
 
-    AutoBlock.ContinuousMonitors[key] = conn
+    AutoBlock.ContinuousMonitors[key] = thread
     -- Also store in player connections for cleanup
     if not AutoBlock.Connections[player] then AutoBlock.Connections[player] = {} end
-    table.insert(AutoBlock.Connections[player], conn)
+    table.insert(AutoBlock.Connections[player], thread)
 end
 
 local function MonitorPlayerBlock(player, character)
@@ -3147,45 +3022,43 @@ local function StartContinuousBlockMob(model, track, rule)
     if AutoBlock.ContinuousMonitors[key] then return end
 
     local isBlocking = false
-    local conn
-    conn = RunService.Heartbeat:Connect(function()
-        if not AutoBlock.Enabled or not track or not track.IsPlaying or not model.Parent then
-            if isBlocking then
-                Unblock()
-                isBlocking = false
-            end
-            conn:Disconnect()
-            AutoBlock.ContinuousMonitors[key] = nil
-            return
-        end
-
-        local dist = GetDistanceToMob(model)
-        if dist and dist <= (rule.distance or 999) then
-            if not isBlocking then
-                local function doContBlock()
-                    if AutoBlock.Enabled and track and track.IsPlaying then
-                        local d = GetDistanceToMob(model)
-                        if d and d <= (rule.distance or 999) then
-                            Block()
-                            isBlocking = true
+    local thread = task.spawn(function()
+        while AutoBlock.Enabled and track and track.IsPlaying and model.Parent do
+            local dist = GetDistanceToMob(model)
+            if dist and dist <= (rule.distance or 999) then
+                if not isBlocking then
+                    local function doContBlock()
+                        if AutoBlock.Enabled and track and track.IsPlaying then
+                            local d = GetDistanceToMob(model)
+                            if d and d <= (rule.distance or 999) then
+                                Block()
+                                isBlocking = true
+                            end
                         end
                     end
+                    if (rule.delay or 0.1) <= 0.01 then
+                        task.spawn(doContBlock)
+                    else
+                        task.delay(rule.delay or 0.1, doContBlock)
+                    end
                 end
-                if (rule.delay or 0.1) <= 0.01 then
-                    task.spawn(doContBlock)
-                else
-                    task.delay(rule.delay or 0.1, doContBlock)
+            else
+                if isBlocking then
+                    Unblock()
+                    isBlocking = false
                 end
             end
-        else
-            if isBlocking then
-                Unblock()
-                isBlocking = false
-            end
+            task.wait(0.033) -- Check ~30 times per second instead of 60
         end
+        
+        -- Cleanup when done
+        if isBlocking then
+            Unblock()
+        end
+        AutoBlock.ContinuousMonitors[key] = nil
     end)
 
-    AutoBlock.ContinuousMonitors[key] = conn
+    AutoBlock.ContinuousMonitors[key] = thread
 end
 
 local function MonitorMobBlock(model)
@@ -3239,15 +3112,27 @@ end
 local function ScanForBlockMobs()
     local localChar = LocalPlayer.Character
     if not localChar then return end
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
-            local player = Players:GetPlayerFromCharacter(obj.Parent)
-            if not player and not AutoBlock.MobConnections[obj.Parent] then
-                local dist = GetDistanceToMob(obj.Parent)
-                if dist and dist <= 100 then -- scan range for mob block
-                    MonitorMobBlock(obj.Parent)
+    
+    -- More efficient: only scan NPCs folder or specific areas instead of entire workspace
+    local scanTargets = {workspace:FindFirstChild("NPCs"), workspace:FindFirstChild("Mobs"), workspace}
+    
+    for _, target in ipairs(scanTargets) do
+        if target then
+            for _, obj in ipairs(target:GetChildren()) do
+                if obj:IsA("Model") and obj ~= localChar then
+                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        local player = Players:GetPlayerFromCharacter(obj)
+                        if not player and not AutoBlock.MobConnections[obj] then
+                            local dist = GetDistanceToMob(obj)
+                            if dist and dist <= 100 then -- scan range for mob block
+                                MonitorMobBlock(obj)
+                            end
+                        end
+                    end
                 end
             end
+            if target ~= workspace then break end -- If we found NPCs/Mobs folder, don't scan whole workspace
         end
     end
     -- Clean up dead mobs
@@ -3295,6 +3180,19 @@ BlockGroup:AddToggle("AutoBlockToggle", {
         end
     end
 })
+
+BlockGroup:AddSlider("MobScanInterval", {
+    Text = "Mob Scan Interval",
+    Default = 2,
+    Min = 1,
+    Max = 10,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) AutoBlock.MobScanInterval = v end,
+    Tooltip = "How often to scan for new mobs. Higher = less lag."
+})
+
+BlockGroup:AddLabel("Automatically blocks attacks from players and mobs.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
