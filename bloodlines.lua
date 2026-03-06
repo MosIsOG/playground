@@ -2868,7 +2868,7 @@ local BlockRules = {
    { animID = "7275651023", delay = 0.2, distance = 19 },
    { animID = "86213040968703", delay = 0.0, distance = 25, continuous = true },
    { animID = "116907126244057", delay = 1.1, continuous = true },
-   { animID = "120758909308511", delay = 1.0,distance = 101,  continuous = true },
+   { animID = "120758909308511", delay = 1.0, distance = 101, continuous = true },
 }
 
 -- Test rule (temporary)
@@ -2877,78 +2877,78 @@ local TestRule = nil
 -- Runtime data
 local AutoBlock = {
     Enabled = false,
-    Connections = {},
+    MonitoredEntities = {},  -- key = model, value = {connections}
     Triggered = {},
-    ContinuousMonitors = {}, -- key = playerName..animID, value = RBXScriptConnection
-    MobConnections = {},     -- key = model, value = {connections}
-    MobScanThread = nil,
+    ContinuousMonitors = {},
+    ScanThread = nil,
 }
 
 -- Remote events
 local DataFunction = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
                     game:GetService("ReplicatedStorage").Events:FindFirstChild("DataFunction")
 
-local function GetDistanceToPlayer(player)
+local function GetDistanceToEntity(model)
     local localChar = LocalPlayer.Character
-    local targetChar = player.Character
-    if not localChar or not targetChar then return nil end
+    if not localChar or not model then return nil end
     local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
     if not localRoot or not targetRoot then return nil end
     return (localRoot.Position - targetRoot.Position).Magnitude
 end
 
 local function Block()
     if not DataFunction then return end
-    DataFunction:InvokeServer("Block")
+    pcall(function()
+        DataFunction:InvokeServer("Block")
+    end)
 end
 
 local function Unblock()
     if not DataFunction then return end
-    DataFunction:InvokeServer("EndBlock")
+    pcall(function()
+        DataFunction:InvokeServer("EndBlock")
+    end)
 end
 
-local function ScheduleBlock(playerName, delay)
-    if AutoBlock.Triggered[playerName] then return end
-    AutoBlock.Triggered[playerName] = true
+local function ScheduleBlock(entityName, delay)
+    if AutoBlock.Triggered[entityName] then return end
+    AutoBlock.Triggered[entityName] = true
 
     local function doBlock()
         if not AutoBlock.Enabled then
-            AutoBlock.Triggered[playerName] = nil
+            AutoBlock.Triggered[entityName] = nil
             return
         end
         Block()
         task.delay(0.5, function()
             if AutoBlock.Enabled then Unblock() end
-            AutoBlock.Triggered[playerName] = nil
+            AutoBlock.Triggered[entityName] = nil
         end)
     end
 
     if delay <= 0.01 then
-        -- Fire immediately — no task.delay overhead (~16ms saved)
         task.spawn(doBlock)
     else
         task.delay(delay, doBlock)
     end
 end
 
--- Continuous block: monitors a long-running animation and blocks whenever the player is within distance
-local function StartContinuousBlock(player, track, rule)
-    local key = player.Name .. "_" .. rule.animID
-    -- Don't duplicate if already monitoring this animation for this player
+-- Continuous block: monitors a long-running animation
+local function StartContinuousBlock(model, track, rule)
+    local key = tostring(model) .. "_" .. rule.animID
     if AutoBlock.ContinuousMonitors[key] then return end
 
     local isBlocking = false
     local delayApplied = false
     local thread = task.spawn(function()
-        while AutoBlock.Enabled and track and track.IsPlaying and player.Character do
-            local dist = GetDistanceToPlayer(player)
+        while AutoBlock.Enabled and track and track.IsPlaying and model.Parent do
+            local dist = GetDistanceToEntity(model)
             if dist and dist <= (rule.distance or 999) then
                 if not isBlocking and not delayApplied then
                     delayApplied = true
                     task.wait(rule.delay or 0.1)
                     if AutoBlock.Enabled and track and track.IsPlaying then
-                        local d = GetDistanceToPlayer(player)
+                        local d = GetDistanceToEntity(model)
                         if d and d <= (rule.distance or 999) then
                             Block()
                             isBlocking = true
@@ -2962,10 +2962,9 @@ local function StartContinuousBlock(player, track, rule)
                     delayApplied = false
                 end
             end
-            task.wait(0.01) -- Check 100 times per second for fast response
+            task.wait(0.01)
         end
         
-        -- Cleanup when done
         if isBlocking then
             Unblock()
         end
@@ -2973,14 +2972,14 @@ local function StartContinuousBlock(player, track, rule)
     end)
 
     AutoBlock.ContinuousMonitors[key] = thread
-    -- Also store in player connections for cleanup
-    if not AutoBlock.Connections[player] then AutoBlock.Connections[player] = {} end
-    table.insert(AutoBlock.Connections[player], thread)
 end
 
-local function MonitorPlayerBlock(player, character)
-    if not character or player == LocalPlayer then return end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+-- Monitor ANY entity (player or mob) for block animations
+local function MonitorEntity(model)
+    if AutoBlock.MonitoredEntities[model] then return end
+    if model == LocalPlayer.Character then return end
+    
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
     if not animator then return end
@@ -2994,14 +2993,13 @@ local function MonitorPlayerBlock(player, character)
         for _, rule in ipairs(BlockRules) do
             if assetId == rule.animID then
                 if rule.continuous then
-                    -- Long-running animation: continuously monitor distance while it plays
-                    StartContinuousBlock(player, track, rule)
+                    StartContinuousBlock(model, track, rule)
                 else
                     if rule.distance then
-                        local dist = GetDistanceToPlayer(player)
+                        local dist = GetDistanceToEntity(model)
                         if not dist or dist > rule.distance then return end
                     end
-                    ScheduleBlock(player.Name, rule.delay or 0.3)
+                    ScheduleBlock(model.Name or "entity", rule.delay or 0.3)
                 end
                 return
             end
@@ -3010,220 +3008,82 @@ local function MonitorPlayerBlock(player, character)
         -- Check test rule
         if TestRule and assetId == TestRule.animID then
             if TestRule.continuous then
-                StartContinuousBlock(player, track, TestRule)
+                StartContinuousBlock(model, track, TestRule)
             else
                 if TestRule.distance then
-                    local dist = GetDistanceToPlayer(player)
+                    local dist = GetDistanceToEntity(model)
                     if not dist or dist > TestRule.distance then return end
                 end
-                ScheduleBlock(player.Name, TestRule.delay or 0.3)
+                ScheduleBlock(model.Name or "entity", TestRule.delay or 0.3)
             end
         end
     end
 
     local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
-    if not AutoBlock.Connections[player] then AutoBlock.Connections[player] = {} end
-    table.insert(AutoBlock.Connections[player], conn)
+    AutoBlock.MonitoredEntities[model] = {conn}
 
+    -- Check already playing animations
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
         onAnimPlayed(track)
     end
 end
 
--- Initialize players (same as before)
-for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        player.CharacterAdded:Connect(function(char)
-            task.wait(0.5)
-            MonitorPlayerBlock(player, char)
-        end)
-        if player.Character then
-            MonitorPlayerBlock(player, player.Character)
-        end
-    end
-end
-
-Players.PlayerAdded:Connect(function(player)
-    if player == LocalPlayer then return end
-    player.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        MonitorPlayerBlock(player, char)
-    end)
-    if player.Character then
-        MonitorPlayerBlock(player, player.Character)
-    end
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    if AutoBlock.Connections[player] then
-        for _, conn in ipairs(AutoBlock.Connections[player]) do
-            conn:Disconnect()
-        end
-        AutoBlock.Connections[player] = nil
-    end
-    AutoBlock.Triggered[player.Name] = nil
-    -- Clean up continuous monitors for this player
-    for key, conn in pairs(AutoBlock.ContinuousMonitors) do
-        if key:find("^" .. player.Name .. "_") then
-            conn:Disconnect()
-            AutoBlock.ContinuousMonitors[key] = nil
-        end
-    end
-end)
-
--- ==================== MOB AUTO BLOCK ====================
-local function GetDistanceToMob(model)
-    local localChar = LocalPlayer.Character
-    if not localChar or not model then return nil end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
-    local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
-    if not localRoot or not targetRoot then return nil end
-    return (localRoot.Position - targetRoot.Position).Magnitude
-end
-
-local function StartContinuousBlockMob(model, track, rule)
-    local key = "mob_" .. model.Name .. "_" .. rule.animID
-    if AutoBlock.ContinuousMonitors[key] then return end
-
-    local isBlocking = false
-    local delayApplied = false
-    local thread = task.spawn(function()
-        while AutoBlock.Enabled and track and track.IsPlaying and model.Parent do
-            local dist = GetDistanceToMob(model)
-            if dist and dist <= (rule.distance or 999) then
-                if not isBlocking and not delayApplied then
-                    delayApplied = true
-                    task.wait(rule.delay or 0.1)
-                    if AutoBlock.Enabled and track and track.IsPlaying then
-                        local d = GetDistanceToMob(model)
-                        if d and d <= (rule.distance or 999) then
-                            Block()
-                            isBlocking = true
-                        end
-                    end
-                end
-            else
-                if isBlocking then
-                    Unblock()
-                    isBlocking = false
-                    delayApplied = false
-                end
-            end
-            task.wait(0.01) -- Check 100 times per second for fast response
-        end
-        
-        -- Cleanup when done
-        if isBlocking then
-            Unblock()
-        end
-        AutoBlock.ContinuousMonitors[key] = nil
-    end)
-
-    AutoBlock.ContinuousMonitors[key] = thread
-end
-
-local function MonitorMobBlock(model)
-    if AutoBlock.MobConnections[model] then return end
-    local humanoid = model:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-
-    local function onAnimPlayed(track)
-        if not AutoBlock.Enabled then return end
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-
-        for _, rule in ipairs(BlockRules) do
-            if assetId == rule.animID then
-                if rule.continuous then
-                    StartContinuousBlockMob(model, track, rule)
-                else
-                    if rule.distance then
-                        local dist = GetDistanceToMob(model)
-                        if not dist or dist > rule.distance then return end
-                    end
-                    ScheduleBlock("mob_" .. model.Name, rule.delay or 0.3)
-                end
-                return
-            end
-        end
-
-        if TestRule and assetId == TestRule.animID then
-            if TestRule.continuous then
-                StartContinuousBlockMob(model, track, TestRule)
-            else
-                if TestRule.distance then
-                    local dist = GetDistanceToMob(model)
-                    if not dist or dist > TestRule.distance then return end
-                end
-                ScheduleBlock("mob_" .. model.Name, TestRule.delay or 0.3)
-            end
-        end
-    end
-
-    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
-    AutoBlock.MobConnections[model] = {conn}
-
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        onAnimPlayed(track)
-    end
-end
-
-local function ScanForBlockMobs()
+-- Scan for all entities to monitor
+local function ScanForEntities()
     local localChar = LocalPlayer.Character
     if not localChar then return end
     
-    -- More efficient: only scan NPCs folder or specific areas instead of entire workspace
-    local scanTargets = {workspace:FindFirstChild("NPCs"), workspace:FindFirstChild("Mobs"), workspace}
-    
-    for _, target in ipairs(scanTargets) do
-        if target then
-            for _, obj in ipairs(target:GetChildren()) do
-                if obj:IsA("Model") and obj ~= localChar then
-                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        local player = Players:GetPlayerFromCharacter(obj)
-                        if not player and not AutoBlock.MobConnections[obj] then
-                            local dist = GetDistanceToMob(obj)
-                            if dist and dist <= 100 then -- scan range for mob block
-                                MonitorMobBlock(obj)
-                            end
-                        end
-                    end
+    -- Scan workspace for any Model with Humanoid
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= localChar then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            if humanoid and not AutoBlock.MonitoredEntities[obj] then
+                local dist = GetDistanceToEntity(obj)
+                if dist and dist <= 150 then -- Only monitor entities within 150 studs
+                    MonitorEntity(obj)
                 end
             end
-            if target ~= workspace then break end -- If we found NPCs/Mobs folder, don't scan whole workspace
         end
     end
-    -- Clean up dead mobs
-    for model, conns in pairs(AutoBlock.MobConnections) do
+    
+    -- Clean up dead/removed entities
+    for model, conns in pairs(AutoBlock.MonitoredEntities) do
         if not model or not model.Parent then
-            for _, c in ipairs(conns) do c:Disconnect() end
-            AutoBlock.MobConnections[model] = nil
+            for _, c in ipairs(conns) do 
+                if typeof(c) == "RBXScriptConnection" then
+                    c:Disconnect() 
+                end
+            end
+            AutoBlock.MonitoredEntities[model] = nil
         end
     end
 end
 
-local function StartMobBlockScan()
-    if AutoBlock.MobScanThread then pcall(task.cancel, AutoBlock.MobScanThread) end
-    AutoBlock.MobScanThread = task.spawn(function()
+local function StartAutoBlock()
+    if AutoBlock.ScanThread then pcall(task.cancel, AutoBlock.ScanThread) end
+    AutoBlock.ScanThread = task.spawn(function()
         while AutoBlock.Enabled do
-            ScanForBlockMobs()
-            task.wait(0.5) -- Scan every 0.5s for responsive detection
+            ScanForEntities()
+            task.wait(1) -- Scan every second
         end
     end)
 end
 
-local function StopMobBlockScan()
-    if AutoBlock.MobScanThread then
-        pcall(task.cancel, AutoBlock.MobScanThread)
-        AutoBlock.MobScanThread = nil
+local function StopAutoBlock()
+    if AutoBlock.ScanThread then
+        pcall(task.cancel, AutoBlock.ScanThread)
+        AutoBlock.ScanThread = nil
     end
-    for model, conns in pairs(AutoBlock.MobConnections) do
-        for _, c in ipairs(conns) do c:Disconnect() end
+    for model, conns in pairs(AutoBlock.MonitoredEntities) do
+        for _, c in ipairs(conns) do
+            if typeof(c) == "RBXScriptConnection" then
+                c:Disconnect()
+            end
+        end
     end
-    AutoBlock.MobConnections = {}
+    AutoBlock.MonitoredEntities = {}
+    AutoBlock.ContinuousMonitors = {}
+    Unblock()
 end
 
 -- ===== UI =====
@@ -3235,16 +3095,16 @@ BlockGroup:AddToggle("AutoBlockToggle", {
     Callback = function(v)
         AutoBlock.Enabled = v
         if v then
-            StartMobBlockScan()
+            StartAutoBlock()
         else
-            StopMobBlockScan()
+            StopAutoBlock()
         end
     end
 })
 
-BlockGroup:AddLabel("Automatically blocks attacks from players and mobs.")
-BlockGroup:AddLabel("Scans for new mobs every 0.5s.")
-BlockGroup:AddLabel("Continuous blocks check 100 times per second.")
+BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
+BlockGroup:AddLabel("a registered animation ID within distance.")
+BlockGroup:AddLabel("Scans all entities every 1 second.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
