@@ -2421,7 +2421,11 @@ local function ScanBossFarmTargets()
                 if model:IsA("Model") then
                     local hum = model:FindFirstChildWhichIsA("Humanoid")
                     if hum and hum.Health > 0 and hum.MaxHealth >= BossFarm.MinHealth then
-                        local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+                        local root = model:FindFirstChild("HumanoidRootPart") 
+                                  or model:FindFirstChild("Head")
+                                  or model:FindFirstChild("Torso")
+                                  or model:FindFirstChild("UpperTorso")
+                                  or model:FindFirstChildWhichIsA("BasePart")
                         if root then
                             local dist = (playerPos - root.Position).Magnitude
                             if dist <= BossFarm.ScanRange then
@@ -2458,7 +2462,11 @@ local function BossFarmDash()
     if not BossFarmDataEvent then return end
     local hum = BossFarm.Target
     if not hum or not hum.Parent then return end
-    local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") or hum.Parent:FindFirstChild("Head")
+    local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                  or hum.Parent:FindFirstChild("Head")
+                  or hum.Parent:FindFirstChild("Torso")
+                  or hum.Parent:FindFirstChild("UpperTorso")
+                  or hum.Parent:FindFirstChildWhichIsA("BasePart")
     if not bossRoot then return end
     pcall(function()
         BossFarmDataEvent:FireServer("Dash", "Sub", bossRoot.Position)
@@ -2498,8 +2506,16 @@ local function StartBossFarm()
             return
         end
 
-        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") or hum.Parent:FindFirstChild("Head")
-        if not bossRoot then return end
+        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                      or hum.Parent:FindFirstChild("Head")
+                      or hum.Parent:FindFirstChild("Torso")
+                      or hum.Parent:FindFirstChild("UpperTorso")
+                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
+        
+        if not bossRoot then 
+            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
+            return 
+        end
 
         local char = LocalPlayer.Character
         if not char then return end
