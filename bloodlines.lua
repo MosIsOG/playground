@@ -3028,33 +3028,54 @@ local function MonitorEntity(model)
     end
 end
 
--- Scan for all entities to monitor
+-- Scan for all entities to monitor (optimized spatial search)
 local function ScanForEntities()
     local localChar = LocalPlayer.Character
     if not localChar then return end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
     
-    -- Scan workspace for any Model with Humanoid
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= localChar then
-            local humanoid = obj:FindFirstChildOfClass("Humanoid")
-            if humanoid and not AutoBlock.MonitoredEntities[obj] then
-                local dist = GetDistanceToEntity(obj)
-                if dist and dist <= 150 then -- Only monitor entities within 150 studs
-                    MonitorEntity(obj)
-                end
+    local playerPos = localRoot.Position
+    local scanRadius = 150 -- Only scan within 150 studs
+    
+    -- Use spatial query to find parts near player (much faster than GetDescendants)
+    local nearbyParts = workspace:GetPartBoundsInRadius(playerPos, scanRadius, 500) -- Max 500 parts
+    
+    local checkedModels = {}
+    for _, part in ipairs(nearbyParts) do
+        local model = part.Parent
+        if model and model:IsA("Model") and model ~= localChar and not checkedModels[model] then
+            checkedModels[model] = true
+            
+            -- Check if this model has a humanoid and isn't already monitored
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if humanoid and not AutoBlock.MonitoredEntities[model] then
+                MonitorEntity(model)
             end
         end
     end
     
-    -- Clean up dead/removed entities
+    -- Clean up entities that are now out of range or removed
     for model, conns in pairs(AutoBlock.MonitoredEntities) do
         if not model or not model.Parent then
+            -- Entity removed/destroyed
             for _, c in ipairs(conns) do 
                 if typeof(c) == "RBXScriptConnection" then
                     c:Disconnect() 
                 end
             end
             AutoBlock.MonitoredEntities[model] = nil
+        else
+            -- Check if still in range
+            local dist = GetDistanceToEntity(model)
+            if not dist or dist > scanRadius + 50 then -- Add 50 stud buffer to prevent flickering
+                for _, c in ipairs(conns) do 
+                    if typeof(c) == "RBXScriptConnection" then
+                        c:Disconnect() 
+                    end
+                end
+                AutoBlock.MonitoredEntities[model] = nil
+            end
         end
     end
 end
@@ -3104,7 +3125,8 @@ BlockGroup:AddToggle("AutoBlockToggle", {
 
 BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
 BlockGroup:AddLabel("a registered animation ID within distance.")
-BlockGroup:AddLabel("Scans all entities every 1 second.")
+BlockGroup:AddLabel("Uses spatial scan (150 studs) every 1 second.")
+BlockGroup:AddLabel("Optimized: Only scans nearby entities.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
