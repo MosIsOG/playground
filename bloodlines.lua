@@ -2923,6 +2923,7 @@ local BlockRules = {
    { animID = "11330795390", delay = 0.115, distance = 6 },
    { animID = "7275651023", delay = 0.2, distance = 19 },
    { animID = "86213040968703", delay = 0.0, distance = 25, continuous = true },
+   { animID = "116907126244057", delay = 1.0, continuous = true },
 }
 
 -- Test rule (temporary)
