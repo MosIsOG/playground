@@ -1834,75 +1834,95 @@ PlayerUtilities:AddButton({
     end
 })
 
--- ==================== HOLD M1 AUTOCLICKER ====================
-local AutoClicker = {
+-- ==================== HOLD M1 SPAM (NATURAL CLICK) ====================
+local M1Spam = {
     Enabled = false,
     Holding = false,
     Delay = 0.1,
     Thread = nil
 }
 
-local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
-                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-
-local function ClickLoop()
-    while AutoClicker.Holding and AutoClicker.Enabled do
-        if DataEvent then
-            pcall(function()
-                DataEvent:FireServer("startSkill", "Chakra Sense", true, "MouseButton1")
-                -- Change the arguments above to match the skill you want
-            end)
-        end
-        task.wait(AutoClicker.Delay)
+-- Detect available click simulation method
+local ClickFunction
+if syn and syn.input then
+    -- Synapse X
+    ClickFunction = function()
+        syn.input.mouse1click()
+    end
+elseif mouse1click then
+    -- Most other executors (Krni, etc.)
+    ClickFunction = mouse1click
+elseif VirtualInputManager then
+    -- Roblox's VirtualInputManager (limited, may not work in all games)
+    ClickFunction = function()
+        local vim = game:GetService("VirtualInputManager")
+        vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        task.wait(0.01)
+        vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end
+else
+    ClickFunction = function()
+        -- Fallback: nothing
+        warn("No click simulation method available")
     end
 end
 
+local function ClickLoop()
+    while M1Spam.Holding and M1Spam.Enabled do
+        pcall(ClickFunction)
+        task.wait(M1Spam.Delay)
+    end
+end
+
+-- Monitor physical mouse button
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not AutoClicker.Enabled or gameProcessed then return end
+    if not M1Spam.Enabled or gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        AutoClicker.Holding = true
-        AutoClicker.Thread = task.spawn(ClickLoop)
+        M1Spam.Holding = true
+        M1Spam.Thread = task.spawn(ClickLoop)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        AutoClicker.Holding = false
-        if AutoClicker.Thread then
-            task.cancel(AutoClicker.Thread)
-            AutoClicker.Thread = nil
+        M1Spam.Holding = false
+        if M1Spam.Thread then
+            task.cancel(M1Spam.Thread)
+            M1Spam.Thread = nil
         end
     end
 end)
 
--- UI for autoclicker
-local ClickerGroup = Tabs.Player:AddLeftGroupbox("Auto Clicker")
+-- UI
+local M1Group = Tabs.Player:AddLeftGroupbox("M1 Spam")
 
-ClickerGroup:AddToggle("AutoClickerToggle", {
-    Text = "Enable Hold M1 Autoclicker",
+M1Group:AddToggle("M1SpamToggle", {
+    Text = "Enable Hold M1 Spam",
     Default = false,
     Callback = function(v)
-        AutoClicker.Enabled = v
+        M1Spam.Enabled = v
         if not v then
-            AutoClicker.Holding = false
-            if AutoClicker.Thread then
-                task.cancel(AutoClicker.Thread)
-                AutoClicker.Thread = nil
+            M1Spam.Holding = false
+            if M1Spam.Thread then
+                task.cancel(M1Spam.Thread)
+                M1Spam.Thread = nil
             end
         end
     end
 })
 
-ClickerGroup:AddSlider("AutoClickerDelay", {
+M1Group:AddSlider("M1SpamDelay", {
     Text = "Click Delay (s)",
     Default = 0.1,
     Min = 0.02,
-    Max = 1,
+    Max = 0.5,
     Rounding = 2,
     Suffix = "s",
-    Callback = function(v) AutoClicker.Delay = v end
+    Callback = function(v) M1Spam.Delay = v end
 })
 
+M1Group:AddLabel("Simulates rapid left‑clicks while you hold M1.")
+M1Group:AddLabel("Uses executor‑specific mouse simulation.")
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
@@ -2010,37 +2030,43 @@ end)
 -- Misc Tab
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Misc")
 
-
--- ==================== BOSS HEALTH BARS (WITH DISTANCE) ====================
+-- ==================== BOSS HEALTH BARS (AUTO + MANUAL) ====================
 local BossBarTab = Window:AddTab("Boss Bars")
 
--- Global default max distance (studs)
+-- Global default max distance (studs) for auto detection
 local DEFAULT_MAX_DISTANCE = 500
+local BOSS_MIN_HEALTH = 450  -- minimum max health to be considered a boss
 
--- Edit this table to add your permanent bosses.
--- Format: { path = "full.lua.path.to.Humanoid", maxDistance = 500 }  (maxDistance optional, defaults to global)
+-- Edit this table to add your permanent bosses manually (optional)
 local BossConfig = {
-     { path = 'workspace["Wooden Golem"].Humanoid' },
-     { path = 'workspace:GetChildren()[2816].Humanoid'},
-     { path = 'workspace["The Barbarian"].Humanoid'},
-     { path = 'workspace["Lava Snake"].Humanoid'},
-     { path = 'workspace.Manda.Humanoid'},
-     { path = 'workspace["Barbarit The Rose"].Humanoid'},
+    -- Example: { path = 'workspace["Wooden Golem"].Humanoid', maxDistance = 300 },
 }
 
--- Test entries (temporary, not saved) – each entry can also have maxDistance
+-- Test entries (temporary)
 local TestEntries = {}  -- { path = string, maxDistance = number? }
 
--- Active bars: key = path (or "test_"..path), value = { bg, fill, txt, humanoid, maxDist }
-local ActiveBars = {}
+-- Auto‑detected bosses: key = humanoid (unique), value = { bar, humanoid, maxDist }
+local AutoBosses = {}
+
+-- Active bars for manual/test entries: key = path (or "test_"..path), value = { bg, fill, txt, humanoid, maxDist }
+local ManualBars = {}
+
+-- Settings
+local AutoDetect = {
+    Enabled = false,
+    Range = DEFAULT_MAX_DISTANCE,
+    ScanInterval = 2,  -- seconds
+    LastScan = 0,
+    ScanThread = nil,
+}
 
 -- Helper to clear groupbox
-local function ClearGroupBox(group)
+local function ClearGroupBox(group) 
     if group and group.Container then
         for _, child in ipairs(group.Container:GetChildren()) do
             child:Destroy()
         end
-    end
+    end 
 end
 
 -- Create drawing objects for a bar
@@ -2136,36 +2162,110 @@ local function UpdateBar(bar, humanoid, maxDist)
     return true
 end
 
--- Remove a bar (cleanup)
-local function RemoveBar(key)
-    local bar = ActiveBars[key]
+-- Remove a manual bar by key
+local function RemoveManualBar(key)
+    local bar = ManualBars[key]
     if bar then
         pcall(function()
             bar.bg:Remove()
             bar.fill:Remove()
             bar.txt:Remove()
         end)
-        ActiveBars[key] = nil
+        ManualBars[key] = nil
     end
 end
 
--- Main update loop
+-- Remove an auto bar by humanoid reference
+local function RemoveAutoBar(humanoid)
+    local entry = AutoBosses[humanoid]
+    if entry and entry.bar then
+        pcall(function()
+            entry.bar.bg:Remove()
+            entry.bar.fill:Remove()
+            entry.bar.txt:Remove()
+        end)
+    end
+    AutoBosses[humanoid] = nil
+end
+
+-- Scan for new bosses (called periodically)
+local function ScanForBosses()
+    if not AutoDetect.Enabled then return end
+
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    if not localRoot then return end
+
+    -- Get all humanoids in workspace (excluding players)
+    local allHumanoids = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
+            -- Skip players (they have Player instances)
+            local player = Players:GetPlayerFromCharacter(obj.Parent)
+            if not player then
+                table.insert(allHumanoids, obj)
+            end
+        end
+    end
+
+    -- Mark existing auto bosses as seen
+    local seen = {}
+    for _, hum in ipairs(allHumanoids) do
+        if hum.MaxHealth >= BOSS_MIN_HEALTH then
+            local dist = GetDistanceToHumanoid(hum)
+            if dist and dist <= AutoDetect.Range then
+                seen[hum] = true
+                if not AutoBosses[hum] then
+                    -- New boss: create bar
+                    AutoBosses[hum] = {
+                        bar = CreateBarDrawing(),
+                        humanoid = hum,
+                        maxDist = AutoDetect.Range
+                    }
+                end
+            end
+        end
+    end
+
+    -- Remove auto bosses that are no longer valid
+    for hum, entry in pairs(AutoBosses) do
+        if not seen[hum] or not hum.Parent then
+            RemoveAutoBar(hum)
+        end
+    end
+end
+
+-- Start the auto‑scan loop
+local function StartAutoScan()
+    if AutoDetect.ScanThread then
+        task.cancel(AutoDetect.ScanThread)
+    end
+    AutoDetect.ScanThread = task.spawn(function()
+        while AutoDetect.Enabled do
+            ScanForBosses()
+            task.wait(AutoDetect.ScanInterval)
+        end
+    end)
+end
+
+-- Main render loop (runs every frame)
 RunService.RenderStepped:Connect(function()
-    -- Permanent entries
+    -- Manual permanent entries
     for _, entry in ipairs(BossConfig) do
         local key = entry.path
-        if not ActiveBars[key] then
+        if not ManualBars[key] then
             local success, humanoid = pcall(function()
                 return loadstring("return " .. key)()
             end)
             if success and humanoid and humanoid:IsA("Humanoid") then
                 local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
-                ActiveBars[key] = CreateBarDrawing()
-                ActiveBars[key].humanoid = humanoid
-                ActiveBars[key].maxDist = maxDist
+                ManualBars[key] = CreateBarDrawing()
+                ManualBars[key].humanoid = humanoid
+                ManualBars[key].maxDist = maxDist
             end
         end
-        local bar = ActiveBars[key]
+        local bar = ManualBars[key]
         if bar then
             UpdateBar(bar, bar.humanoid, bar.maxDist)
         end
@@ -2174,27 +2274,68 @@ RunService.RenderStepped:Connect(function()
     -- Test entries
     for _, entry in ipairs(TestEntries) do
         local key = "test_" .. entry.path
-        if not ActiveBars[key] then
+        if not ManualBars[key] then
             local success, humanoid = pcall(function()
                 return loadstring("return " .. entry.path)()
             end)
             if success and humanoid and humanoid:IsA("Humanoid") then
                 local maxDist = entry.maxDistance or DEFAULT_MAX_DISTANCE
-                ActiveBars[key] = CreateBarDrawing()
-                ActiveBars[key].humanoid = humanoid
-                ActiveBars[key].maxDist = maxDist
+                ManualBars[key] = CreateBarDrawing()
+                ManualBars[key].humanoid = humanoid
+                ManualBars[key].maxDist = maxDist
             end
         end
-        local bar = ActiveBars[key]
+        local bar = ManualBars[key]
         if bar then
             UpdateBar(bar, bar.humanoid, bar.maxDist)
+        end
+    end
+
+    -- Auto‑detected bosses
+    for hum, entry in pairs(AutoBosses) do
+        if hum and hum.Parent then
+            UpdateBar(entry.bar, hum, entry.maxDist)
+        else
+            RemoveAutoBar(hum)
         end
     end
 end)
 
 -- ===== UI =====
--- Left group: Permanent bosses (read‑only list)
-local PermGroup = BossBarTab:AddLeftGroupbox("Permanent Bosses")
+-- Left group: Auto detection settings
+local AutoGroup = BossBarTab:AddLeftGroupbox("Auto Boss Detection")
+AutoGroup:AddToggle("AutoDetectToggle", {
+    Text = "Enable Auto Detection",
+    Default = false,
+    Callback = function(v)
+        AutoDetect.Enabled = v
+        if v then
+            StartAutoScan()
+        else
+            -- Clear all auto bars
+            for hum, _ in pairs(AutoBosses) do
+                RemoveAutoBar(hum)
+            end
+            if AutoDetect.ScanThread then
+                task.cancel(AutoDetect.ScanThread)
+                AutoDetect.ScanThread = nil
+            end
+        end
+    end
+})
+AutoGroup:AddSlider("AutoDetectRange", {
+    Text = "Detection Range",
+    Default = DEFAULT_MAX_DISTANCE,
+    Min = 100,
+    Max = 2000,
+    Rounding = 0,
+    Suffix = "studs",
+    Callback = function(v) AutoDetect.Range = v end
+})
+AutoGroup:AddLabel(string.format("Auto‑detects NPCs with ≥ %d max health.", BOSS_MIN_HEALTH))
+
+-- Manual permanent bosses (read‑only)
+local PermGroup = BossBarTab:AddLeftGroupbox("Manual Permanent Bosses")
 local function RefreshPermList()
     ClearGroupBox(PermGroup)
     for i, entry in ipairs(BossConfig) do
@@ -2202,12 +2343,12 @@ local function RefreshPermList()
         PermGroup:AddLabel(string.format("%d. %s%s", i, entry.path, distText))
     end
     if #BossConfig == 0 then
-        PermGroup:AddLabel("No permanent bosses.")
+        PermGroup:AddLabel("No manual bosses.")
     end
 end
 RefreshPermList()
 
--- Right group: Test a boss
+-- Test section (same as before)
 local TestGroup = BossBarTab:AddRightGroupbox("Test a Boss")
 
 TestGroup:AddInput("TestPath", {
@@ -2255,7 +2396,7 @@ TestGroup:AddButton({
     Text = "Clear Tests",
     Func = function()
         for _, entry in ipairs(TestEntries) do
-            RemoveBar("test_" .. entry.path)
+            RemoveManualBar("test_" .. entry.path)
         end
         TestEntries = {}
         RefreshTestList()
@@ -2272,7 +2413,7 @@ TestGroup:AddButton({
         RefreshPermList()
         -- Clear test bars and entries
         for _, entry in ipairs(TestEntries) do
-            RemoveBar("test_" .. entry.path)
+            RemoveManualBar("test_" .. entry.path)
         end
         TestEntries = {}
         RefreshTestList()
@@ -2290,7 +2431,7 @@ local function RefreshTestList()
         TestListGroup:AddButton({
             Text = "Remove",
             Func = function()
-                RemoveBar("test_" .. entry.path)
+                RemoveManualBar("test_" .. entry.path)
                 table.remove(TestEntries, i)
                 RefreshTestList()
             end
