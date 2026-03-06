@@ -1710,11 +1710,10 @@ PlayerUtilities:AddButton({
         end
     end
 })
--- ==================== HOLD M1 SPAM (EVENT-TRACKED) ====================
+-- ==================== HOLD M1 SPAM (MOUSE-DOWN ONLY) ====================
 local M1Spam = {
     Enabled = false,
-    Holding = false,       -- tracks physical mouse state
-    Clicking = false,      -- true while we're sending a synthetic click
+    Holding = false,
     Delay = 0.1,
     Thread = nil,
     Debug = true,
@@ -1729,58 +1728,53 @@ local function GetMousePos()
     return UserInputService:GetMouseLocation()
 end
 
--- Perform a single click (same as test button)
+-- Send a mouse-DOWN only (no mouse-up). Games register attacks on press, not release.
+-- By never sending a synthetic mouse-up, we don't disrupt IsMouseButtonPressed or InputEnded.
 local function PerformClick()
     local pos = GetMousePos()
     if M1Spam.Debug then
         M1Spam.ClickCount = M1Spam.ClickCount + 1
         print(string.format("[M1Spam] Click #%d at (%d, %d)", M1Spam.ClickCount, pos.X, pos.Y))
     end
-    M1Spam.Clicking = true  -- flag so InputEnded ignores the synthetic release
-    local success = pcall(function()
+
+    local success = false
+
+    -- Method 1: VirtualInputManager — press only
+    pcall(function()
         VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
-        task.wait(0.01)
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+        success = true
     end)
-    M1Spam.Clicking = false
-    if not success and mouse1click then
-        success = pcall(mouse1click)
+
+    -- Method 2: mouse1press/mouse1release (atomic, if available)
+    if not success then
+        pcall(function()
+            if mouse1click then
+                mouse1click()
+                success = true
+            end
+        end)
     end
-    if not success and syn and syn.input and syn.input.mouse1click then
-        success = pcall(syn.input.mouse1click)
-    end
+
     return success
 end
 
--- Track physical mouse hold via events
+-- Track physical hold: InputBegan sets true, InputEnded sets false.
+-- Since we never send synthetic mouse-up, InputEnded only fires on real release.
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         M1Spam.Holding = true
-        if M1Spam.Debug then print("[M1Spam] M1 pressed (holding = true)") end
+        if M1Spam.Debug then print("[M1Spam] M1 held down") end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        -- When spam is active, the synthetic clicks cause false InputEnded events.
-        -- Wait a frame then check if the physical button is truly released.
-        if M1Spam.Enabled then
-            task.defer(function()
-                if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-                    M1Spam.Holding = false
-                    if M1Spam.Debug then print("[M1Spam] M1 truly released (holding = false)") end
-                else
-                    if M1Spam.Debug then print("[M1Spam] Ignoring synthetic release (still held)") end
-                end
-            end)
-            return
-        end
         M1Spam.Holding = false
-        if M1Spam.Debug then print("[M1Spam] M1 released (holding = false)") end
+        if M1Spam.Debug then print("[M1Spam] M1 released") end
     end
 end)
 
--- Main loop: while enabled AND holding, click repeatedly
+-- Main loop
 local function SpamLoop()
     if M1Spam.Debug then print("[M1Spam] Spam loop started") end
     while M1Spam.Enabled do
@@ -1789,10 +1783,14 @@ local function SpamLoop()
         end
         task.wait(M1Spam.Delay)
     end
+    -- Send one final mouse-up to clean up state
+    pcall(function()
+        local pos = GetMousePos()
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
     if M1Spam.Debug then print("[M1Spam] Spam loop ended") end
 end
 
--- Start/stop based on toggle
 local function StartSpam()
     if M1Spam.Thread then
         task.cancel(M1Spam.Thread)
@@ -1807,6 +1805,11 @@ local function StopSpam()
         task.cancel(M1Spam.Thread)
         M1Spam.Thread = nil
     end
+    -- Clean up: send mouse-up in case we left it pressed
+    pcall(function()
+        local pos = GetMousePos()
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
 end
 
 -- UI
@@ -3081,6 +3084,149 @@ end
 if #TeleportLocations == 0 then
     TeleportListGroup:AddLabel("No locations defined. Edit the script to add them.")
 end
+
+-- ==================== CHAKRA POINT COLLECTOR ====================
+local ChakraCollector = {
+    Running = false,
+    Thread = nil,
+    Delay = 1.5,       -- seconds to wait at each point (for E press to register)
+    CurrentIndex = 0,
+    Total = 0,
+}
+
+local ChakraGroup = TeleportTab:AddLeftGroupbox("Chakra Point Collector")
+
+local ChakraStatusLabel = ChakraGroup:AddLabel("Status: Idle")
+
+local function PressE()
+    -- Simulate pressing E via VirtualInputManager
+    pcall(function()
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.15)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+end
+
+local function CollectChakraPoints()
+    local char = LocalPlayer.Character
+    if not char then
+        Library:Notify("No character found", 3)
+        return
+    end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then
+        Library:Notify("No HumanoidRootPart", 3)
+        return
+    end
+
+    local chakraFolder = workspace:FindFirstChild("ChakraPoints")
+    if not chakraFolder then
+        Library:Notify("ChakraPoints folder not found in workspace", 3)
+        return
+    end
+
+    local children = chakraFolder:GetChildren()
+    ChakraCollector.Total = #children
+    ChakraCollector.CurrentIndex = 0
+
+    if ChakraCollector.Total == 0 then
+        Library:Notify("No ChakraPoints found", 3)
+        return
+    end
+
+    ChakraStatusLabel:SetText("Status: Running (0/" .. ChakraCollector.Total .. ")")
+    Library:Notify("Starting Chakra Point collection (" .. ChakraCollector.Total .. " points)", 2)
+
+    for i, point in ipairs(children) do
+        if not ChakraCollector.Running then
+            ChakraStatusLabel:SetText("Status: Stopped at " .. i - 1 .. "/" .. ChakraCollector.Total)
+            Library:Notify("Chakra collection stopped", 2)
+            return
+        end
+
+        ChakraCollector.CurrentIndex = i
+        ChakraStatusLabel:SetText("Status: Point " .. i .. "/" .. ChakraCollector.Total)
+
+        -- Get position from the point's CFrame/Position/WorldPivot
+        local targetPos = nil
+        pcall(function()
+            -- Try WorldPivot first (Model)
+            if point:IsA("Model") then
+                targetPos = point:GetPivot().Position
+            elseif point:IsA("BasePart") then
+                targetPos = point.Position
+            end
+        end)
+
+        -- Fallback: try PrimaryPart or first BasePart child
+        if not targetPos then
+            pcall(function()
+                local primary = point.PrimaryPart or point:FindFirstChildWhichIsA("BasePart")
+                if primary then
+                    targetPos = primary.Position
+                end
+            end)
+        end
+
+        if targetPos then
+            -- Teleport to the point
+            root.CFrame = CFrame.new(targetPos)
+            if M1Spam and M1Spam.Debug then
+                print(string.format("[Chakra] Teleported to point %d at (%.1f, %.1f, %.1f)", i, targetPos.X, targetPos.Y, targetPos.Z))
+            end
+
+            -- Wait a moment for the game to register proximity
+            task.wait(0.5)
+
+            -- Press E to interact
+            PressE()
+
+            -- Wait for interaction to complete
+            task.wait(ChakraCollector.Delay)
+        else
+            if M1Spam and M1Spam.Debug then
+                print(string.format("[Chakra] Could not get position for point %d (%s)", i, point.Name))
+            end
+        end
+    end
+
+    ChakraCollector.Running = false
+    ChakraStatusLabel:SetText("Status: Done (" .. ChakraCollector.Total .. "/" .. ChakraCollector.Total .. ")")
+    Library:Notify("Chakra Point collection complete!", 2)
+end
+
+ChakraGroup:AddToggle("ChakraCollectorToggle", {
+    Text = "Auto Collect Chakra Points",
+    Default = false,
+    Callback = function(v)
+        ChakraCollector.Running = v
+        if v then
+            if ChakraCollector.Thread then
+                task.cancel(ChakraCollector.Thread)
+            end
+            ChakraCollector.Thread = task.spawn(CollectChakraPoints)
+        else
+            if ChakraCollector.Thread then
+                task.cancel(ChakraCollector.Thread)
+                ChakraCollector.Thread = nil
+            end
+            ChakraStatusLabel:SetText("Status: Stopped")
+        end
+    end
+})
+
+ChakraGroup:AddSlider("ChakraDelay", {
+    Text = "Wait per Point (s)",
+    Default = 1.5,
+    Min = 0.5,
+    Max = 5,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) ChakraCollector.Delay = v end
+})
+
+ChakraGroup:AddLabel("Teleports to each ChakraPoint and presses E.")
+
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
 ThemeManager:SetLibrary(Library)
