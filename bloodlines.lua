@@ -3765,7 +3765,7 @@ local TeleportTab = Window:AddTab("Teleports")
 local TeleportLocations = {
     -- Example entries (uncomment and modify as needed)
      { Name = "Wood Boss", Pos = Vector3.new(-4708.4, 336.9, -2986.2)},
-    -- { Name = "Train Station", Pos = Vector3.new(636, 17, 1730) },
+     { Name = "Sorythia Village", Pos = Vector3.new(-113.2, 50.9, -283.8)},
     -- { Name = "Rui Boss", Pos = Vector3.new(499, 12, -1076) },
     -- { Name = "Final Selection", Pos = Vector3.new(-729, 284, -432) },
 }
