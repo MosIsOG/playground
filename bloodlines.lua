@@ -4051,7 +4051,8 @@ local function FindAllTrinkets()
     local trinketNames = {
         "Gold Bracelet",
         "Gold Ring",
-        "Silver Ring"
+        "Silver Ring",
+        "Silver Bracelet",
     }
     
     for _, trinketName in ipairs(trinketNames) do
@@ -4323,6 +4324,135 @@ TrinketGroup:AddToggle("ShowTrinketHitbox", {
 
 TrinketGroup:AddLabel("Uses DataEvent PickUp remote.")
 TrinketGroup:AddLabel("Checks Occupied value before collecting.")
+
+-- ==================== RIFT COLLECTOR ====================
+local RiftCollector = {
+    Running = false,
+    Thread = nil,
+    Delay = 1.5,       -- seconds to wait at each rift
+    CurrentIndex = 0,
+    Total = 0,
+}
+
+local RiftGroup = TeleportTab:AddLeftGroupbox("Rift Collector")
+
+local RiftStatusLabel = RiftGroup:AddLabel("Status: Idle")
+
+local function CollectRifts()
+    local char = LocalPlayer.Character
+    if not char then
+        Library:Notify("No character found", 3)
+        return
+    end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then
+        Library:Notify("No HumanoidRootPart", 3)
+        return
+    end
+
+    local riftsFolder = workspace:FindFirstChild("Rifts")
+    if not riftsFolder then
+        Library:Notify("Rifts folder not found in workspace", 3)
+        return
+    end
+
+    local children = riftsFolder:GetChildren()
+    RiftCollector.Total = #children
+    RiftCollector.CurrentIndex = 0
+
+    if RiftCollector.Total == 0 then
+        Library:Notify("No Rifts found", 3)
+        return
+    end
+
+    RiftStatusLabel:SetText("Status: Running (0/" .. RiftCollector.Total .. ")")
+    Library:Notify("Starting Rift collection (" .. RiftCollector.Total .. " rifts)", 2)
+
+    for i, rift in ipairs(children) do
+        if not RiftCollector.Running then
+            RiftStatusLabel:SetText("Status: Stopped at " .. i - 1 .. "/" .. RiftCollector.Total)
+            Library:Notify("Rift collection stopped", 2)
+            return
+        end
+
+        RiftCollector.CurrentIndex = i
+        RiftStatusLabel:SetText("Status: Rift " .. i .. "/" .. RiftCollector.Total .. " (" .. rift.Name .. ")")
+
+        -- Get position from the rift's CFrame/Position/WorldPivot
+        local targetPos = nil
+        pcall(function()
+            if rift:IsA("Model") then
+                targetPos = rift:GetPivot().Position
+            elseif rift:IsA("BasePart") then
+                targetPos = rift.Position
+            end
+        end)
+
+        -- Fallback: try PrimaryPart or first BasePart child
+        if not targetPos then
+            pcall(function()
+                local primary = rift.PrimaryPart or rift:FindFirstChildWhichIsA("BasePart")
+                if primary then
+                    targetPos = primary.Position
+                end
+            end)
+        end
+
+        if targetPos then
+            -- Teleport to the rift
+            root.CFrame = CFrame.new(targetPos)
+            Library:Notify("Teleported to " .. rift.Name .. " (" .. i .. "/" .. RiftCollector.Total .. ")", 2)
+
+            -- Wait for the game to register proximity
+            task.wait(0.5)
+
+            -- Press E to interact (if needed)
+            PressE()
+
+            -- Wait for interaction to complete
+            task.wait(RiftCollector.Delay)
+        else
+            Library:Notify("Could not get position for rift " .. i, 2)
+        end
+    end
+
+    RiftCollector.Running = false
+    RiftStatusLabel:SetText("Status: Done (" .. RiftCollector.Total .. "/" .. RiftCollector.Total .. ")")
+    Library:Notify("Rift collection complete!", 2)
+end
+
+RiftGroup:AddToggle("RiftCollectorToggle", {
+    Text = "Auto Collect Rifts",
+    Default = false,
+    Callback = function(v)
+        RiftCollector.Running = v
+        if v then
+            if RiftCollector.Thread then
+                task.cancel(RiftCollector.Thread)
+            end
+            RiftCollector.Thread = task.spawn(CollectRifts)
+        else
+            if RiftCollector.Thread then
+                task.cancel(RiftCollector.Thread)
+                RiftCollector.Thread = nil
+            end
+            RiftStatusLabel:SetText("Status: Stopped")
+        end
+    end
+})
+
+RiftGroup:AddSlider("RiftDelay", {
+    Text = "Wait per Rift (s)",
+    Default = 1.5,
+    Min = 0.5,
+    Max = 5,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) RiftCollector.Delay = v end
+})
+
+RiftGroup:AddLabel("Teleports to each Unstable Rift in workspace.Rifts.")
+RiftGroup:AddLabel("Presses E at each location.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
