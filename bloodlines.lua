@@ -1685,11 +1685,6 @@ HealthbarGroup:AddSlider("HealthbarOffset", {
 -- ==================== NO FALL DAMAGE ====================
 local NoFall = {
     Enabled = false,
-    Connection = nil,
-    StateConnection = nil,
-    GroundDistance = 10,
-    BlockDamageRemote = true,  -- Block TakeDamage remote calls
-    JustLanded = false,
 }
 
 -- Hook DataEvent to block fall damage
@@ -1702,7 +1697,7 @@ OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     
     -- Intercept DataEvent:FireServer calls
-    if method == "FireServer" and self == DataEvent and NoFall.Enabled and NoFall.BlockDamageRemote then
+    if method == "FireServer" and self == DataEvent and NoFall.Enabled then
         -- Check if this is a TakeDamage call
         if args[1] == "TakeDamage" then
             -- Check if player is falling or just landed (indicating fall damage)
@@ -1711,11 +1706,10 @@ OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
                 local humanoid = char:FindFirstChild("Humanoid")
                 if humanoid then
                     local state = humanoid:GetState()
-                    -- Block if in freefall, landing, or just landed
+                    -- Block if in freefall or landing state
                     if state == Enum.HumanoidStateType.Freefall or 
-                       state == Enum.HumanoidStateType.Landed or 
-                       NoFall.JustLanded then
-                        -- Block this damage call
+                       state == Enum.HumanoidStateType.Landed then
+                        -- Block this damage call (fall damage)
                         return
                     end
                 end
@@ -1726,99 +1720,6 @@ OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     return OldNamecall(self, ...)
 end)
 
-local function SetupNoFall(character)
-    if not character then return end
-    local root = character:WaitForChild("HumanoidRootPart", 5)
-    local humanoid = character:WaitForChild("Humanoid", 5)
-    if not root or not humanoid then return end
-
-    -- Cleanup old connections
-    if NoFall.Connection then
-        NoFall.Connection:Disconnect()
-        NoFall.Connection = nil
-    end
-    if NoFall.StateConnection then
-        NoFall.StateConnection:Disconnect()
-        NoFall.StateConnection = nil
-    end
-
-    -- Aggressive velocity control when falling and near ground
-    NoFall.Connection = RunService.Heartbeat:Connect(function()
-        if not NoFall.Enabled or not root or not root.Parent then
-            if NoFall.Connection then NoFall.Connection:Disconnect(); NoFall.Connection = nil end
-            return
-        end
-        
-        local velocity = root.AssemblyLinearVelocity
-        
-        -- Check if falling (negative Y velocity)
-        if velocity.Y < -5 then
-            -- Raycast downward to detect ground proximity
-            local rayOrigin = root.Position
-            local rayDirection = Vector3.new(0, -NoFall.GroundDistance, 0)
-            local raycastParams = RaycastParams.new()
-            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-            raycastParams.FilterDescendantsInstances = {character}
-            
-            local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-            
-            -- If close to ground, zero out falling velocity
-            if rayResult then
-                root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
-            end
-        end
-        
-        -- Reset landed flag after a moment
-        if NoFall.JustLanded then
-            task.delay(0.5, function() NoFall.JustLanded = false end)
-        end
-    end)
-
-    -- Prevent landing state damage calculation
-    NoFall.StateConnection = humanoid.StateChanged:Connect(function(oldState, newState)
-        if not NoFall.Enabled then return end
-        
-        -- Mark that we just landed to help block the damage remote
-        if newState == Enum.HumanoidStateType.Landed then
-            NoFall.JustLanded = true
-        end
-        
-        -- Block the landed state entirely
-        if newState == Enum.HumanoidStateType.Landed then
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end
-        
-        -- Also handle freefall -> landing transition
-        if oldState == Enum.HumanoidStateType.Freefall and newState == Enum.HumanoidStateType.Landed then
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end
-    end)
-end
-
-local function StopNoFall()
-    if NoFall.Connection then
-        NoFall.Connection:Disconnect()
-        NoFall.Connection = nil
-    end
-    if NoFall.StateConnection then
-        NoFall.StateConnection:Disconnect()
-        NoFall.StateConnection = nil
-    end
-    NoFall.JustLanded = false
-end
-
--- Handle character respawns
-LocalPlayer.CharacterAdded:Connect(function(char)
-    if NoFall.Enabled then
-        task.wait(0.5)
-        SetupNoFall(char)
-    end
-end)
-
-if LocalPlayer.Character and NoFall.Enabled then
-    SetupNoFall(LocalPlayer.Character)
-end
-
 -- UI in Player Tab
 local NoFallGroup = Tabs.Player:AddLeftGroupbox("No Fall Damage")
 NoFallGroup:AddToggle("NoFallToggle", {
@@ -1826,40 +1727,11 @@ NoFallGroup:AddToggle("NoFallToggle", {
     Default = false,
     Callback = function(value)
         NoFall.Enabled = value
-        if value then
-            if LocalPlayer.Character then
-                SetupNoFall(LocalPlayer.Character)
-            end
-        else
-            StopNoFall()
-        end
     end
 })
 
-NoFallGroup:AddSlider("NoFallGroundDist", {
-    Text = "Ground Detection",
-    Default = 10,
-    Min = 5,
-    Max = 30,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(v)
-        NoFall.GroundDistance = v
-    end,
-    Tooltip = "Distance threshold for velocity reset"
-})
-
-NoFallGroup:AddToggle("BlockDamageRemote", {
-    Text = "Block Damage Remote",
-    Default = true,
-    Callback = function(v)
-        NoFall.BlockDamageRemote = v
-    end,
-    Tooltip = "Blocks DataEvent TakeDamage calls when falling"
-})
-
-NoFallGroup:AddLabel("Hooks DataEvent to block fall damage.")
-NoFallGroup:AddLabel("Combines velocity reset + state blocking.")
+NoFallGroup:AddLabel("Blocks TakeDamage remote when falling.")
+NoFallGroup:AddLabel("Works by hooking DataEvent:FireServer.")
 
 -- ==================== RESET BUTTON ====================
 local PlayerUtilities = Tabs.Player:AddLeftGroupbox("Utilities")
@@ -4173,92 +4045,48 @@ local function UpdateHitboxVisual()
     end
 end
 
--- Function to find all TrinketSpawn objects in workspace
-local function FindAllTrinketSpawns()
-    local spawns = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:match("^TrinketSpawn%d+$") then
-            table.insert(spawns, obj)
+-- Function to find all actual trinkets in workspace
+local function FindAllTrinkets()
+    local trinkets = {}
+    local trinketNames = {
+        "Gold Bracelet",
+        "Gold Ring",
+        "Silver Ring"
+    }
+    
+    for _, trinketName in ipairs(trinketNames) do
+        local trinket = workspace:FindFirstChild(trinketName)
+        if trinket then
+            table.insert(trinkets, trinket)
         end
     end
-    return spawns
+    
+    return trinkets
 end
 
--- Simulate mouse click using VirtualInputManager
-local function SimulateMouseClick(target)
-    local VIM = game:GetService("VirtualInputManager")
+-- Function to collect a trinket
+local function CollectTrinket(trinket)
+    if not trinket or not trinket.Parent then return false end
     
-    -- Get the camera and calculate screen position
-    local camera = workspace.CurrentCamera
-    local targetPos
+    Library:Notify("Found trinket: " .. trinket.Name, 2)
     
-    if target:IsA("Model") then
-        targetPos = target:GetPivot().Position
-    elseif target:IsA("BasePart") then
-        targetPos = target.Position
-    else
-        return false
-    end
-    
-    local screenPos, onScreen = camera:WorldToViewportPoint(targetPos)
-    if not onScreen then return false end
-    
-    -- Simulate left mouse button click at target position
-    pcall(function()
-        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
-        task.wait(0.05)
-        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
-    end)
-    
-    return true
-end
-
--- Function to check and collect a trinket spawn
-local function CollectTrinket(spawn)
-    if not spawn or not spawn.Parent then return false end
-    
-    -- Check if trinket is occupied (available to collect)
-    local occupied = spawn:FindFirstChild("Occupied")
-    if not occupied then
-        Library:Notify("No Occupied value in " .. spawn.Name, 2)
-        return false
-    end
-    
-    -- Check if occupied is true (trinket present)
-    local isOccupied = false
-    if occupied:IsA("BoolValue") then
-        isOccupied = occupied.Value
-    elseif occupied:IsA("IntValue") or occupied:IsA("NumberValue") then
-        isOccupied = occupied.Value > 0
-    end
-    
-    if not isOccupied then
-        return false -- No trinket spawned here
-    end
-    
-    Library:Notify("Found occupied trinket at " .. spawn.Name .. "!", 2)
-    
-    -- Get spawn position
+    -- Get trinket position
     local trinketPos = nil
-    local trinketPart = nil
     pcall(function()
-        if spawn:IsA("Model") then
-            trinketPos = spawn:GetPivot().Position
-            trinketPart = spawn.PrimaryPart or spawn:FindFirstChildWhichIsA("BasePart", true)
-        elseif spawn:IsA("BasePart") then
-            trinketPos = spawn.Position
-            trinketPart = spawn
+        if trinket:IsA("Model") then
+            trinketPos = trinket:GetPivot().Position
+        elseif trinket:IsA("BasePart") then
+            trinketPos = trinket.Position
         else
-            local part = spawn:FindFirstChildWhichIsA("BasePart", true)
+            local part = trinket:FindFirstChildWhichIsA("BasePart", true)
             if part then
                 trinketPos = part.Position
-                trinketPart = part
             end
         end
     end)
     
     if not trinketPos then 
-        Library:Notify("Could not get position for " .. spawn.Name, 2)
+        Library:Notify("Could not get position for " .. trinket.Name, 2)
         return false 
     end
     
@@ -4270,25 +4098,24 @@ local function CollectTrinket(spawn)
     
     local distance = (root.Position - trinketPos).Magnitude
     
-    -- If too far, check against max scan distance
+    -- If too far, skip
     if distance > TrinketCollector.MaxDistance then
-        Library:Notify(spawn.Name .. " too far: " .. math.floor(distance) .. " studs", 2)
         return false
     end
     
-    -- Teleport close to the trinket
-    Library:Notify("Teleporting to " .. spawn.Name, 2)
+    -- Teleport to the trinket
+    Library:Notify("Teleporting to " .. trinket.Name, 2)
     root.CFrame = CFrame.new(trinketPos)
     task.wait(0.3)
     
-    -- Now check if it's within pickup range (hitbox)
+    -- Check if within pickup range
     distance = (root.Position - trinketPos).Magnitude
     if distance > TrinketCollector.PickupRange then
         Library:Notify("Not in pickup range after teleport", 2)
         return false
     end
     
-    -- Use the proper pickup remote - no second argument needed
+    -- Fire the pickup remote
     local success = false
     local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
     if DataEvent then
@@ -4296,16 +4123,15 @@ local function CollectTrinket(spawn)
     end
     
     if DataEvent then
-        -- Fire pickup remote without object argument
         local result = pcall(function()
             DataEvent:FireServer("PickUp")
             success = true
         end)
         
-        if not result then
-            Library:Notify("Failed to fire PickUp remote", 2)
+        if result then
+            Library:Notify("Fired PickUp remote for " .. trinket.Name, 2)
         else
-            Library:Notify("Fired PickUp remote for " .. spawn.Name, 2)
+            Library:Notify("Failed to fire PickUp remote", 2)
         end
         
         task.wait(0.2)
@@ -4313,14 +4139,14 @@ local function CollectTrinket(spawn)
         Library:Notify("DataEvent not found!", 2)
     end
     
-    -- Fallback: Try click detector method
+    -- Fallback: Try click detector
     if not success then
-        local clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
+        local clickDetector = trinket:FindFirstChildOfClass("ClickDetector", true)
         if clickDetector then
             pcall(function()
                 fireclickdetector(clickDetector)
                 success = true
-                Library:Notify("Used fireclickdetector on " .. spawn.Name, 2)
+                Library:Notify("Used fireclickdetector on " .. trinket.Name, 2)
             end)
         end
     end
@@ -4329,7 +4155,7 @@ local function CollectTrinket(spawn)
     
     if success then
         TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-        Library:Notify("Collected trinket at " .. spawn.Name, 2)
+        Library:Notify("Collected " .. trinket.Name .. "!", 3)
     end
     
     return success
