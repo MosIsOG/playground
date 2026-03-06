@@ -68,10 +68,36 @@ local Connections = { Active = {} }
 local Signal = {} Signal.__index = Signal
 local GetCharacter, Spectating
 
+local Mouse = LocalPlayer:GetMouse()
+local Terrain = workspace:FindFirstChild'Terrain'
 local QUAD_SUPPORTED_EXPLOIT = pcall(function() Drawing.new('Quad'):Remove() end)
 
-shared.MenuDrawingData = shared.MenuDrawingData or { Instances = {} }
-shared.InstanceData = shared.InstanceData or {}
+-- Clean up stale Drawing objects from previous script execution
+if shared.InstanceData then
+    for i, v in pairs(shared.InstanceData) do
+        if v.Instances then
+            for _, obj in pairs(v.Instances) do
+                pcall(function()
+                    if typeof(obj) == 'table' and obj.SetVisible then
+                        obj:SetVisible(false)
+                        obj:Remove()
+                    elseif typeof(obj) == 'userdata' or (typeof(obj) == 'table' and obj.Remove) then
+                        pcall(function() obj.Visible = false end)
+                        pcall(function() obj:Remove() end)
+                    end
+                end)
+            end
+        end
+    end
+end
+if shared.MenuDrawingData and shared.MenuDrawingData.Instances then
+    for _, inst in pairs(shared.MenuDrawingData.Instances) do
+        pcall(function() inst.Visible = false; inst:Remove() end)
+    end
+end
+
+shared.MenuDrawingData = { Instances = {} }
+shared.InstanceData = {}
 shared.RSName = shared.RSName or ('UnnamedESP_by_ic3-' .. HttpService:GenerateGUID(false))
 
 local GetDataName = shared.RSName .. '-GetData'
@@ -601,7 +627,8 @@ local Options = setmetatable({}, {
     end;
 })
 
-function Load()
+function Load(IgnoreFile)
+    if IgnoreFile or not readfile then return end
     local _, Result = pcall(readfile, OptionsFile);
     if _ then
         local _, Table = pcall(HttpService.JSONDecode, HttpService, Result);
@@ -1012,6 +1039,7 @@ local function UpdatePlayerData()
             local a, b = pcall(CustomESP);
         end
         for i, v in pairs(RenderList.Instances) do
+            pcall(function()
             if v.Instance ~= nil and v.Instance.Parent ~= nil and v.Instance:IsA'BasePart' then
                 local Data = shared.InstanceData[v.Instance:GetDebugId()] or { Instances = {}; DontDelete = true };
                 Data.Instance = v.Instance;
@@ -1115,8 +1143,10 @@ local function UpdatePlayerData()
                 Data.Instances['OutlineTracer']    = OutlineTracer;
                 shared.InstanceData[v.Instance:GetDebugId()] = Data;
             end
+            end) -- pcall per-instance
         end
         for i, v in pairs(Players:GetPlayers()) do
+            pcall(function()
             local Data = shared.InstanceData[v.Name] or { Instances = {}; };
             Data.Instances['Box'] = Data.Instances['Box'] or LineBox:Create{Thickness = 4};
             Data.Instances['OutlineTracer'] = Data.Instances['OutlineTracer'] or NewDrawing'Line'{
@@ -1281,6 +1311,7 @@ local function UpdatePlayerData()
                 Box:SetVisible(false);
             end
             shared.InstanceData[v.Name] = Data;
+            end) -- pcall per-player
         end
     end
 end
@@ -1515,10 +1546,18 @@ ESPVisuals:AddToggle("ShowHeadDot", {
 })
 
 ESPVisuals:AddToggle("TeamCheck", {
-    Text = "Team Check",
+    Text = "Show Teammates",
     Default = true,
     Callback = function(value)
         Options.ShowTeam(value)
+    end
+})
+
+ESPVisuals:AddToggle("ShowTeamColor", {
+    Text = "Show Team Color",
+    Default = false,
+    Callback = function(value)
+        Options.ShowTeamColor(value)
     end
 })
 
@@ -1543,6 +1582,18 @@ ESPVisuals:AddToggle("TextOutline", {
     Default = true,
     Callback = function(value)
         Options.TextOutline(value)
+    end
+})
+
+ESPSizing:AddSlider("RefreshRate", {
+    Text = "Refresh Rate",
+    Default = 5,
+    Min = 1,
+    Max = 200,
+    Rounding = 0,
+    Suffix = " ms",
+    Callback = function(value)
+        Options.RefreshRate(value)
     end
 })
 
@@ -2597,6 +2648,7 @@ local BlockRules = {
    { animID = "6360969229", delay = 0.18, distance = 15 },
    { animID = "11330795390", delay = 0.1, distance = 6 },
    { animID = "7275651023", delay = 0.2, distance = 19 },
+   { animID = "86213040968703", delay = 0.1, distance= 10 },
 }
 
 -- Test rule (temporary)
