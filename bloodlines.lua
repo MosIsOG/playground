@@ -1767,6 +1767,17 @@ local M1Spam = {
     Thread = nil
 }
 
+-- Remote attack spam (no targeting, just fires remote)
+local RemoteAttackSpam = {
+    Enabled = false,
+    Delay = 0.12,
+    Thread = nil
+}
+
+-- Get DataEvent for remote attack spam
+local RemoteAttackDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
+    game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
 local VirtualInput = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 
@@ -1818,6 +1829,33 @@ local function StopSpam()
     end
 end
 
+-- Remote attack spam functions
+local function RemoteAttackLoop()
+    while RemoteAttackSpam.Enabled do
+        if RemoteAttackDataEvent then
+            pcall(function()
+                RemoteAttackDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
+            end)
+        end
+        task.wait(RemoteAttackSpam.Delay)
+    end
+end
+
+local function StartRemoteAttackSpam()
+    if RemoteAttackSpam.Thread then
+        pcall(task.cancel, RemoteAttackSpam.Thread)
+    end
+    RemoteAttackSpam.Thread = task.spawn(RemoteAttackLoop)
+end
+
+local function StopRemoteAttackSpam()
+    RemoteAttackSpam.Enabled = false
+    if RemoteAttackSpam.Thread then
+        pcall(task.cancel, RemoteAttackSpam.Thread)
+        RemoteAttackSpam.Thread = nil
+    end
+end
+
 -- UI
 local M1Group = Tabs.Player:AddLeftGroupbox("M1 Spam")
 
@@ -1827,6 +1865,36 @@ M1Group:AddToggle("M1SpamToggle", {
     Callback = function(v)
         M1Spam.Enabled = v
         if v then
+
+M1Group:AddToggle("RemoteAttackSpamToggle", {
+    Text = "Remote Attack Spam",
+    Default = false,
+    Callback = function(v)
+        RemoteAttackSpam.Enabled = v
+        if v then
+            StartRemoteAttackSpam()
+        else
+            StopRemoteAttackSpam()
+        end
+    end
+}):AddKeyPicker("RemoteAttackSpamKey", {
+    Default = "K",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Remote Attack Spam"
+})
+
+M1Group:AddSlider("RemoteAttackDelay", {
+    Text = "Remote Attack Delay",
+    Default = 0.12,
+    Min = 0.05,
+    Max = 0.5,
+    Rounding = 2,
+    Suffix = "s",
+    Callback = function(v) RemoteAttackSpam.Delay = v end
+})
+
+M1Group:AddLabel("Spams melee attack remote (CheckMeleeHit).")
             StartSpam()
         else
             StopSpam()
