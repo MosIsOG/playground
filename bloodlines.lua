@@ -4007,6 +4007,7 @@ local TrinketCollector = {
     CollectedCount = 0,
     ShowHitbox = false,
     HitboxCircle = nil,
+    DebugMode = false,       -- Show detailed notifications
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Auto Collector")
@@ -4092,8 +4093,6 @@ end
 local function CollectTrinket(trinket)
     if not trinket or not trinket.Parent then return false end
     
-    Library:Notify("Found trinket: " .. trinket.Name, 2)
-    
     -- Get trinket position
     local trinketPos = nil
     pcall(function()
@@ -4110,7 +4109,9 @@ local function CollectTrinket(trinket)
     end)
     
     if not trinketPos then 
-        Library:Notify("Could not get position for " .. trinket.Name, 2)
+        if TrinketCollector.DebugMode then
+            Library:Notify("Could not get position for " .. trinket.Name, 2)
+        end
         return false 
     end
     
@@ -4127,86 +4128,34 @@ local function CollectTrinket(trinket)
         return false
     end
     
-    -- Teleport near the trinket (slightly offset so we're not exactly on it)
-    Library:Notify("Teleporting to " .. trinket.Name, 2)
+    -- Teleport near the trinket
     root.CFrame = CFrame.new(trinketPos + Vector3.new(0, 3, 0))
-    task.wait(0.5)
+    task.wait(0.3)
     
-    -- Check if within pickup range
+    -- Update distance after teleport
     distance = (root.Position - trinketPos).Magnitude
+    
+    -- Check if within pickup range using 3D hitbox detection
     if distance > TrinketCollector.PickupRange then
-        Library:Notify("Not in pickup range after teleport", 2)
+        if TrinketCollector.DebugMode then
+            Library:Notify("Not in pickup range (" .. math.floor(distance) .. " studs)", 2)
+        end
         return false
     end
     
     local success = false
     
-    -- Try mouse click simulation with extended range (spam clicks around the trinket)
-    pcall(function()
-        local camera = workspace.CurrentCamera
-        local screenPos, onScreen = camera:WorldToViewportPoint(trinketPos)
-        
-        if onScreen then
-            Library:Notify("Clicking around " .. trinket.Name, 2)
-            
-            -- Click in a pattern around the trinket's screen position (extended range)
-            local clickOffsets = {
-                {0, 0},       -- center
-                {30, 0},      -- right
-                {-30, 0},     -- left
-                {0, 30},      -- down
-                {0, -30},     -- up
-                {20, 20},     -- diagonal
-                {-20, -20},   -- diagonal
-                {20, -20},    -- diagonal
-                {-20, 20},    -- diagonal
-            }
-            
-            for _, offset in ipairs(clickOffsets) do
-                local clickX = screenPos.X + offset[1]
-                local clickY = screenPos.Y + offset[2]
-                
-                -- Try multiple click methods
-                pcall(function()
-                    -- Method 1: VirtualInput click
-                    VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0)
-                    task.wait(0.02)
-                    VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
-                end)
-                
-                -- Method 2: mouse1click if available
-                if mouse1click then
-                    pcall(function()
-                        mouse1click()
-                    end)
-                end
-                
-                task.wait(0.05)
-            end
-            
-            Library:Notify("Completed click pattern on " .. trinket.Name, 2)
+    -- Method 1: Try ProximityPrompt first (most common for pickups)
+    local proximityPrompt = trinket:FindFirstChildOfClass("ProximityPrompt", true)
+    if proximityPrompt then
+        pcall(function()
+            fireproximityprompt(proximityPrompt)
             success = true
-        else
-            Library:Notify(trinket.Name .. " not on screen", 2)
-        end
-    end)
-    
-    task.wait(0.3)
-    
-    -- Try to trigger ProximityPrompt if it exists
-    if not success then
-        local proximityPrompt = trinket:FindFirstChildOfClass("ProximityPrompt", true)
-        if proximityPrompt then
-            pcall(function()
-                fireproximityprompt(proximityPrompt)
-                Library:Notify("Triggered ProximityPrompt on " .. trinket.Name, 2)
-                success = true
-            end)
-            task.wait(0.3)
-        end
+        end)
+        task.wait(0.3)
     end
     
-    -- Fire the pickup remote as fallback
+    -- Method 2: Fire the pickup remote
     if not success then
         local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
         if DataEvent then
@@ -4214,38 +4163,44 @@ local function CollectTrinket(trinket)
         end
         
         if DataEvent then
-            local result = pcall(function()
+            pcall(function()
                 DataEvent:FireServer("PickUp")
-            end)
-            
-            if result then
-                Library:Notify("Fired PickUp remote for " .. trinket.Name, 2)
                 success = true
-            else
-                Library:Notify("Failed to fire PickUp remote", 2)
-            end
-            
+            end)
             task.wait(0.3)
         end
     end
     
-    -- Fallback: Try click detector
+    -- Method 3: Try click detector
     if not success then
         local clickDetector = trinket:FindFirstChildOfClass("ClickDetector", true)
         if clickDetector then
             pcall(function()
                 fireclickdetector(clickDetector)
                 success = true
-                Library:Notify("Used fireclickdetector on " .. trinket.Name, 2)
             end)
+            task.wait(0.3)
         end
+    end
+    
+    -- Method 4: Try finding and triggering any TouchTransmitter (for Touch-based pickups)
+    if not success then
+        pcall(function()
+            local touchPart = trinket:FindFirstChildWhichIsA("BasePart", true)
+            if touchPart then
+                firetouchinterest(root, touchPart, 0)
+                task.wait(0.1)
+                firetouchinterest(root, touchPart, 1)
+                success = true
+            end
+        end)
     end
     
     task.wait(TrinketCollector.ClickDelay)
     
     if success then
         TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-        Library:Notify("Collected " .. trinket.Name .. "!", 3)
+        Library:Notify("Collected " .. trinket.Name .. "!", 2)
     end
     
     return success
@@ -4302,7 +4257,7 @@ local function StartHitboxRender()
     TrinketCollector.RenderThread = task.spawn(function()
         while TrinketCollector.ShowHitbox do
             UpdateHitboxVisual()
-            RunService.RenderStepped:Wait()
+            task.wait(0.1) -- Update 10 times per second instead of every frame
         end
         if TrinketCollector.HitboxCircle then
             TrinketCollector.HitboxCircle.Visible = false
@@ -4401,8 +4356,17 @@ TrinketGroup:AddToggle("ShowTrinketHitbox", {
     Tooltip = "Visualize the pickup range around your character"
 })
 
-TrinketGroup:AddLabel("Uses DataEvent PickUp remote.")
-TrinketGroup:AddLabel("Checks Occupied value before collecting.")
+TrinketGroup:AddToggle("TrinketDebugMode", {
+    Text = "Debug Notifications",
+    Default = false,
+    Callback = function(v)
+        TrinketCollector.DebugMode = v
+    end,
+    Tooltip = "Show detailed notifications for debugging"
+})
+
+TrinketGroup:AddLabel("Uses 3D proximity detection (no clicking needed).")
+TrinketGroup:AddLabel("Tries: ProximityPrompt → Remote → ClickDetector → Touch.")
 
 -- ==================== RIFT COLLECTOR ====================
 local RiftCollector = {
