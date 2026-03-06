@@ -4047,72 +4047,89 @@ local TrinketCollector = {
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Auto Collector")
 local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle")
 
--- Function to find and click a trinket at a spawn point
-local function CollectTrinket(spawnName)
-    local spawn = workspace:FindFirstChild(spawnName)
-    if not spawn then return false end
+-- Function to find all TrinketSpawn objects in workspace
+local function FindAllTrinketSpawns()
+    local spawns = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name:match("^TrinketSpawn%d+$") then
+            table.insert(spawns, obj)
+        end
+    end
+    return spawns
+end
 
-    -- Check if there's an actual trinket present
-    local trinket = nil
-    local clickDetector = nil
+-- Function to check and collect a trinket spawn
+local function CollectTrinket(spawn)
+    if not spawn or not spawn.Parent then return false end
     
-    -- Look for a clickable part (usually has a ClickDetector)
-    for _, child in ipairs(spawn:GetDescendants()) do
-        if child:IsA("ClickDetector") then
-            clickDetector = child
-            trinket = child.Parent
-            break
-        end
+    -- Check if trinket is occupied (available to collect)
+    local occupied = spawn:FindFirstChild("Occupied")
+    if not occupied then
+        return false -- No Occupied indicator
     end
-
-    -- If no click detector found, check if spawn itself has one
+    
+    -- Check if occupied is true (trinket present)
+    local isOccupied = false
+    if occupied:IsA("BoolValue") then
+        isOccupied = occupied.Value
+    elseif occupied:IsA("IntValue") or occupied:IsA("NumberValue") then
+        isOccupied = occupied.Value > 0
+    end
+    
+    if not isOccupied then
+        return false -- No trinket spawned here
+    end
+    
+    -- Find ClickDetector
+    local clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
     if not clickDetector then
-        clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
-        if clickDetector then
-            trinket = clickDetector.Parent
-        end
+        return false -- No way to click it
     end
-
-    if not trinket or not clickDetector then
-        return false -- No trinket available at this spawn
-    end
-
-    -- Get trinket position
+    
+    -- Get spawn position
     local trinketPos = nil
     pcall(function()
-        if trinket:IsA("Model") then
-            trinketPos = trinket:GetPivot().Position
-        elseif trinket:IsA("BasePart") then
-            trinketPos = trinket.Position
+        if spawn:IsA("Model") then
+            trinketPos = spawn:GetPivot().Position
+        elseif spawn:IsA("BasePart") then
+            trinketPos = spawn.Position
+        else
+            -- Try to find a part in the spawn
+            local part = spawn:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                trinketPos = part.Position
+            end
         end
     end)
-
+    
     if not trinketPos then return false end
-
+    
     -- Check distance
     local char = LocalPlayer.Character
     if not char then return false end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
-
+    
     local distance = (root.Position - trinketPos).Magnitude
     if distance > TrinketCollector.MaxDistance then
         return false -- Too far away
     end
-
+    
     -- Teleport to trinket
     root.CFrame = CFrame.new(trinketPos)
     task.wait(0.3) -- Wait for position to register
-
+    
     -- Click the trinket
-    pcall(function()
+    local success = pcall(function()
         fireclickdetector(clickDetector)
     end)
-
+    
+    if not success then return false end
+    
     task.wait(TrinketCollector.ClickDelay)
     
     TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-    Library:Notify("Collected trinket at " .. spawnName, 2)
+    Library:Notify("Collected trinket at " .. spawn.Name, 2)
     return true
 end
 
@@ -4124,21 +4141,27 @@ local function TrinketCollectionLoop()
     while TrinketCollector.Running do
         local foundAny = false
         
-        -- Scan all 12 trinket spawns
-        for i = 1, 12 do
-            if not TrinketCollector.Running then break end
-            
-            local spawnName = "TrinketSpawn" .. i
-            local collected = CollectTrinket(spawnName)
-            
-            if collected then
-                foundAny = true
-                TrinketStatusLabel:SetText(string.format("Status: Running (%d collected)", TrinketCollector.CollectedCount))
-            end
-        end
+        -- Find all trinket spawns in workspace
+        local spawns = FindAllTrinketSpawns()
         
-        if not foundAny then
-            TrinketStatusLabel:SetText(string.format("Status: Waiting... (%d collected)", TrinketCollector.CollectedCount))
+        if #spawns == 0 then
+            TrinketStatusLabel:SetText("Status: No spawns found!")
+        else
+            -- Check each spawn
+            for _, spawn in ipairs(spawns) do
+                if not TrinketCollector.Running then break end
+                
+                local collected = CollectTrinket(spawn)
+                
+                if collected then
+                    foundAny = true
+                    TrinketStatusLabel:SetText(string.format("Status: Running (%d collected)", TrinketCollector.CollectedCount))
+                end
+            end
+            
+            if not foundAny then
+                TrinketStatusLabel:SetText(string.format("Status: Waiting... (%d collected)", TrinketCollector.CollectedCount))
+            end
         end
         
         -- Wait before next scan
