@@ -4103,16 +4103,26 @@ local function CollectTrinket(trinket)
         return false
     end
     
-    -- Teleport to the trinket
+    -- Teleport near the trinket (slightly offset so we're not exactly on it)
     Library:Notify("Teleporting to " .. trinket.Name, 2)
-    root.CFrame = CFrame.new(trinketPos)
-    task.wait(0.3)
+    root.CFrame = CFrame.new(trinketPos + Vector3.new(0, 3, 0))
+    task.wait(0.5)
     
     -- Check if within pickup range
     distance = (root.Position - trinketPos).Magnitude
     if distance > TrinketCollector.PickupRange then
         Library:Notify("Not in pickup range after teleport", 2)
         return false
+    end
+    
+    -- Try to trigger ProximityPrompt if it exists
+    local proximityPrompt = trinket:FindFirstChildOfClass("ProximityPrompt", true)
+    if proximityPrompt then
+        pcall(function()
+            fireproximityprompt(proximityPrompt)
+            Library:Notify("Triggered ProximityPrompt on " .. trinket.Name, 2)
+        end)
+        task.wait(0.3)
     end
     
     -- Fire the pickup remote
@@ -4134,7 +4144,7 @@ local function CollectTrinket(trinket)
             Library:Notify("Failed to fire PickUp remote", 2)
         end
         
-        task.wait(0.2)
+        task.wait(0.3)
     else
         Library:Notify("DataEvent not found!", 2)
     end
