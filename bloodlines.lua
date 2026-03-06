@@ -2951,18 +2951,19 @@ end
 
 local function Block()
     if not DataFunction then return end
-    pcall(function() DataFunction:InvokeServer("Block") end)
+    DataFunction:InvokeServer("Block")
 end
 
 local function Unblock()
     if not DataFunction then return end
-    pcall(function() DataFunction:InvokeServer("EndBlock") end)
+    DataFunction:InvokeServer("EndBlock")
 end
 
 local function ScheduleBlock(playerName, delay)
     if AutoBlock.Triggered[playerName] then return end
     AutoBlock.Triggered[playerName] = true
-    task.delay(delay, function()
+
+    local function doBlock()
         if not AutoBlock.Enabled then
             AutoBlock.Triggered[playerName] = nil
             return
@@ -2972,7 +2973,14 @@ local function ScheduleBlock(playerName, delay)
             if AutoBlock.Enabled then Unblock() end
             AutoBlock.Triggered[playerName] = nil
         end)
-    end)
+    end
+
+    if delay <= 0.01 then
+        -- Fire immediately — no task.delay overhead (~16ms saved)
+        task.spawn(doBlock)
+    else
+        task.delay(delay, doBlock)
+    end
 end
 
 -- Continuous block: monitors a long-running animation and blocks whenever the player is within distance
@@ -2998,8 +3006,7 @@ local function StartContinuousBlock(player, track, rule)
         local dist = GetDistanceToPlayer(player)
         if dist and dist <= (rule.distance or 999) then
             if not isBlocking then
-                task.delay(rule.delay or 0.1, function()
-                    -- Re-check conditions after delay
+                local function doContBlock()
                     if AutoBlock.Enabled and track and track.IsPlaying then
                         local d = GetDistanceToPlayer(player)
                         if d and d <= (rule.distance or 999) then
@@ -3007,7 +3014,12 @@ local function StartContinuousBlock(player, track, rule)
                             isBlocking = true
                         end
                     end
-                end)
+                end
+                if (rule.delay or 0.1) <= 0.01 then
+                    task.spawn(doContBlock)
+                else
+                    task.delay(rule.delay or 0.1, doContBlock)
+                end
             end
         else
             if isBlocking then
