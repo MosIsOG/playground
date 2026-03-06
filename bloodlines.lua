@@ -4169,17 +4169,17 @@ local function TrinketCollectionLoop()
     while TrinketCollector.Running do
         local foundAny = false
         
-        -- Find all trinket spawns in workspace
-        local spawns = FindAllTrinketSpawns()
+        -- Find all actual trinket objects in workspace
+        local trinkets = FindAllTrinkets()
         
-        if #spawns == 0 then
-            TrinketStatusLabel:SetText("Status: No spawns found!")
+        if #trinkets == 0 then
+            TrinketStatusLabel:SetText("Status: No trinkets found!")
         else
-            -- Check each spawn
-            for _, spawn in ipairs(spawns) do
+            -- Check each trinket
+            for _, trinket in ipairs(trinkets) do
                 if not TrinketCollector.Running then break end
                 
-                local collected = CollectTrinket(spawn)
+                local collected = CollectTrinket(trinket)
                 
                 if collected then
                     foundAny = true
