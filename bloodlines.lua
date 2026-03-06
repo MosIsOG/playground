@@ -3132,13 +3132,168 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
+-- ==================== MOB AUTO BLOCK ====================
+local function GetDistanceToMob(model)
+    local localChar = LocalPlayer.Character
+    if not localChar or not model then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+    if not localRoot or not targetRoot then return nil end
+    return (localRoot.Position - targetRoot.Position).Magnitude
+end
+
+local function StartContinuousBlockMob(model, track, rule)
+    local key = "mob_" .. model.Name .. "_" .. rule.animID
+    if AutoBlock.ContinuousMonitors[key] then return end
+
+    local isBlocking = false
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not AutoBlock.Enabled or not track or not track.IsPlaying or not model.Parent then
+            if isBlocking then
+                Unblock()
+                isBlocking = false
+            end
+            conn:Disconnect()
+            AutoBlock.ContinuousMonitors[key] = nil
+            return
+        end
+
+        local dist = GetDistanceToMob(model)
+        if dist and dist <= (rule.distance or 999) then
+            if not isBlocking then
+                local function doContBlock()
+                    if AutoBlock.Enabled and track and track.IsPlaying then
+                        local d = GetDistanceToMob(model)
+                        if d and d <= (rule.distance or 999) then
+                            Block()
+                            isBlocking = true
+                        end
+                    end
+                end
+                if (rule.delay or 0.1) <= 0.01 then
+                    task.spawn(doContBlock)
+                else
+                    task.delay(rule.delay or 0.1, doContBlock)
+                end
+            end
+        else
+            if isBlocking then
+                Unblock()
+                isBlocking = false
+            end
+        end
+    end)
+
+    AutoBlock.ContinuousMonitors[key] = conn
+end
+
+local function MonitorMobBlock(model)
+    if AutoBlock.MobConnections[model] then return end
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    local function onAnimPlayed(track)
+        if not AutoBlock.Enabled then return end
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+
+        for _, rule in ipairs(BlockRules) do
+            if assetId == rule.animID then
+                if rule.continuous then
+                    StartContinuousBlockMob(model, track, rule)
+                else
+                    if rule.distance then
+                        local dist = GetDistanceToMob(model)
+                        if not dist or dist > rule.distance then return end
+                    end
+                    ScheduleBlock("mob_" .. model.Name, rule.delay or 0.3)
+                end
+                return
+            end
+        end
+
+        if TestRule and assetId == TestRule.animID then
+            if TestRule.continuous then
+                StartContinuousBlockMob(model, track, TestRule)
+            else
+                if TestRule.distance then
+                    local dist = GetDistanceToMob(model)
+                    if not dist or dist > TestRule.distance then return end
+                end
+                ScheduleBlock("mob_" .. model.Name, TestRule.delay or 0.3)
+            end
+        end
+    end
+
+    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
+    AutoBlock.MobConnections[model] = {conn}
+
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        onAnimPlayed(track)
+    end
+end
+
+local function ScanForBlockMobs()
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") and obj.Parent and obj.Parent ~= localChar then
+            local player = Players:GetPlayerFromCharacter(obj.Parent)
+            if not player and not AutoBlock.MobConnections[obj.Parent] then
+                local dist = GetDistanceToMob(obj.Parent)
+                if dist and dist <= 100 then -- scan range for mob block
+                    MonitorMobBlock(obj.Parent)
+                end
+            end
+        end
+    end
+    -- Clean up dead mobs
+    for model, conns in pairs(AutoBlock.MobConnections) do
+        if not model or not model.Parent then
+            for _, c in ipairs(conns) do c:Disconnect() end
+            AutoBlock.MobConnections[model] = nil
+        end
+    end
+end
+
+local function StartMobBlockScan()
+    if AutoBlock.MobScanThread then pcall(task.cancel, AutoBlock.MobScanThread) end
+    AutoBlock.MobScanThread = task.spawn(function()
+        while AutoBlock.Enabled do
+            ScanForBlockMobs()
+            task.wait(AutoBlock.MobScanInterval)
+        end
+    end)
+end
+
+local function StopMobBlockScan()
+    if AutoBlock.MobScanThread then
+        pcall(task.cancel, AutoBlock.MobScanThread)
+        AutoBlock.MobScanThread = nil
+    end
+    for model, conns in pairs(AutoBlock.MobConnections) do
+        for _, c in ipairs(conns) do c:Disconnect() end
+    end
+    AutoBlock.MobConnections = {}
+end
+
 -- ===== UI =====
 local BlockGroup = Tabs.Misc:AddLeftGroupbox("Auto Perfect Block")
 
 BlockGroup:AddToggle("AutoBlockToggle", {
     Text = "Enable Auto Block",
     Default = false,
-    Callback = function(v) AutoBlock.Enabled = v end
+    Callback = function(v)
+        AutoBlock.Enabled = v
+        if v then
+            StartMobBlockScan()
+        else
+            StopMobBlockScan()
+        end
+    end
 })
 
 -- Test section
