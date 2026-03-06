@@ -2696,7 +2696,7 @@ BossFarmGroup:AddToggle("BossFarmToggle", {
 BossFarmGroup:AddSlider("BossFarmHeight", {
     Text = "Height Above Boss",
     Default = 50,
-    Min = 2,
+    Min = -20,
     Max = 100,
     Rounding = 1,
     Suffix = " studs",
@@ -2924,6 +2924,7 @@ local BlockRules = {
    { animID = "7275651023", delay = 0.2, distance = 19 },
    { animID = "86213040968703", delay = 0.0, distance = 25, continuous = true },
    { animID = "116907126244057", delay = 1.0, continuous = true },
+   { animID = "120758909308511", delay = 0.860,distance = 50,  continuous = true },
 }
 
 -- Test rule (temporary)
