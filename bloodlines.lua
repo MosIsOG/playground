@@ -2468,8 +2468,8 @@ local BossFarm = {
     Enabled = false,
     Target = nil,           -- the Humanoid we're farming
     TargetName = "",        -- display name of the boss model
-    HeightOffset = 8,       -- studs above the boss root
-    ClickDelay = 0.12,      -- seconds between M1 clicks
+    HeightOffset = 50,      -- studs above the boss root
+    AttackDelay = 0.12,     -- seconds between remote fire calls
     ScanRange = 500,        -- max studs to scan for bosses
     MinHealth = 450,        -- minimum MaxHealth to count as a boss
     Thread = nil,
@@ -2511,13 +2511,25 @@ local function ScanBossFarmTargets()
     return results
 end
 
--- Perform a single M1 click (down + up)
-local function BossFarmClick()
-    local pos = UserInputService:GetMouseLocation()
+-- Fire the melee hit remote
+local BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
+    game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+local function BossFarmAttack()
+    if not BossFarmDataEvent then return end
     pcall(function()
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
-        task.wait(0.02)
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+        BossFarmDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
+    end)
+end
+
+local function BossFarmDash()
+    if not BossFarmDataEvent then return end
+    local hum = BossFarm.Target
+    if not hum or not hum.Parent then return end
+    local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") or hum.Parent:FindFirstChild("Head")
+    if not bossRoot then return end
+    pcall(function()
+        BossFarmDataEvent:FireServer("Dash", "Sub", bossRoot.Position)
     end)
 end
 
@@ -2567,13 +2579,14 @@ local function StartBossFarm()
         root.CFrame = CFrame.new(targetPos, bossRoot.Position)
     end)
 
-    -- Click spam loop
+    -- Attack spam loop (fires remote)
     BossFarm.Thread = task.spawn(function()
         while BossFarm.Enabled do
             if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
-                BossFarmClick()
+                BossFarmDash()
+                BossFarmAttack()
             end
-            task.wait(BossFarm.ClickDelay)
+            task.wait(BossFarm.AttackDelay)
         end
     end)
 end
@@ -2682,22 +2695,22 @@ BossFarmGroup:AddToggle("BossFarmToggle", {
 
 BossFarmGroup:AddSlider("BossFarmHeight", {
     Text = "Height Above Boss",
-    Default = 8,
+    Default = 50,
     Min = 2,
-    Max = 20,
+    Max = 100,
     Rounding = 1,
     Suffix = " studs",
     Callback = function(v) BossFarm.HeightOffset = v end
 })
 
-BossFarmGroup:AddSlider("BossFarmClickDelay", {
-    Text = "Click Delay",
+BossFarmGroup:AddSlider("BossFarmAttackDelay", {
+    Text = "Attack Delay",
     Default = 0.12,
     Min = 0.02,
     Max = 0.5,
     Rounding = 2,
     Suffix = "s",
-    Callback = function(v) BossFarm.ClickDelay = v end
+    Callback = function(v) BossFarm.AttackDelay = v end
 })
 
 BossFarmGroup:AddSlider("BossFarmScanRange", {
@@ -2720,7 +2733,7 @@ BossFarmGroup:AddSlider("BossFarmMinHP", {
     Callback = function(v) BossFarm.MinHealth = v end
 })
 
-BossFarmGroup:AddLabel("Anchors you on top of boss + spams M1.")
+BossFarmGroup:AddLabel("Anchors above boss + fires CheckMeleeHit.")
 BossFarmGroup:AddLabel("Toggle with G key. Boss dies → auto stops.")
 
 -- ==================== CHAKRA SENSE TRACKER ====================
