@@ -3804,7 +3804,7 @@ local TeleportLocations = {
      { Name = "Wood Boss", Pos = Vector3.new(-4708.4, 336.9, -2986.2)},
      { Name = "Sorythia Village", Pos = Vector3.new(-113.2, 50.9, -283.8)},
      { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
-    -- { Name = "Final Selection", Pos = Vector3.new(-729, 284, -432) },
+     { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
 }
 
 -- Function to teleport
