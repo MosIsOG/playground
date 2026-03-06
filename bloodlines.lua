@@ -4072,8 +4072,8 @@ local function FindAllTrinkets()
         "Ring Schematics",
         "Ring Of The Neoncat",
         "Ring Of Resistance",
-        "Ring of Nourishment",
-        "Ring of Favor",
+        "Ring Of Nourishment",
+        "Ring Of Favor",
 
 
     }
