@@ -1686,38 +1686,65 @@ HealthbarGroup:AddSlider("HealthbarOffset", {
 local NoFall = {
     Enabled = false,
     Connection = nil,
-    Character = nil
+    StateConnection = nil,
+    VelocityThreshold = -50  -- Cap falling speed (adjust if needed)
 }
 
 local function SetupNoFall(character)
     if not character then return end
     local root = character:WaitForChild("HumanoidRootPart", 5)
-    if not root then return end
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if not root or not humanoid then return end
 
+    -- Cleanup old connections
     if NoFall.Connection then
         NoFall.Connection:Disconnect()
         NoFall.Connection = nil
     end
+    if NoFall.StateConnection then
+        NoFall.StateConnection:Disconnect()
+        NoFall.StateConnection = nil
+    end
 
+    -- Method 1: Cap downward velocity to prevent lethal falls
     NoFall.Connection = RunService.Heartbeat:Connect(function()
         if not NoFall.Enabled or not root or not root.Parent then
-            if NoFall.Connection then
-                NoFall.Connection:Disconnect()
-                NoFall.Connection = nil
-            end
+            if NoFall.Connection then NoFall.Connection:Disconnect(); NoFall.Connection = nil end
             return
         end
-        local oldVel = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = Vector3.zero
-        RunService.RenderStepped:Wait()
-        root.AssemblyLinearVelocity = oldVel
+        
+        local velocity = root.AssemblyLinearVelocity
+        if velocity.Y < NoFall.VelocityThreshold then
+            root.AssemblyLinearVelocity = Vector3.new(velocity.X, NoFall.VelocityThreshold, velocity.Z)
+        end
     end)
+
+    -- Method 2: Change state on landing to prevent damage calculation
+    NoFall.StateConnection = humanoid.StateChanged:Connect(function(oldState, newState)
+        if not NoFall.Enabled then return end
+        
+        -- When landing, immediately switch to another state
+        if newState == Enum.HumanoidStateType.Landed then
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end
+    end)
+end
+
+local function StopNoFall()
+    if NoFall.Connection then
+        NoFall.Connection:Disconnect()
+        NoFall.Connection = nil
+    end
+    if NoFall.StateConnection then
+        NoFall.StateConnection:Disconnect()
+        NoFall.StateConnection = nil
+    end
 end
 
 -- Handle character respawns
 LocalPlayer.CharacterAdded:Connect(function(char)
     if NoFall.Enabled then
-        task.wait(0.5) -- wait for character to load
+        task.wait(0.5)
         SetupNoFall(char)
     end
 end)
@@ -1738,14 +1765,24 @@ NoFallGroup:AddToggle("NoFallToggle", {
                 SetupNoFall(LocalPlayer.Character)
             end
         else
-            if NoFall.Connection then
-                NoFall.Connection:Disconnect()
-                NoFall.Connection = nil
-            end
+            StopNoFall()
         end
     end
 })
-NoFallGroup:AddLabel("Prevents fall damage by resetting velocity each frame.")
+
+NoFallGroup:AddSlider("NoFallVelocityCap", {
+    Text = "Velocity Cap",
+    Default = -50,
+    Min = -100,
+    Max = -10,
+    Rounding = 0,
+    Callback = function(v)
+        NoFall.VelocityThreshold = v
+    end,
+    Tooltip = "Maximum falling speed (less negative = safer)"
+})
+
+NoFallGroup:AddLabel("Caps fall velocity & blocks landing state.")
 
 -- ==================== RESET BUTTON ====================
 local PlayerUtilities = Tabs.Player:AddLeftGroupbox("Utilities")
@@ -3766,7 +3803,7 @@ local TeleportLocations = {
     -- Example entries (uncomment and modify as needed)
      { Name = "Wood Boss", Pos = Vector3.new(-4708.4, 336.9, -2986.2)},
      { Name = "Sorythia Village", Pos = Vector3.new(-113.2, 50.9, -283.8)},
-    -- { Name = "Rui Boss", Pos = Vector3.new(499, 12, -1076) },
+     { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
     -- { Name = "Final Selection", Pos = Vector3.new(-729, 284, -432) },
 }
 
