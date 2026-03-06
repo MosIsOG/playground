@@ -2971,7 +2971,6 @@ local function MonitorEntity(model)
         -- Check permanent rules
         for _, rule in ipairs(BlockRules) do
             if assetId == rule.animID then
-                Library:Notify("Blocking " .. (model.Name or "entity") .. " (ID: " .. assetId .. ")", 2)
                 if rule.continuous then
                     StartContinuousBlock(model, track, rule)
                 else
@@ -2987,7 +2986,6 @@ local function MonitorEntity(model)
 
         -- Check test rule
         if TestRule and assetId == TestRule.animID then
-            Library:Notify("Blocking " .. (model.Name or "entity") .. " (Test ID: " .. assetId .. ")", 2)
             if TestRule.continuous then
                 StartContinuousBlock(model, track, TestRule)
             else
@@ -3007,12 +3005,6 @@ local function MonitorEntity(model)
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
         onAnimPlayed(track)
     end
-    
-    -- Debug: notify when entity is monitored
-    local dist = GetDistanceToEntity(model)
-    if dist then
-        Library:Notify("Monitoring: " .. (model.Name or "Unknown") .. " (" .. math.floor(dist) .. " studs)", 2)
-    end
 end
 
 -- Scan for all entities to monitor (optimized distance-based filtering)
@@ -3023,7 +3015,7 @@ local function ScanForEntities()
     if not localRoot then return end
     
     local playerPos = localRoot.Position
-    local scanRadius = 500 -- Only scan within 500 studs
+    local scanRadius = 250 -- Only scan within 250 studs
     
     -- Optimized: Check specific folders first, then workspace if needed
     local scanTargets = {
@@ -3126,7 +3118,6 @@ end
 
 local function StartAutoBlock()
     if AutoBlock.ScanThread then pcall(task.cancel, AutoBlock.ScanThread) end
-    Library:Notify("AutoBlock enabled - scanning for entities within 500 studs", 3)
     AutoBlock.ScanThread = task.spawn(function()
         while AutoBlock.Enabled do
             ScanForEntities()
@@ -3170,8 +3161,8 @@ BlockGroup:AddToggle("AutoBlockToggle", {
 
 BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
 BlockGroup:AddLabel("a registered animation ID within distance.")
-BlockGroup:AddLabel("Scans NPCs/Mobs/Players within 500 studs.")
-BlockGroup:AddLabel("Optimized: Distance check before monitoring.")
+BlockGroup:AddLabel("Scans NPCs/Mobs/Players within 250 studs.")
+BlockGroup:AddLabel("Optimized: Distance-filtered entity scanning.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
