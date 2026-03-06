@@ -4053,6 +4053,17 @@ local function FindAllTrinkets()
         "Gold Ring",
         "Silver Ring",
         "Silver Bracelet",
+        "Silver Necklace",
+        "Gold Necklace",
+        "Gold Enclosed Ring",
+        "Silver Enclosed Ring",
+        "Ring Schematics",
+        "Ring Of The Neoncat",
+        "Ring Of Resistance",
+        "Ring of Nourishment",
+        "Ring of Favor",
+
+
     }
     
     for _, trinketName in ipairs(trinketNames) do
@@ -4116,38 +4127,94 @@ local function CollectTrinket(trinket)
         return false
     end
     
-    -- Try to trigger ProximityPrompt if it exists
-    local proximityPrompt = trinket:FindFirstChildOfClass("ProximityPrompt", true)
-    if proximityPrompt then
-        pcall(function()
-            fireproximityprompt(proximityPrompt)
-            Library:Notify("Triggered ProximityPrompt on " .. trinket.Name, 2)
-        end)
-        task.wait(0.3)
-    end
-    
-    -- Fire the pickup remote
     local success = false
-    local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
-    if DataEvent then
-        DataEvent = DataEvent:FindFirstChild("DataEvent")
+    
+    -- Try mouse click simulation with extended range (spam clicks around the trinket)
+    pcall(function()
+        local camera = workspace.CurrentCamera
+        local screenPos, onScreen = camera:WorldToViewportPoint(trinketPos)
+        
+        if onScreen then
+            Library:Notify("Clicking around " .. trinket.Name, 2)
+            
+            -- Click in a pattern around the trinket's screen position (extended range)
+            local clickOffsets = {
+                {0, 0},       -- center
+                {30, 0},      -- right
+                {-30, 0},     -- left
+                {0, 30},      -- down
+                {0, -30},     -- up
+                {20, 20},     -- diagonal
+                {-20, -20},   -- diagonal
+                {20, -20},    -- diagonal
+                {-20, 20},    -- diagonal
+            }
+            
+            for _, offset in ipairs(clickOffsets) do
+                local clickX = screenPos.X + offset[1]
+                local clickY = screenPos.Y + offset[2]
+                
+                -- Try multiple click methods
+                pcall(function()
+                    -- Method 1: VirtualInput click
+                    VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0)
+                    task.wait(0.02)
+                    VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
+                end)
+                
+                -- Method 2: mouse1click if available
+                if mouse1click then
+                    pcall(function()
+                        mouse1click()
+                    end)
+                end
+                
+                task.wait(0.05)
+            end
+            
+            Library:Notify("Completed click pattern on " .. trinket.Name, 2)
+            success = true
+        else
+            Library:Notify(trinket.Name .. " not on screen", 2)
+        end
+    end)
+    
+    task.wait(0.3)
+    
+    -- Try to trigger ProximityPrompt if it exists
+    if not success then
+        local proximityPrompt = trinket:FindFirstChildOfClass("ProximityPrompt", true)
+        if proximityPrompt then
+            pcall(function()
+                fireproximityprompt(proximityPrompt)
+                Library:Notify("Triggered ProximityPrompt on " .. trinket.Name, 2)
+                success = true
+            end)
+            task.wait(0.3)
+        end
     end
     
-    if DataEvent then
-        local result = pcall(function()
-            DataEvent:FireServer("PickUp")
-            success = true
-        end)
-        
-        if result then
-            Library:Notify("Fired PickUp remote for " .. trinket.Name, 2)
-        else
-            Library:Notify("Failed to fire PickUp remote", 2)
+    -- Fire the pickup remote as fallback
+    if not success then
+        local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+        if DataEvent then
+            DataEvent = DataEvent:FindFirstChild("DataEvent")
         end
         
-        task.wait(0.3)
-    else
-        Library:Notify("DataEvent not found!", 2)
+        if DataEvent then
+            local result = pcall(function()
+                DataEvent:FireServer("PickUp")
+            end)
+            
+            if result then
+                Library:Notify("Fired PickUp remote for " .. trinket.Name, 2)
+                success = true
+            else
+                Library:Notify("Failed to fire PickUp remote", 2)
+            end
+            
+            task.wait(0.3)
+        end
     end
     
     -- Fallback: Try click detector
