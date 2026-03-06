@@ -4237,15 +4237,19 @@ local function CollectTrinket(spawn)
     
     -- Get spawn position
     local trinketPos = nil
+    local trinketPart = nil
     pcall(function()
         if spawn:IsA("Model") then
             trinketPos = spawn:GetPivot().Position
+            trinketPart = spawn.PrimaryPart or spawn:FindFirstChildWhichIsA("BasePart", true)
         elseif spawn:IsA("BasePart") then
             trinketPos = spawn.Position
+            trinketPart = spawn
         else
             local part = spawn:FindFirstChildWhichIsA("BasePart", true)
             if part then
                 trinketPos = part.Position
+                trinketPart = part
             end
         end
     end)
@@ -4275,14 +4279,34 @@ local function CollectTrinket(spawn)
         return false -- Not in pickup range
     end
     
-    -- Try multiple click methods
+    -- Use the proper pickup remote
     local success = false
+    local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+    if DataEvent then
+        DataEvent = DataEvent:FindFirstChild("DataEvent")
+    end
     
-    -- Method 1: Mouse click simulation
-    success = SimulateMouseClick(spawn)
-    task.wait(0.1)
+    if DataEvent then
+        -- Try different arguments for the pickup remote
+        pcall(function()
+            -- Try with the trinket part/spawn object
+            DataEvent:FireServer("PickUp", trinketPart or spawn)
+            success = true
+        end)
+        
+        task.wait(0.1)
+        
+        -- If not successful, try alternative methods
+        if not success then
+            pcall(function()
+                -- Try with just the spawn
+                DataEvent:FireServer("PickUp", spawn)
+                success = true
+            end)
+        end
+    end
     
-    -- Method 2: Fireclickdetector (fallback)
+    -- Fallback: Try click detector method
     if not success then
         local clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
         if clickDetector then
@@ -4453,7 +4477,7 @@ TrinketGroup:AddToggle("ShowTrinketHitbox", {
     Tooltip = "Visualize the pickup range around your character"
 })
 
-TrinketGroup:AddLabel("Uses MouseButton1 + fireclickdetector.")
+TrinketGroup:AddLabel("Uses DataEvent PickUp remote.")
 TrinketGroup:AddLabel("Checks Occupied value before collecting.")
 
 -- Theme
