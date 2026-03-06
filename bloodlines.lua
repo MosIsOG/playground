@@ -1710,106 +1710,48 @@ PlayerUtilities:AddButton({
         end
     end
 })
--- ==================== HOLD M1 SPAM (MOUSE-DOWN ONLY) ====================
+-- ==================== M1 SPAM ====================
 local M1Spam = {
     Enabled = false,
-    Holding = false,
     Delay = 0.1,
-    Thread = nil,
-    Debug = true,
-    ClickCount = 0
+    Thread = nil
 }
 
 local VirtualInput = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 
--- Get current mouse position
 local function GetMousePos()
     return UserInputService:GetMouseLocation()
 end
 
--- Send a mouse-DOWN only (no mouse-up). Games register attacks on press, not release.
--- By never sending a synthetic mouse-up, we don't disrupt IsMouseButtonPressed or InputEnded.
 local function PerformClick()
     local pos = GetMousePos()
-    if M1Spam.Debug then
-        M1Spam.ClickCount = M1Spam.ClickCount + 1
-        print(string.format("[M1Spam] Click #%d at (%d, %d)", M1Spam.ClickCount, pos.X, pos.Y))
-    end
-
-    local success = false
-
-    -- Method 1: VirtualInputManager — press only
     pcall(function()
         VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
-        success = true
-    end)
-
-    -- Method 2: mouse1press/mouse1release (atomic, if available)
-    if not success then
-        pcall(function()
-            if mouse1click then
-                mouse1click()
-                success = true
-            end
-        end)
-    end
-
-    return success
-end
-
--- Track physical hold: InputBegan sets true, InputEnded sets false.
--- Since we never send synthetic mouse-up, InputEnded only fires on real release.
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        M1Spam.Holding = true
-        if M1Spam.Debug then print("[M1Spam] M1 held down") end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gameProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        M1Spam.Holding = false
-        if M1Spam.Debug then print("[M1Spam] M1 released") end
-    end
-end)
-
--- Main loop
-local function SpamLoop()
-    if M1Spam.Debug then print("[M1Spam] Spam loop started") end
-    while M1Spam.Enabled do
-        if M1Spam.Holding then
-            PerformClick()
-        end
-        task.wait(M1Spam.Delay)
-    end
-    -- Send one final mouse-up to clean up state
-    pcall(function()
-        local pos = GetMousePos()
+        task.wait()
         VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
     end)
-    if M1Spam.Debug then print("[M1Spam] Spam loop ended") end
+end
+
+local function SpamLoop()
+    while M1Spam.Enabled do
+        PerformClick()
+        task.wait(M1Spam.Delay)
+    end
 end
 
 local function StartSpam()
     if M1Spam.Thread then
-        task.cancel(M1Spam.Thread)
+        pcall(task.cancel, M1Spam.Thread)
     end
-    M1Spam.ClickCount = 0
     M1Spam.Thread = task.spawn(SpamLoop)
 end
 
 local function StopSpam()
-    M1Spam.Holding = false
     if M1Spam.Thread then
-        task.cancel(M1Spam.Thread)
+        pcall(task.cancel, M1Spam.Thread)
         M1Spam.Thread = nil
     end
-    -- Clean up: send mouse-up in case we left it pressed
-    pcall(function()
-        local pos = GetMousePos()
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
-    end)
 end
 
 -- UI
@@ -1826,6 +1768,11 @@ M1Group:AddToggle("M1SpamToggle", {
             StopSpam()
         end
     end
+}):AddKeyPicker("M1SpamKey", {
+    Default = "L",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "M1 Spam"
 })
 
 M1Group:AddSlider("M1SpamDelay", {
@@ -1838,36 +1785,7 @@ M1Group:AddSlider("M1SpamDelay", {
     Callback = function(v) M1Spam.Delay = v end
 })
 
-M1Group:AddToggle("M1SpamDebug", {
-    Text = "Debug Mode",
-    Default = true,
-    Callback = function(v) M1Spam.Debug = v end
-})
-
-M1Group:AddButton({
-    Text = "Test Single Click",
-    Func = function()
-        local ok = PerformClick()
-        if ok then
-            Library:Notify("Click simulated!", 2)
-        else
-            Library:Notify("Click failed.", 3)
-        end
-    end
-})
-
-local clickCountDisplay = M1Group:AddLabel("Clicks: 0")
-task.spawn(function()
-    while true do
-        if M1Spam.Enabled and M1Spam.Debug then
-            clickCountDisplay:SetText("Clicks: " .. M1Spam.ClickCount)
-        end
-        task.wait(0.3)
-    end
-end)
-
-M1Group:AddLabel("When enabled, clicks rapidly while you hold M1.")
-M1Group:AddLabel("Tracks physical hold via InputBegan/InputEnded.")
+M1Group:AddLabel("Toggle with L key. Spams left click.")
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
@@ -1877,10 +1795,14 @@ local bodyVelocity, bodyGyro
 MovementGroup:AddToggle("Noclip", {
     Text = "Noclip",
     Default = false,
-    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.N },  -- default N
     Callback = function(value)
         _G.Noclip = value
     end
+}):AddKeyPicker("NoclipKey", {
+    Default = "N",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Noclip",
 })
 
 MovementGroup:AddToggle("InfiniteJump", {
@@ -1894,7 +1816,6 @@ MovementGroup:AddToggle("InfiniteJump", {
 MovementGroup:AddToggle("Fly", {
     Text = "Fly",
     Default = false,
-    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.F },  -- default F
     Callback = function(value)
         flying = value
         local character = LocalPlayer.Character
@@ -1917,6 +1838,11 @@ MovementGroup:AddToggle("Fly", {
             humanoid.PlatformStand = false
         end
     end
+}):AddKeyPicker("FlyKey", {
+    Default = "F",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Fly",
 })
 
 -- ==================== WALKSPEED MULTIPLIER ====================
@@ -1992,7 +1918,6 @@ end)
 MovementGroup:AddToggle("WalkspeedToggle", {
     Text = "Walkspeed Multiplier",
     Default = false,
-    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.X },
     Callback = function(value)
         WalkspeedMultiplier.Enabled = value
         if value then
@@ -2001,6 +1926,11 @@ MovementGroup:AddToggle("WalkspeedToggle", {
             DisableWalkspeed()
         end
     end
+}):AddKeyPicker("WalkspeedKey", {
+    Default = "X",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Walkspeed",
 })
 
 MovementGroup:AddSlider("WalkspeedSlider", {
@@ -2077,7 +2007,7 @@ local ManualBars = {}
 
 -- Settings
 local AutoDetect = {
-    Enabled = false,
+    Enabled = true,
     Range = DEFAULT_MAX_DISTANCE,
     ScanInterval = 2,  -- seconds
     LastScan = 0,
@@ -3137,11 +3067,31 @@ local function CollectChakraPoints()
     ChakraStatusLabel:SetText("Status: Running (0/" .. ChakraCollector.Total .. ")")
     Library:Notify("Starting Chakra Point collection (" .. ChakraCollector.Total .. " points)", 2)
 
+    -- Count how many are already unlocked vs locked
+    local lockedCount = 0
+    for _, point in ipairs(children) do
+        local unlocked = point:FindFirstChild("Unlocked")
+        if not unlocked or (tostring(unlocked.Value):lower() ~= "on" and unlocked.Value ~= true) then
+            lockedCount = lockedCount + 1
+        end
+    end
+    Library:Notify(lockedCount .. " locked points to collect (" .. (#children - lockedCount) .. " already unlocked)", 3)
+
     for i, point in ipairs(children) do
         if not ChakraCollector.Running then
             ChakraStatusLabel:SetText("Status: Stopped at " .. i - 1 .. "/" .. ChakraCollector.Total)
             Library:Notify("Chakra collection stopped", 2)
             return
+        end
+
+        -- Skip already unlocked points
+        local unlocked = point:FindFirstChild("Unlocked")
+        if unlocked and (tostring(unlocked.Value):lower() == "on" or unlocked.Value == true) then
+            if M1Spam and M1Spam.Debug then
+                print(string.format("[Chakra] Skipping point %d (%s) — already unlocked", i, point.Name))
+            end
+            ChakraStatusLabel:SetText("Status: Skipped " .. i .. "/" .. ChakraCollector.Total .. " (unlocked)")
+            continue
         end
 
         ChakraCollector.CurrentIndex = i
