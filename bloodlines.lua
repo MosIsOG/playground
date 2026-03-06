@@ -2696,7 +2696,7 @@ BossFarmGroup:AddToggle("BossFarmToggle", {
 BossFarmGroup:AddSlider("BossFarmHeight", {
     Text = "Height Above Boss",
     Default = 50,
-    Min = -20,
+    Min = -100,
     Max = 100,
     Rounding = 1,
     Suffix = " studs",
