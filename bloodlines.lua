@@ -1688,8 +1688,13 @@ local NoFall = {
 }
 
 -- Hook DataEvent to block fall damage
-local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") 
-    and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+local DataEvent = nil
+pcall(function()
+    local events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+    if events then
+        DataEvent = events:FindFirstChild("DataEvent")
+    end
+end)
 
 local OldNamecall
 OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -1697,22 +1702,29 @@ OldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     
     -- Intercept DataEvent:FireServer calls
-    if method == "FireServer" and self == DataEvent and NoFall.Enabled then
+    if method == "FireServer" and DataEvent and self == DataEvent and NoFall.Enabled then
         -- Check if this is a TakeDamage call
         if args[1] == "TakeDamage" then
             -- Check if player is falling or just landed (indicating fall damage)
-            local char = LocalPlayer.Character
-            if char then
-                local humanoid = char:FindFirstChild("Humanoid")
-                if humanoid then
-                    local state = humanoid:GetState()
-                    -- Block if in freefall or landing state
-                    if state == Enum.HumanoidStateType.Freefall or 
-                       state == Enum.HumanoidStateType.Landed then
-                        -- Block this damage call (fall damage)
-                        return
+            local success = pcall(function()
+                local char = LocalPlayer.Character
+                if char then
+                    local humanoid = char:FindFirstChild("Humanoid")
+                    if humanoid and humanoid:IsA("Humanoid") then
+                        local state = humanoid:GetState()
+                        -- Block if in freefall or landing state
+                        if state == Enum.HumanoidStateType.Freefall or 
+                           state == Enum.HumanoidStateType.Landed then
+                            -- Block this damage call (fall damage)
+                            return true
+                        end
                     end
                 end
+                return false
+            end)
+            
+            if success then
+                return
             end
         end
     end
