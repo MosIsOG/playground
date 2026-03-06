@@ -481,7 +481,7 @@ local Modules = {
             if not _FIRST then
                 _FIRST = true
                 pcall(function()
-                    local GPM = rawget(require(LocalPlayer.PlayerScripts:WaitForChild('Client', 1e9):WaitForChild('Player', 1e9)), 'GetPlayerModel')
+                    local GPM = rawget(require(LocalPlayer.PlayerScripts:WaitForChild('Client', 5):WaitForChild('Player', 5)), 'GetPlayerModel')
                     PList = debug.getupvalue(GPM, 1)
                 end)
             end
@@ -1713,6 +1713,7 @@ PlayerUtilities:AddButton({
 -- ==================== M1 SPAM ====================
 local M1Spam = {
     Enabled = false,
+    Holding = false,
     Delay = 0.1,
     Thread = nil
 }
@@ -1728,14 +1729,27 @@ local function PerformClick()
     local pos = GetMousePos()
     pcall(function()
         VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
-        task.wait()
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
     end)
 end
 
+-- Track physical mouse hold
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        M1Spam.Holding = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        M1Spam.Holding = false
+    end
+end)
+
 local function SpamLoop()
     while M1Spam.Enabled do
-        PerformClick()
+        if M1Spam.Holding then
+            PerformClick()
+        end
         task.wait(M1Spam.Delay)
     end
 end
@@ -1748,6 +1762,7 @@ local function StartSpam()
 end
 
 local function StopSpam()
+    M1Spam.Holding = false
     if M1Spam.Thread then
         pcall(task.cancel, M1Spam.Thread)
         M1Spam.Thread = nil
@@ -1785,7 +1800,7 @@ M1Group:AddSlider("M1SpamDelay", {
     Callback = function(v) M1Spam.Delay = v end
 })
 
-M1Group:AddLabel("Toggle with L key. Spams left click.")
+M1Group:AddLabel("Toggle with L. Hold M1 to spam clicks.")
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
@@ -3190,7 +3205,7 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 -- Initialize
 Library:SetWatermark("Universal Hub")
 Library:SetWatermarkVisibility(true)
-SaveManager:Load()
+SaveManager:LoadAutoloadConfig()
 
 print("=== Universal Hub Loaded ===")
 print("Press RightControl to toggle menu")
