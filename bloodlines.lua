@@ -2462,6 +2462,267 @@ local function RefreshTestList()
     end
 end
 RefreshTestList()
+
+-- ==================== BOSS FARM (ANCHOR + M1 SPAM) ====================
+local BossFarm = {
+    Enabled = false,
+    Target = nil,           -- the Humanoid we're farming
+    TargetName = "",        -- display name of the boss model
+    HeightOffset = 8,       -- studs above the boss root
+    ClickDelay = 0.12,      -- seconds between M1 clicks
+    ScanRange = 500,        -- max studs to scan for bosses
+    MinHealth = 450,        -- minimum MaxHealth to count as a boss
+    Thread = nil,
+    AnchorConn = nil,
+    FoundBosses = {},       -- { humanoid = Humanoid, name = string }
+}
+
+local BossFarmGroup = BossBarTab:AddLeftGroupbox("Boss Farm")
+
+-- Scan for nearby bosses and return a list
+local function ScanBossFarmTargets()
+    local results = {}
+    local localChar = LocalPlayer.Character
+    if not localChar then return results end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    if not localRoot then return results end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") and obj.Parent and obj.Health > 0 and obj.MaxHealth >= BossFarm.MinHealth then
+            local player = Players:GetPlayerFromCharacter(obj.Parent)
+            if not player then
+                local root = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent:FindFirstChild("Head")
+                if root then
+                    local dist = (localRoot.Position - root.Position).Magnitude
+                    if dist <= BossFarm.ScanRange then
+                        table.insert(results, {
+                            humanoid = obj,
+                            name = obj.Parent.Name,
+                            distance = math.floor(dist)
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    -- Sort by distance
+    table.sort(results, function(a, b) return a.distance < b.distance end)
+    return results
+end
+
+-- Perform a single M1 click (down + up)
+local function BossFarmClick()
+    local pos = UserInputService:GetMouseLocation()
+    pcall(function()
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+        task.wait(0.02)
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
+end
+
+-- Start the farm loop (anchor + click)
+local function StartBossFarm()
+    -- Stop any previous
+    if BossFarm.AnchorConn then
+        BossFarm.AnchorConn:Disconnect()
+        BossFarm.AnchorConn = nil
+    end
+    if BossFarm.Thread then
+        pcall(task.cancel, BossFarm.Thread)
+        BossFarm.Thread = nil
+    end
+
+    if not BossFarm.Target or not BossFarm.Target.Parent then
+        Library:Notify("No valid boss target!", 3)
+        BossFarm.Enabled = false
+        return
+    end
+
+    Library:Notify("Farming: " .. BossFarm.TargetName, 3)
+
+    -- Anchor: every frame, teleport on top of boss
+    BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
+        if not BossFarm.Enabled then return end
+        local hum = BossFarm.Target
+        if not hum or not hum.Parent or hum.Health <= 0 then
+            -- Boss died or despawned
+            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
+            BossFarm.Enabled = false
+            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+            return
+        end
+
+        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") or hum.Parent:FindFirstChild("Head")
+        if not bossRoot then return end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+
+        -- Position above the boss, facing down at it
+        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+        root.CFrame = CFrame.new(targetPos, bossRoot.Position)
+    end)
+
+    -- Click spam loop
+    BossFarm.Thread = task.spawn(function()
+        while BossFarm.Enabled do
+            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
+                BossFarmClick()
+            end
+            task.wait(BossFarm.ClickDelay)
+        end
+    end)
+end
+
+local function StopBossFarm()
+    BossFarm.Enabled = false
+    if BossFarm.AnchorConn then
+        BossFarm.AnchorConn:Disconnect()
+        BossFarm.AnchorConn = nil
+    end
+    if BossFarm.Thread then
+        pcall(task.cancel, BossFarm.Thread)
+        BossFarm.Thread = nil
+    end
+end
+
+-- Status label
+local BossFarmStatus = BossFarmGroup:AddLabel("Target: None")
+
+-- Scan button — finds bosses and picks the nearest one
+BossFarmGroup:AddButton({
+    Text = "Scan & Pick Nearest Boss",
+    Func = function()
+        local bosses = ScanBossFarmTargets()
+        if #bosses == 0 then
+            Library:Notify("No bosses found within " .. BossFarm.ScanRange .. " studs", 3)
+            BossFarmStatus:SetText("Target: None")
+            BossFarm.Target = nil
+            BossFarm.TargetName = ""
+            return
+        end
+        -- Pick nearest
+        local pick = bosses[1]
+        BossFarm.Target = pick.humanoid
+        BossFarm.TargetName = pick.name
+        BossFarmStatus:SetText(string.format("Target: %s (%d HP, %d studs)", pick.name, math.floor(pick.humanoid.Health), pick.distance))
+        Library:Notify(string.format("Selected: %s (%d studs away)", pick.name, pick.distance), 3)
+
+        -- List all found bosses in chat
+        for i, b in ipairs(bosses) do
+            Library:Notify(string.format("  %d. %s — %d HP, %d studs", i, b.name, math.floor(b.humanoid.Health), b.distance), 4)
+        end
+    end,
+    Tooltip = "Scans for NPCs with high HP nearby and selects the closest one"
+})
+
+-- Scan & show list to pick from
+BossFarmGroup:AddButton({
+    Text = "Scan & Pick by Name",
+    Func = function()
+        local bosses = ScanBossFarmTargets()
+        if #bosses == 0 then
+            Library:Notify("No bosses found within " .. BossFarm.ScanRange .. " studs", 3)
+            return
+        end
+        -- Build a simple text list
+        local msg = "Found bosses (say number in chat to pick):\n"
+        BossFarm.FoundBosses = bosses
+        for i, b in ipairs(bosses) do
+            msg = msg .. string.format("  %d. %s — %d HP, %d studs\n", i, b.name, math.floor(b.humanoid.Health), b.distance)
+        end
+        Library:Notify(msg, 8)
+        Library:Notify("Use the index input below to select one.", 5)
+    end,
+    Tooltip = "Shows all detected bosses so you can pick one by index"
+})
+
+BossFarmGroup:AddInput("BossFarmIndex", {
+    Text = "Boss Index",
+    Default = "1",
+    Numeric = true,
+    Finished = true,
+    Placeholder = "e.g. 1",
+    Callback = function(val)
+        local idx = tonumber(val)
+        if not idx or not BossFarm.FoundBosses or not BossFarm.FoundBosses[idx] then
+            Library:Notify("Invalid index. Scan first, then enter a number.", 3)
+            return
+        end
+        local pick = BossFarm.FoundBosses[idx]
+        BossFarm.Target = pick.humanoid
+        BossFarm.TargetName = pick.name
+        BossFarmStatus:SetText(string.format("Target: %s (%d HP, %d studs)", pick.name, math.floor(pick.humanoid.Health), pick.distance))
+        Library:Notify(string.format("Selected: %s", pick.name), 2)
+    end
+})
+
+BossFarmGroup:AddToggle("BossFarmToggle", {
+    Text = "Start Farm",
+    Default = false,
+    Callback = function(v)
+        BossFarm.Enabled = v
+        if v then
+            StartBossFarm()
+        else
+            StopBossFarm()
+            Library:Notify("Boss farm stopped", 2)
+        end
+    end
+}):AddKeyPicker("BossFarmKey", {
+    Default = "G",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Boss Farm",
+})
+
+BossFarmGroup:AddSlider("BossFarmHeight", {
+    Text = "Height Above Boss",
+    Default = 8,
+    Min = 2,
+    Max = 20,
+    Rounding = 1,
+    Suffix = " studs",
+    Callback = function(v) BossFarm.HeightOffset = v end
+})
+
+BossFarmGroup:AddSlider("BossFarmClickDelay", {
+    Text = "Click Delay",
+    Default = 0.12,
+    Min = 0.02,
+    Max = 0.5,
+    Rounding = 2,
+    Suffix = "s",
+    Callback = function(v) BossFarm.ClickDelay = v end
+})
+
+BossFarmGroup:AddSlider("BossFarmScanRange", {
+    Text = "Scan Range",
+    Default = 500,
+    Min = 50,
+    Max = 2000,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(v) BossFarm.ScanRange = v end
+})
+
+BossFarmGroup:AddSlider("BossFarmMinHP", {
+    Text = "Min Boss HP",
+    Default = 450,
+    Min = 100,
+    Max = 5000,
+    Rounding = 0,
+    Suffix = " HP",
+    Callback = function(v) BossFarm.MinHealth = v end
+})
+
+BossFarmGroup:AddLabel("Anchors you on top of boss + spams M1.")
+BossFarmGroup:AddLabel("Toggle with G key. Boss dies → auto stops.")
+
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
     ActiveUsers = {},
