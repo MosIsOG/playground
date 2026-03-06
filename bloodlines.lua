@@ -2882,7 +2882,6 @@ local AutoBlock = {
     ContinuousMonitors = {}, -- key = playerName..animID, value = RBXScriptConnection
     MobConnections = {},     -- key = model, value = {connections}
     MobScanThread = nil,
-    MobScanInterval = 2,
 }
 
 -- Remote events
@@ -2940,33 +2939,30 @@ local function StartContinuousBlock(player, track, rule)
     if AutoBlock.ContinuousMonitors[key] then return end
 
     local isBlocking = false
+    local delayApplied = false
     local thread = task.spawn(function()
         while AutoBlock.Enabled and track and track.IsPlaying and player.Character do
             local dist = GetDistanceToPlayer(player)
             if dist and dist <= (rule.distance or 999) then
-                if not isBlocking then
-                    local function doContBlock()
-                        if AutoBlock.Enabled and track and track.IsPlaying then
-                            local d = GetDistanceToPlayer(player)
-                            if d and d <= (rule.distance or 999) then
-                                Block()
-                                isBlocking = true
-                            end
+                if not isBlocking and not delayApplied then
+                    delayApplied = true
+                    task.wait(rule.delay or 0.1)
+                    if AutoBlock.Enabled and track and track.IsPlaying then
+                        local d = GetDistanceToPlayer(player)
+                        if d and d <= (rule.distance or 999) then
+                            Block()
+                            isBlocking = true
                         end
-                    end
-                    if (rule.delay or 0.1) <= 0.01 then
-                        task.spawn(doContBlock)
-                    else
-                        task.delay(rule.delay or 0.1, doContBlock)
                     end
                 end
             else
                 if isBlocking then
                     Unblock()
                     isBlocking = false
+                    delayApplied = false
                 end
             end
-            task.wait(0.033) -- Check ~30 times per second instead of 60
+            task.wait(0.01) -- Check 100 times per second for fast response
         end
         
         -- Cleanup when done
@@ -3090,33 +3086,30 @@ local function StartContinuousBlockMob(model, track, rule)
     if AutoBlock.ContinuousMonitors[key] then return end
 
     local isBlocking = false
+    local delayApplied = false
     local thread = task.spawn(function()
         while AutoBlock.Enabled and track and track.IsPlaying and model.Parent do
             local dist = GetDistanceToMob(model)
             if dist and dist <= (rule.distance or 999) then
-                if not isBlocking then
-                    local function doContBlock()
-                        if AutoBlock.Enabled and track and track.IsPlaying then
-                            local d = GetDistanceToMob(model)
-                            if d and d <= (rule.distance or 999) then
-                                Block()
-                                isBlocking = true
-                            end
+                if not isBlocking and not delayApplied then
+                    delayApplied = true
+                    task.wait(rule.delay or 0.1)
+                    if AutoBlock.Enabled and track and track.IsPlaying then
+                        local d = GetDistanceToMob(model)
+                        if d and d <= (rule.distance or 999) then
+                            Block()
+                            isBlocking = true
                         end
-                    end
-                    if (rule.delay or 0.1) <= 0.01 then
-                        task.spawn(doContBlock)
-                    else
-                        task.delay(rule.delay or 0.1, doContBlock)
                     end
                 end
             else
                 if isBlocking then
                     Unblock()
                     isBlocking = false
+                    delayApplied = false
                 end
             end
-            task.wait(0.033) -- Check ~30 times per second instead of 60
+            task.wait(0.01) -- Check 100 times per second for fast response
         end
         
         -- Cleanup when done
@@ -3217,7 +3210,7 @@ local function StartMobBlockScan()
     AutoBlock.MobScanThread = task.spawn(function()
         while AutoBlock.Enabled do
             ScanForBlockMobs()
-            task.wait(AutoBlock.MobScanInterval)
+            task.wait(0.5) -- Scan every 0.5s for responsive detection
         end
     end)
 end
@@ -3249,18 +3242,9 @@ BlockGroup:AddToggle("AutoBlockToggle", {
     end
 })
 
-BlockGroup:AddSlider("MobScanInterval", {
-    Text = "Mob Scan Interval",
-    Default = 2,
-    Min = 1,
-    Max = 10,
-    Rounding = 1,
-    Suffix = "s",
-    Callback = function(v) AutoBlock.MobScanInterval = v end,
-    Tooltip = "How often to scan for new mobs. Higher = less lag."
-})
-
 BlockGroup:AddLabel("Automatically blocks attacks from players and mobs.")
+BlockGroup:AddLabel("Scans for new mobs every 0.5s.")
+BlockGroup:AddLabel("Continuous blocks check 100 times per second.")
 
 -- Test section
 local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
