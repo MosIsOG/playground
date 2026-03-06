@@ -1630,129 +1630,6 @@ HealthbarGroup:AddSlider("HealthbarOffset", {
 })
 
 -- Player Tab
--- ==================== WALKSPEED MULTIPLIER (FIXED) ====================
-local WalkspeedMultiplier = {
-    Enabled = false,
-    Multiplier = 1.0,
-    BaseSpeed = 16,
-    Humanoid = nil,
-    Connections = {}
-}
-
--- Get current walkspeed (if humanoid exists)
-local function GetCurrentSpeed(hum)
-    return hum and hum.WalkSpeed or 16
-end
-
--- Apply multiplier to current character
-local function ApplyWalkspeed()
-    if not WalkspeedMultiplier.Enabled then return end
-    local hum = WalkspeedMultiplier.Humanoid
-    if not hum then return end
-
-    local current = GetCurrentSpeed(hum)
-    local target = WalkspeedMultiplier.BaseSpeed * WalkspeedMultiplier.Multiplier
-
-    -- If current speed is significantly different from target, the game changed base
-    if math.abs(current - target) > 0.5 then
-        -- Recalculate base: assume current is the new base (before multiplier)
-        WalkspeedMultiplier.BaseSpeed = current / WalkspeedMultiplier.Multiplier
-        target = current  -- will be overwritten next line
-    end
-
-    -- Set to target
-    if math.abs(hum.WalkSpeed - target) > 0.1 then
-        hum.WalkSpeed = target
-    end
-end
-
--- Setup monitoring for a humanoid
-local function SetupMonitoring(humanoid)
-    -- Clean old connections for this humanoid
-    if WalkspeedMultiplier.Connections[humanoid] then
-        for _, conn in ipairs(WalkspeedMultiplier.Connections[humanoid]) do
-            conn:Disconnect()
-        end
-    end
-
-    local conns = {}
-    -- RenderStepped to apply multiplier continuously
-    local renderConn = RunService.RenderStepped:Connect(ApplyWalkspeed)
-    table.insert(conns, renderConn)
-
-    WalkspeedMultiplier.Connections[humanoid] = conns
-end
-
--- Handle character added
-local function OnCharacterAdded(char)
-    local hum = char:WaitForChild("Humanoid")
-    task.wait(0.1)
-    WalkspeedMultiplier.Humanoid = hum
-    WalkspeedMultiplier.BaseSpeed = GetCurrentSpeed(hum) / (WalkspeedMultiplier.Enabled and WalkspeedMultiplier.Multiplier or 1)
-    SetupMonitoring(hum)
-    ApplyWalkspeed()
-end
-
--- Connect events
-LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
-if LocalPlayer.Character then
-    OnCharacterAdded(LocalPlayer.Character)
-end
-
--- Cleanup on character remove
-LocalPlayer.CharacterRemoving:Connect(function()
-    if WalkspeedMultiplier.Humanoid and WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid] then
-        for _, conn in ipairs(WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid]) do
-            conn:Disconnect()
-        end
-        WalkspeedMultiplier.Connections[WalkspeedMultiplier.Humanoid] = nil
-    end
-    WalkspeedMultiplier.Humanoid = nil
-end)
-
--- UI in Player Tab
-local WalkspeedGroup = Tabs.Player:AddLeftGroupbox("Walkspeed Multiplier")
-
-WalkspeedGroup:AddToggle("WalkspeedToggle", {
-    Text = "Enable Multiplier",
-    Default = false,
-    Callback = function(value)
-        WalkspeedMultiplier.Enabled = value
-        if value then
-            if WalkspeedMultiplier.Humanoid then
-                WalkspeedMultiplier.BaseSpeed = GetCurrentSpeed(WalkspeedMultiplier.Humanoid) / WalkspeedMultiplier.Multiplier
-                ApplyWalkspeed()
-            end
-        else
-            -- Restore to base speed (multiplier removed)
-            if WalkspeedMultiplier.Humanoid then
-                WalkspeedMultiplier.Humanoid.WalkSpeed = WalkspeedMultiplier.BaseSpeed
-            end
-        end
-    end
-})
-
-WalkspeedGroup:AddSlider("WalkspeedMultiplier", {
-    Text = "Multiplier",
-    Default = 1.0,
-    Min = 0.1,
-    Max = 25,
-    Rounding = 1,  -- 0.1 increments
-    Suffix = "x",
-    Callback = function(value)
-        local oldMult = WalkspeedMultiplier.Multiplier
-        WalkspeedMultiplier.Multiplier = value
-        if WalkspeedMultiplier.Enabled and WalkspeedMultiplier.Humanoid then
-            -- Adjust base so speed doesn't jump abruptly
-            local current = GetCurrentSpeed(WalkspeedMultiplier.Humanoid)
-            WalkspeedMultiplier.BaseSpeed = current / value
-            ApplyWalkspeed()
-        end
-    end
-})
-
-WalkspeedGroup:AddLabel("Multiplies your current walkspeed.")
-WalkspeedGroup:AddLabel("Automatically adapts to game speed changes.")
 
 -- ==================== NO FALL DAMAGE ====================
 local NoFall = {
@@ -1833,80 +1710,117 @@ PlayerUtilities:AddButton({
         end
     end
 })
-
--- ==================== HOLD M1 SPAM (NATURAL CLICK) ====================
+-- ==================== HOLD M1 SPAM (EVENT-TRACKED) ====================
 local M1Spam = {
     Enabled = false,
-    Holding = false,
+    Holding = false,       -- tracks physical mouse state
+    Clicking = false,      -- true while we're sending a synthetic click
     Delay = 0.1,
-    Thread = nil
+    Thread = nil,
+    Debug = true,
+    ClickCount = 0
 }
 
--- Detect available click simulation method
-local ClickFunction
-if syn and syn.input then
-    -- Synapse X
-    ClickFunction = function()
-        syn.input.mouse1click()
+local VirtualInput = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+
+-- Get current mouse position
+local function GetMousePos()
+    return UserInputService:GetMouseLocation()
+end
+
+-- Perform a single click (same as test button)
+local function PerformClick()
+    local pos = GetMousePos()
+    if M1Spam.Debug then
+        M1Spam.ClickCount = M1Spam.ClickCount + 1
+        print(string.format("[M1Spam] Click #%d at (%d, %d)", M1Spam.ClickCount, pos.X, pos.Y))
     end
-elseif mouse1click then
-    -- Most other executors (Krni, etc.)
-    ClickFunction = mouse1click
-elseif VirtualInputManager then
-    -- Roblox's VirtualInputManager (limited, may not work in all games)
-    ClickFunction = function()
-        local vim = game:GetService("VirtualInputManager")
-        vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    M1Spam.Clicking = true  -- flag so InputEnded ignores the synthetic release
+    local success = pcall(function()
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
         task.wait(0.01)
-        vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
+    M1Spam.Clicking = false
+    if not success and mouse1click then
+        success = pcall(mouse1click)
     end
-else
-    ClickFunction = function()
-        -- Fallback: nothing
-        warn("No click simulation method available")
+    if not success and syn and syn.input and syn.input.mouse1click then
+        success = pcall(syn.input.mouse1click)
     end
+    return success
 end
 
-local function ClickLoop()
-    while M1Spam.Holding and M1Spam.Enabled do
-        pcall(ClickFunction)
-        task.wait(M1Spam.Delay)
-    end
-end
-
--- Monitor physical mouse button
+-- Track physical mouse hold via events
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not M1Spam.Enabled or gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         M1Spam.Holding = true
-        M1Spam.Thread = task.spawn(ClickLoop)
+        if M1Spam.Debug then print("[M1Spam] M1 pressed (holding = true)") end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        M1Spam.Holding = false
-        if M1Spam.Thread then
-            task.cancel(M1Spam.Thread)
-            M1Spam.Thread = nil
+        -- When spam is active, the synthetic clicks cause false InputEnded events.
+        -- Wait a frame then check if the physical button is truly released.
+        if M1Spam.Enabled then
+            task.defer(function()
+                if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                    M1Spam.Holding = false
+                    if M1Spam.Debug then print("[M1Spam] M1 truly released (holding = false)") end
+                else
+                    if M1Spam.Debug then print("[M1Spam] Ignoring synthetic release (still held)") end
+                end
+            end)
+            return
         end
+        M1Spam.Holding = false
+        if M1Spam.Debug then print("[M1Spam] M1 released (holding = false)") end
     end
 end)
+
+-- Main loop: while enabled AND holding, click repeatedly
+local function SpamLoop()
+    if M1Spam.Debug then print("[M1Spam] Spam loop started") end
+    while M1Spam.Enabled do
+        if M1Spam.Holding then
+            PerformClick()
+        end
+        task.wait(M1Spam.Delay)
+    end
+    if M1Spam.Debug then print("[M1Spam] Spam loop ended") end
+end
+
+-- Start/stop based on toggle
+local function StartSpam()
+    if M1Spam.Thread then
+        task.cancel(M1Spam.Thread)
+    end
+    M1Spam.ClickCount = 0
+    M1Spam.Thread = task.spawn(SpamLoop)
+end
+
+local function StopSpam()
+    M1Spam.Holding = false
+    if M1Spam.Thread then
+        task.cancel(M1Spam.Thread)
+        M1Spam.Thread = nil
+    end
+end
 
 -- UI
 local M1Group = Tabs.Player:AddLeftGroupbox("M1 Spam")
 
 M1Group:AddToggle("M1SpamToggle", {
-    Text = "Enable Hold M1 Spam",
+    Text = "Enable M1 Spam",
     Default = false,
     Callback = function(v)
         M1Spam.Enabled = v
-        if not v then
-            M1Spam.Holding = false
-            if M1Spam.Thread then
-                task.cancel(M1Spam.Thread)
-                M1Spam.Thread = nil
-            end
+        if v then
+            StartSpam()
+        else
+            StopSpam()
         end
     end
 })
@@ -1921,17 +1835,63 @@ M1Group:AddSlider("M1SpamDelay", {
     Callback = function(v) M1Spam.Delay = v end
 })
 
-M1Group:AddLabel("Simulates rapid left‑clicks while you hold M1.")
-M1Group:AddLabel("Uses executor‑specific mouse simulation.")
+M1Group:AddToggle("M1SpamDebug", {
+    Text = "Debug Mode",
+    Default = true,
+    Callback = function(v) M1Spam.Debug = v end
+})
+
+M1Group:AddButton({
+    Text = "Test Single Click",
+    Func = function()
+        local ok = PerformClick()
+        if ok then
+            Library:Notify("Click simulated!", 2)
+        else
+            Library:Notify("Click failed.", 3)
+        end
+    end
+})
+
+local clickCountDisplay = M1Group:AddLabel("Clicks: 0")
+task.spawn(function()
+    while true do
+        if M1Spam.Enabled and M1Spam.Debug then
+            clickCountDisplay:SetText("Clicks: " .. M1Spam.ClickCount)
+        end
+        task.wait(0.3)
+    end
+end)
+
+M1Group:AddLabel("When enabled, clicks rapidly while you hold M1.")
+M1Group:AddLabel("Tracks physical hold via InputBegan/InputEnded.")
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
 local flying = false
 local bodyVelocity, bodyGyro
 
+MovementGroup:AddToggle("Noclip", {
+    Text = "Noclip",
+    Default = false,
+    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.N },  -- default N
+    Callback = function(value)
+        _G.Noclip = value
+    end
+})
+
+MovementGroup:AddToggle("InfiniteJump", {
+    Text = "Infinite Jump",
+    Default = false,
+    Callback = function(value)
+        _G.InfiniteJump = value
+    end
+})
+
 MovementGroup:AddToggle("Fly", {
     Text = "Fly",
     Default = false,
+    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.F },  -- default F
     Callback = function(value)
         flying = value
         local character = LocalPlayer.Character
@@ -1956,52 +1916,113 @@ MovementGroup:AddToggle("Fly", {
     end
 })
 
-MovementGroup:AddToggle("Noclip", {
-    Text = "Noclip",
-    Default = false,
-    Callback = function(value)
-        _G.Noclip = value
-    end
-})
+-- ==================== WALKSPEED MULTIPLIER ====================
+local WalkspeedMultiplier = {
+    Enabled = false,
+    Multiplier = 1.0,
+    BaseSpeed = nil,   -- captured once when enabled
+    Connection = nil,
+}
 
-MovementGroup:AddToggle("InfiniteJump", {
-    Text = "Infinite Jump",
-    Default = false,
-    Callback = function(value)
-        _G.InfiniteJump = value
-    end
-})
+-- Capture the game's current walkspeed as the base, then apply multiplier each frame
+local function EnableWalkspeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
 
--- Fly loop
-RunService.RenderStepped:Connect(function()
-    if flying and LocalPlayer.Character then
-        local rootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if rootPart and bodyVelocity and bodyGyro then
-            local camera = Workspace.CurrentCamera
-            local moveDirection = Vector3.new(0, 0, 0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-                moveDirection = moveDirection + camera.CFrame.LookVector
+    -- Snapshot the game's current speed as the base
+    WalkspeedMultiplier.BaseSpeed = hum.WalkSpeed
+    hum.WalkSpeed = WalkspeedMultiplier.BaseSpeed * WalkspeedMultiplier.Multiplier
+
+    -- Disconnect old connection if any
+    if WalkspeedMultiplier.Connection then
+        WalkspeedMultiplier.Connection:Disconnect()
+    end
+
+    -- Each frame, re-read the game's base (in case the game changes it)
+    -- and apply the multiplier on top
+    WalkspeedMultiplier.Connection = RunService.RenderStepped:Connect(function()
+        if not WalkspeedMultiplier.Enabled then return end
+        local c = LocalPlayer.Character
+        if not c then return end
+        local h = c:FindFirstChildOfClass("Humanoid")
+        if not h then return end
+
+        local expected = WalkspeedMultiplier.BaseSpeed * WalkspeedMultiplier.Multiplier
+        -- If the game changed the speed externally (not matching our expected),
+        -- treat the new value as the updated base
+        if math.abs(h.WalkSpeed - expected) > 0.5 then
+            WalkspeedMultiplier.BaseSpeed = h.WalkSpeed
+            expected = WalkspeedMultiplier.BaseSpeed * WalkspeedMultiplier.Multiplier
+        end
+        h.WalkSpeed = expected
+    end)
+end
+
+local function DisableWalkspeed()
+    if WalkspeedMultiplier.Connection then
+        WalkspeedMultiplier.Connection:Disconnect()
+        WalkspeedMultiplier.Connection = nil
+    end
+    -- Restore original speed
+    if WalkspeedMultiplier.BaseSpeed then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = WalkspeedMultiplier.BaseSpeed
             end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-                moveDirection = moveDirection - camera.CFrame.LookVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-                moveDirection = moveDirection - camera.CFrame.RightVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-                moveDirection = moveDirection + camera.CFrame.RightVector
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                moveDirection = moveDirection + Vector3.new(0, 1, 0)
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-                moveDirection = moveDirection + Vector3.new(0, -1, 0)
-            end
-            bodyVelocity.Velocity = moveDirection * 50
-            bodyGyro.CFrame = camera.CFrame
         end
     end
+    WalkspeedMultiplier.BaseSpeed = nil
+end
+
+-- Re-apply on respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if WalkspeedMultiplier.Enabled then
+        task.wait(0.3)
+        EnableWalkspeed()
+    end
 end)
+
+MovementGroup:AddToggle("WalkspeedToggle", {
+    Text = "Walkspeed Multiplier",
+    Default = false,
+    Keybind = { Mode = "Toggle", Key = Enum.KeyCode.X },
+    Callback = function(value)
+        WalkspeedMultiplier.Enabled = value
+        if value then
+            EnableWalkspeed()
+        else
+            DisableWalkspeed()
+        end
+    end
+})
+
+MovementGroup:AddSlider("WalkspeedSlider", {
+    Text = "Speed Multiplier",
+    Default = 1.0,
+    Min = 0.1,
+    Max = 25,
+    Rounding = 1,
+    Suffix = "x",
+    Callback = function(value)
+        WalkspeedMultiplier.Multiplier = value
+        -- If already enabled, re-apply immediately
+        if WalkspeedMultiplier.Enabled and WalkspeedMultiplier.BaseSpeed then
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.WalkSpeed = WalkspeedMultiplier.BaseSpeed * value
+                end
+            end
+        end
+    end
+})
+
+MovementGroup:AddLabel("Multiplies your current game walkspeed.")
 
 -- Noclip loop
 RunService.Stepped:Connect(function()
