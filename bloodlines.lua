@@ -3997,6 +3997,179 @@ ChakraGroup:AddSlider("ChakraDelay", {
 
 ChakraGroup:AddLabel("Teleports to each ChakraPoint and presses E.")
 
+-- ==================== TRINKET AUTO COLLECTOR ====================
+local TrinketCollector = {
+    Running = false,
+    Thread = nil,
+    ClickDelay = 0.5,      -- delay after clicking
+    CheckInterval = 2,      -- how often to scan for trinkets (seconds)
+    MaxDistance = 100,      -- max distance to consider a trinket
+    CollectedCount = 0,
+}
+
+local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Auto Collector")
+local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle")
+
+-- Function to find and click a trinket at a spawn point
+local function CollectTrinket(spawnName)
+    local spawn = workspace:FindFirstChild(spawnName)
+    if not spawn then return false end
+
+    -- Check if there's an actual trinket present
+    local trinket = nil
+    local clickDetector = nil
+    
+    -- Look for a clickable part (usually has a ClickDetector)
+    for _, child in ipairs(spawn:GetDescendants()) do
+        if child:IsA("ClickDetector") then
+            clickDetector = child
+            trinket = child.Parent
+            break
+        end
+    end
+
+    -- If no click detector found, check if spawn itself has one
+    if not clickDetector then
+        clickDetector = spawn:FindFirstChildOfClass("ClickDetector", true)
+        if clickDetector then
+            trinket = clickDetector.Parent
+        end
+    end
+
+    if not trinket or not clickDetector then
+        return false -- No trinket available at this spawn
+    end
+
+    -- Get trinket position
+    local trinketPos = nil
+    pcall(function()
+        if trinket:IsA("Model") then
+            trinketPos = trinket:GetPivot().Position
+        elseif trinket:IsA("BasePart") then
+            trinketPos = trinket.Position
+        end
+    end)
+
+    if not trinketPos then return false end
+
+    -- Check distance
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+
+    local distance = (root.Position - trinketPos).Magnitude
+    if distance > TrinketCollector.MaxDistance then
+        return false -- Too far away
+    end
+
+    -- Teleport to trinket
+    root.CFrame = CFrame.new(trinketPos)
+    task.wait(0.3) -- Wait for position to register
+
+    -- Click the trinket
+    pcall(function()
+        fireclickdetector(clickDetector)
+    end)
+
+    task.wait(TrinketCollector.ClickDelay)
+    
+    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+    Library:Notify("Collected trinket at " .. spawnName, 2)
+    return true
+end
+
+-- Main collection loop
+local function TrinketCollectionLoop()
+    TrinketCollector.CollectedCount = 0
+    TrinketStatusLabel:SetText("Status: Running (0 collected)")
+    
+    while TrinketCollector.Running do
+        local foundAny = false
+        
+        -- Scan all 12 trinket spawns
+        for i = 1, 12 do
+            if not TrinketCollector.Running then break end
+            
+            local spawnName = "TrinketSpawn" .. i
+            local collected = CollectTrinket(spawnName)
+            
+            if collected then
+                foundAny = true
+                TrinketStatusLabel:SetText(string.format("Status: Running (%d collected)", TrinketCollector.CollectedCount))
+            end
+        end
+        
+        if not foundAny then
+            TrinketStatusLabel:SetText(string.format("Status: Waiting... (%d collected)", TrinketCollector.CollectedCount))
+        end
+        
+        -- Wait before next scan
+        task.wait(TrinketCollector.CheckInterval)
+    end
+    
+    TrinketStatusLabel:SetText(string.format("Status: Stopped (%d total collected)", TrinketCollector.CollectedCount))
+end
+
+-- UI Controls
+TrinketGroup:AddToggle("TrinketCollectorToggle", {
+    Text = "Auto Collect Trinkets",
+    Default = false,
+    Callback = function(v)
+        TrinketCollector.Running = v
+        if v then
+            if TrinketCollector.Thread then
+                task.cancel(TrinketCollector.Thread)
+            end
+            TrinketCollector.Thread = task.spawn(TrinketCollectionLoop)
+        else
+            if TrinketCollector.Thread then
+                task.cancel(TrinketCollector.Thread)
+                TrinketCollector.Thread = nil
+            end
+            TrinketStatusLabel:SetText(string.format("Status: Stopped (%d total collected)", TrinketCollector.CollectedCount))
+        end
+    end
+}):AddKeyPicker("TrinketCollectorKey", {
+    Default = "T",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Trinket Collector",
+})
+
+TrinketGroup:AddSlider("TrinketCheckInterval", {
+    Text = "Scan Interval (s)",
+    Default = 2,
+    Min = 0.5,
+    Max = 10,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) TrinketCollector.CheckInterval = v end
+})
+
+TrinketGroup:AddSlider("TrinketClickDelay", {
+    Text = "Click Delay (s)",
+    Default = 0.5,
+    Min = 0.1,
+    Max = 3,
+    Rounding = 1,
+    Suffix = "s",
+    Callback = function(v) TrinketCollector.ClickDelay = v end
+})
+
+TrinketGroup:AddSlider("TrinketMaxDistance", {
+    Text = "Max Distance",
+    Default = 100,
+    Min = 50,
+    Max = 500,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(v) TrinketCollector.MaxDistance = v end
+})
+
+TrinketGroup:AddLabel("Scans TrinketSpawn1-12 for trinkets.")
+TrinketGroup:AddLabel("Toggle with T key. Auto-clicks when found.")
+
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
 ThemeManager:SetLibrary(Library)
