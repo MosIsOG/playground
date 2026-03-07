@@ -2453,7 +2453,7 @@ local BossFarm = {
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
 }
 
-local BossFarmGroup = BossBarTab:AddLeftGroupbox("Boss Farm")
+local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
 
 -- Scan for nearby bosses and return a list (OPTIMIZED)
 local function ScanBossFarmTargets()
@@ -3662,6 +3662,7 @@ local TeleportLocations = {
      { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},
      { Name = "Durana", Pos = Vector3.new(1851.0, -125.5, 1065.2)},
      { Name = "Secret Spot", Pos = Vector3.new(-4458.5, 660.7, -4895.2)},
+     { Name = "Hyuga Boss", Pos = Vector3.new(-693.7, -359.9, -765.7)},
 }
 
 -- Function to teleport
