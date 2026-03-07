@@ -98,8 +98,16 @@ local function setupLeaderboardClickDetector()
     -- Function to setup click detection for a PlayerTemplate
     local function setupPlayerTemplate(template)
         if template:IsA("GuiObject") and template.Name == "PlayerTemplate" then
+            -- Check if already set up (prevent duplicates)
+            if template:FindFirstChild("SpectateClickSetup") then return end
+            
             local playerName = template:FindFirstChild("PlayerName")
             if playerName and playerName:IsA("TextLabel") then
+                -- Mark as set up
+                local marker = Instance.new("BoolValue")
+                marker.Name = "SpectateClickSetup"
+                marker.Parent = template
+                
                 template.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 then
                         local characterName = playerName.Text
@@ -140,6 +148,10 @@ LocalPlayer.CharacterAdded:Connect(function()
         task.wait(0.5)
         setupHealthMonitor()
     end
+    
+    -- Re-setup leaderboard click detector after respawn
+    task.wait(1) -- Wait for GUI to fully load
+    setupLeaderboardClickDetector()
 end)
 
 -- Initialize the detector
