@@ -2110,6 +2110,7 @@ local PredefinedBosses = {
     { name = "The Barbarian", maxDistance = 500, allowDuplicates = true },
     { name = "Barbarit The Rose", maxDistance = 500 },
     { name = "Lava Snake", maxDistance = 500 },
+    { name = "Hyuga Boss", maxDistance = 500},
 }
 
 -- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
