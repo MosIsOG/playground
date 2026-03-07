@@ -2721,8 +2721,11 @@ local function StartBossFarm()
                 BossFarm.HakuSafeSpot = false
             end
 
-            -- Only position if NOT in safe spot
-            if not BossFarm.HakuSafeSpot then
+            -- Position based on safe spot status
+            if BossFarm.HakuSafeSpot then
+                -- Anchor at safe spot position
+                root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
+            else
                 -- Position above the boss, facing down at it
                 -- For Hyuga Boss, add extra height boost during special animations
                 local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
