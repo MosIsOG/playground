@@ -2951,7 +2951,7 @@ local function autoGripAltLoop()
                 -- Fire TakeDamage remote to get knocked
                 if GripDataEvent then
                     pcall(function()
-                        GripDataEvent:FireServer("TakeDamage", 9999)
+                        GripDataEvent:FireServer("TakeDamage", 999)
                     end)
                 end
                 
@@ -3117,7 +3117,7 @@ AutoGripGroup:AddToggle("GripMainToggle", {
 })
 
 AutoGripGroup:AddLabel("Alt: Teleport, check location (50 studs),")
-AutoGripGroup:AddLabel("take 9999 damage to get knocked & gripped.")
+AutoGripGroup:AddLabel("take 999 damage to get knocked & gripped.")
 AutoGripGroup:AddLabel("Forcefield check: spams teleport until gone.")
 AutoGripGroup:AddLabel("")
 AutoGripGroup:AddLabel("Main: Teleport to location, find player")
@@ -3641,7 +3641,8 @@ local TeleportLocations = {
      { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
      { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
-     { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},   
+     { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},
+     { Name = "Secret Spot", Pos = Vector3.new(-4458.5, 660.7, -4895.2)},
 }
 
 -- Function to teleport
