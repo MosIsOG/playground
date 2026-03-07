@@ -2110,7 +2110,6 @@ local PredefinedBosses = {
     { name = "The Barbarian", maxDistance = 500, allowDuplicates = true },
     { name = "Barbarit The Rose", maxDistance = 500 },
     { name = "Lava Snake", maxDistance = 500 },
-    { name = "Lavarossa", maxDistance = 500 },
 }
 
 -- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
@@ -2451,8 +2450,6 @@ local BossFarm = {
     Thread = nil,
     AnchorConn = nil,
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
-    Dodging = false,        -- flag to prevent multiple simultaneous dodges
-    BossAnimConnection = nil, -- connection to boss animations
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2553,195 +2550,56 @@ local function BossFarmDash()
     end)
 end
 
--- Dodge boss attack by flying 200 studs up for 1 second
-local function DodgeBossAttack()
-    if BossFarm.Dodging or not BossFarm.Enabled then return end
-    BossFarm.Dodging = true
-    
-    task.spawn(function()
-        -- Temporarily disable heartbeat positioning during dodge
-        local tempConn = BossFarm.AnchorConn
-        if tempConn then
-            tempConn:Disconnect()
-            BossFarm.AnchorConn = nil
-        end
-        
-        local char = LocalPlayer.Character
-        local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
-        local bossRoot = BossFarm.Target and BossFarm.Target.Parent and 
-                         (BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") or 
-                          BossFarm.Target.Parent:FindFirstChild("Head"))
-        
-        if playerRoot and bossRoot then
-            playerRoot.Anchored = true
-            -- Teleport 200 studs above boss
-            local dodgePos = bossRoot.Position + Vector3.new(0, 200, 0)
-            playerRoot.CFrame = CFrame.new(dodgePos)
-            
-            -- Wait 1 second
-            task.wait(1)
-            
-            -- Unanchor and restore heartbeat positioning
-            if playerRoot then
-                playerRoot.Anchored = false
-            end
-            
-            -- Restore heartbeat connection if still farming
-            if BossFarm.Enabled and not BossFarm.AnchorConn then
-                BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
-                    if not BossFarm.Enabled or BossFarm.Dodging then return end
-                    local hum = BossFarm.Target
-                    if not hum or not hum.Parent or hum.Health <= 0 then
-                        Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
-                        BossFarm.Enabled = false
-                        if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
-                        if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
-                        return
-                    end
-
-                    local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
-                                  or hum.Parent:FindFirstChild("Head")
-                                  or hum.Parent:FindFirstChild("Torso")
-                                  or hum.Parent:FindFirstChild("UpperTorso")
-                                  or hum.Parent:FindFirstChildWhichIsA("BasePart")
-                    
-                    if not bossRoot then return end
-
-                    local char = LocalPlayer.Character
-                    if not char then return end
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if not root then return end
-
-                    local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-                    root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
-                end)
-            end
-        end
-        
-        task.wait(0.5) -- Cooldown before next dodge
-        BossFarm.Dodging = false
-    end)
-end
-
--- Monitor boss for animations that should trigger dodge
-local function MonitorBossAnimations(bossModel)
-    if BossFarm.BossAnimConnection then
-        BossFarm.BossAnimConnection:Disconnect()
-        BossFarm.BossAnimConnection = nil
-    end
-    
-    if not bossModel then return end
-    
-    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    BossFarm.BossAnimConnection = animator.AnimationPlayed:Connect(function(track)
-        if not BossFarm.Enabled then return end
-        
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-        
-        -- Dangerous boss animations that trigger dodge (same as BlockRules)
-        local dangerousAnims = {
-            "6360969229",
-            "11330795390",
-            "7275651023",
-            "86213040968703",
-            "116907126244057",
-            "120758909308511"
-        }
-        
-        for _, dangerAnimID in ipairs(dangerousAnims) do
-            if assetId == dangerAnimID then
-                Library:Notify("Boss Attack Detected! Dodging...", 1)
-                DodgeBossAttack()
-                return
-            end
-        end
-    end)
-end
-
 -- Start the farm loop (anchor + click)
 local function StartBossFarm()
-    -- Stop any previous
-    if BossFarm.AnchorConn then
-        BossFarm.AnchorConn:Disconnect()
-        BossFarm.AnchorConn = nil
-    end
-    if BossFarm.Thread then
-        pcall(task.cancel, BossFarm.Thread)
-        BossFarm.Thread = nil
-    end
-
     if not BossFarm.Target or not BossFarm.Target.Parent then
         Library:Notify("No valid boss target!", 3)
-        BossFarm.Enabled = false
         return
     end
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
+
+    if BossFarm.Thread then
+        task.cancel(BossFarm.Thread)
+    end
     
-    -- Monitor boss animations for dodge
-    MonitorBossAnimations(BossFarm.Target.Parent)
-
-    -- Anchor: every frame, teleport on top of boss (unless dodging)
-    BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
-        if not BossFarm.Enabled or BossFarm.Dodging then return end
-        local hum = BossFarm.Target
-        if not hum or not hum.Parent or hum.Health <= 0 then
-            -- Boss died or despawned
-            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
-            BossFarm.Enabled = false
-            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
-            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
-            return
-        end
-
-        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
-                      or hum.Parent:FindFirstChild("Head")
-                      or hum.Parent:FindFirstChild("Torso")
-                      or hum.Parent:FindFirstChild("UpperTorso")
-                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
-        
-        if not bossRoot then 
-            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
-            return 
-        end
-
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-
-        -- Position above the boss, facing down at it
-        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
-    end)
-
-    -- Attack spam loop (fires remote)
     BossFarm.Thread = task.spawn(function()
-        while BossFarm.Enabled do
-            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
-                BossFarmDash()
+        while BossFarm.Enabled and BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 do
+            -- Get boss root part
+            local bossRoot = BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") 
+                          or BossFarm.Target.Parent:FindFirstChild("Head")
+                          or BossFarm.Target.Parent:FindFirstChild("Torso")
+                          or BossFarm.Target.Parent:FindFirstChild("UpperTorso")
+                          or BossFarm.Target.Parent:FindFirstChildWhichIsA("BasePart")
+            
+            -- Get player root part
+            local char = LocalPlayer.Character
+            local playerRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+            
+            if bossRoot and playerRoot then
+                -- Teleport above boss
+                local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+                playerRoot.CFrame = CFrame.new(targetPos)
+                
+                -- Attack
                 BossFarmAttack()
+            else
+                -- Lost target or player character
+                break
             end
+            
             task.wait(BossFarm.AttackDelay)
+        end
+        
+        if BossFarm.Enabled then
+            Library:Notify("Boss farm ended (target lost or dead)", 2)
+            BossFarm.Enabled = false
         end
     end)
 end
 
 local function StopBossFarm()
     BossFarm.Enabled = false
-    BossFarm.Dodging = false
-    
-    -- Disconnect boss animation monitoring
-    if BossFarm.BossAnimConnection then
-        BossFarm.BossAnimConnection:Disconnect()
-        BossFarm.BossAnimConnection = nil
-    end
-    
     if BossFarm.AnchorConn then
         BossFarm.AnchorConn:Disconnect()
         BossFarm.AnchorConn = nil
@@ -3540,8 +3398,7 @@ local TeleportLocations = {
      { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
      { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
-     { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},
-     { Name = "Durana", Pos = Vector3.new(1851.0, -125.5, 1065.2)},
+     { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},   
 }
 
 -- Function to teleport
