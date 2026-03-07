@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.0.0",
+    Title = "Universal Hub v1.0.1",
     Center = true,
     AutoShow = true
 })
@@ -2568,16 +2568,27 @@ local function CheckHakuMirrorProximity(bossPosition)
     local mirrors = mirrorsFolder:GetChildren()
     
     for _, mirror in ipairs(mirrors) do
-        local mirrorPos = mirror.Position
+        -- Get mirror position (handle Models or BaseParts)
+        local mirrorPos
+        if mirror:IsA("BasePart") then
+            mirrorPos = mirror.Position
+        elseif mirror:IsA("Model") then
+            local primaryPart = mirror.PrimaryPart or mirror:FindFirstChildWhichIsA("BasePart")
+            if primaryPart then
+                mirrorPos = primaryPart.Position
+            end
+        end
         
-        -- Calculate average absolute difference
-        local avgDiff = (math.abs(bossPosition.X - mirrorPos.X) + 
-                         math.abs(bossPosition.Y - mirrorPos.Y) + 
-                         math.abs(bossPosition.Z - mirrorPos.Z)) / 3
-        
-        -- If within 2 studs, boss is in/near this mirror
-        if avgDiff <= 2 then
-            return true
+        if mirrorPos then
+            -- Calculate average absolute difference
+            local avgDiff = (math.abs(bossPosition.X - mirrorPos.X) + 
+                             math.abs(bossPosition.Y - mirrorPos.Y) + 
+                             math.abs(bossPosition.Z - mirrorPos.Z)) / 3
+            
+            -- If within 2 studs, boss is in/near this mirror
+            if avgDiff <= 2 then
+                return true
+            end
         end
     end
     
@@ -2703,36 +2714,37 @@ local function StartBossFarm()
 
     -- Anchor: every frame, teleport on top of boss
     BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
-        if not BossFarm.Enabled then return end
-        local hum = BossFarm.Target
-        if not hum or not hum.Parent or hum.Health <= 0 then
-            -- Boss died or despawned
-            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
-            BossFarm.Enabled = false
-            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
-            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
-            return
-        end
+        local success, err = pcall(function()
+            if not BossFarm.Enabled then return end
+            local hum = BossFarm.Target
+            if not hum or not hum.Parent or hum.Health <= 0 then
+                -- Boss died or despawned
+                Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
+                BossFarm.Enabled = false
+                if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+                if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+                return
+            end
 
-        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
-                      or hum.Parent:FindFirstChild("Head")
-                      or hum.Parent:FindFirstChild("Torso")
-                      or hum.Parent:FindFirstChild("UpperTorso")
-                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
-        
-        if not bossRoot then 
-            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
-            return 
-        end
+            local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                          or hum.Parent:FindFirstChild("Head")
+                          or hum.Parent:FindFirstChild("Torso")
+                          or hum.Parent:FindFirstChild("UpperTorso")
+                          or hum.Parent:FindFirstChildWhichIsA("BasePart")
+            
+            if not bossRoot then 
+                print("[BOSS FARM] No root part found for", BossFarm.TargetName)
+                return 
+            end
 
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
 
-        -- Haku Boss mirror detection logic
-        if BossFarm.TargetName == "Haku Boss" then
-            local inMirror = CheckHakuMirrorProximity(bossRoot.Position)
+            -- Haku Boss mirror detection logic
+            if BossFarm.TargetName == "Haku Boss" then
+                local inMirror = CheckHakuMirrorProximity(bossRoot.Position)
             
             if inMirror then
                 -- Boss is in a mirror
@@ -2766,6 +2778,11 @@ local function StartBossFarm()
         local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost + BossFarm.HakuHeightBoost
         local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
         root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+        end)
+        
+        if not success then
+            warn("[BOSS FARM] Heartbeat error:", err)
+        end
     end)
 
     -- Attack spam loop (fires remote)
