@@ -2858,6 +2858,188 @@ AutoEyeGroup:AddLabel("Select your eye item from dropdown above.")
 AutoEyeGroup:AddLabel("If forcefield: spams teleport until gone,")
 AutoEyeGroup:AddLabel("then teleports, fires events, and resets.")
 
+
+-- ==================== CHAKRA SENSE TRACKER ====================
+local ChakraTracker = {
+    ActiveUsers = {},
+    ScreenAlerts = {},   -- Drawing.new("Text") per player — persistent on-screen indicators we fully control
+    Tracks = {},
+    Connections = {},
+    PendingStops = {},
+    SkillID = "9864206537",
+    Label = nil
+}
+
+-- Persistent on-screen alert management (Drawing objects, not Library:Notify)
+local function CreateScreenAlert(playerName)
+    if ChakraTracker.ScreenAlerts[playerName] then return end -- already exists
+    local alert = Drawing.new("Text")
+    alert.Text = playerName .. " is using Chakra Sense"
+    alert.Size = 18
+    alert.Center = true
+    alert.Outline = true
+    alert.OutlineColor = Color3.new(0, 0, 0)
+    alert.Color = Color3.fromRGB(255, 100, 100)
+    alert.Visible = true
+    alert.Position = Vector2.new(Camera.ViewportSize.X / 2, 50)
+    ChakraTracker.ScreenAlerts[playerName] = alert
+    -- Reposition all alerts so they stack vertically
+    local idx = 0
+    for _, a in pairs(ChakraTracker.ScreenAlerts) do
+        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
+        idx = idx + 1
+    end
+end
+
+local function RemoveScreenAlert(playerName)
+    local alert = ChakraTracker.ScreenAlerts[playerName]
+    if alert then
+        alert.Visible = false
+        alert:Remove()
+        ChakraTracker.ScreenAlerts[playerName] = nil
+    end
+    -- Reposition remaining alerts
+    local idx = 0
+    for _, a in pairs(ChakraTracker.ScreenAlerts) do
+        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
+        idx = idx + 1
+    end
+end
+
+local function UpdateLabel()
+    if not ChakraTracker.Label then return end
+    local names = {}
+    for name, _ in pairs(ChakraTracker.ActiveUsers) do
+        table.insert(names, name)
+    end
+    if #names == 0 then
+        ChakraTracker.Label:SetText("No one using Chakra Sense")
+    else
+        ChakraTracker.Label:SetText("Chakra Sense: " .. table.concat(names, ", "))
+    end
+end
+
+local function StopTracking(player)
+    if ChakraTracker.ActiveUsers[player.Name] then
+        ChakraTracker.ActiveUsers[player.Name] = nil
+        ChakraTracker.Tracks[player.Name] = nil
+        RemoveScreenAlert(player.Name)
+        UpdateLabel()
+        Library:Notify(player.Name .. " stopped Chakra Sense", 3)
+    end
+end
+
+local function MonitorPlayer(player)
+    if player == LocalPlayer then return end
+    local function onCharacterAdded(character)
+        task.wait(0.5)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if not animator then return end
+
+        -- Clean up old connections for this player
+        if ChakraTracker.Connections[player] then
+            for _, conn in ipairs(ChakraTracker.Connections[player]) do
+                conn:Disconnect()
+            end
+        end
+        ChakraTracker.Connections[player] = {}
+
+        local function onAnimPlayed(track)
+            local assetId = track.Animation.AnimationId:match("rbxassetid://(%d+)")
+            if assetId ~= ChakraTracker.SkillID then return end
+
+            -- Cancel any pending stop (animation re-fired before grace period expired)
+            if ChakraTracker.PendingStops[player.Name] then
+                ChakraTracker.PendingStops[player.Name] = nil
+            end
+
+            -- If already active, just update the track reference (animation re-fired) — don't create another notification
+            if ChakraTracker.ActiveUsers[player.Name] then
+                ChakraTracker.Tracks[player.Name] = track
+                return
+            end
+
+            -- Activate
+            ChakraTracker.ActiveUsers[player.Name] = true
+            ChakraTracker.Tracks[player.Name] = track
+            UpdateLabel()
+            CreateScreenAlert(player.Name)  -- persistent on-screen Drawing text, removed only when they stop
+
+            -- Monitor this track for stopping with grace period
+            local trackConnections = {}
+
+            -- Heartbeat check with 1-second grace period
+            local heartbeatConn
+            heartbeatConn = RunService.Heartbeat:Connect(function()
+                if not track or not track.IsPlaying then
+                    -- Don't stop immediately — set a pending stop with grace period
+                    if ChakraTracker.ActiveUsers[player.Name] and not ChakraTracker.PendingStops[player.Name] then
+                        ChakraTracker.PendingStops[player.Name] = tick()
+                    end
+                    -- If grace period (1 second) expired and still pending, actually stop
+                    if ChakraTracker.PendingStops[player.Name] and (tick() - ChakraTracker.PendingStops[player.Name]) > 1 then
+                        ChakraTracker.PendingStops[player.Name] = nil
+                        StopTracking(player)
+                        heartbeatConn:Disconnect()
+                    end
+                else
+                    -- Animation is playing again, cancel any pending stop
+                    ChakraTracker.PendingStops[player.Name] = nil
+                end
+            end)
+            table.insert(trackConnections, heartbeatConn)
+
+            -- Store track-specific connections for cleanup
+            ChakraTracker.Connections[player] = ChakraTracker.Connections[player] or {}
+            for _, conn in ipairs(trackConnections) do
+                table.insert(ChakraTracker.Connections[player], conn)
+            end
+        end
+
+        local playedConn = animator.AnimationPlayed:Connect(onAnimPlayed)
+        table.insert(ChakraTracker.Connections[player], playedConn)
+
+        -- Check existing tracks
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            onAnimPlayed(track)
+        end
+    end
+
+    player.CharacterAdded:Connect(onCharacterAdded)
+    if player.Character then
+        onCharacterAdded(player.Character)
+    end
+end
+
+-- Initialize existing players
+for _, player in ipairs(Players:GetPlayers()) do
+    MonitorPlayer(player)
+end
+
+-- New players
+Players.PlayerAdded:Connect(MonitorPlayer)
+
+-- Cleanup on player leave
+Players.PlayerRemoving:Connect(function(player)
+    if ChakraTracker.Connections[player] then
+        for _, conn in ipairs(ChakraTracker.Connections[player]) do
+            conn:Disconnect()
+        end
+        ChakraTracker.Connections[player] = nil
+    end
+    if ChakraTracker.ActiveUsers[player.Name] then
+        StopTracking(player)
+    end
+end)
+
+-- Add UI to Misc tab
+local MiscGroup = Tabs.Misc:AddLeftGroupbox("Skill Status")
+ChakraTracker.Label = MiscGroup:AddLabel("No one using Chakra Sense")
+UpdateLabel()
+
+
 -- ==================== AUTO PERFECT BLOCK (FIXED) ====================
 -- Permanent config (edit this table directly)
 local BlockRules = {
