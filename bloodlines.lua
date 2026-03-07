@@ -3765,6 +3765,158 @@ CurrentGroup:AddButton({
     end
 })
 
+-- ==================== MISSION MARKER TELEPORTER ====================
+local MissionMarkerGroup = TeleportTab:AddLeftGroupbox("Mission Markers")
+
+local MissionMarkers = {
+    FoundMarkers = {},
+    StatusLabel = nil,
+}
+
+local function ScanMissionMarkers()
+    MissionMarkers.FoundMarkers = {}
+    
+    local debris = workspace:FindFirstChild("Debris")
+    if not debris then
+        Library:Notify("Debris folder not found", 3)
+        return
+    end
+    
+    local missionLocations = debris:FindFirstChild("Mission Locations")
+    if not missionLocations then
+        Library:Notify("Mission Locations folder not found", 3)
+        return
+    end
+    
+    -- Scan all location folders (Snow, etc.)
+    for _, locationFolder in ipairs(missionLocations:GetChildren()) do
+        local spawners = locationFolder:FindFirstChild("Spawners")
+        if spawners then
+            -- Get all spawner children
+            for i, spawner in ipairs(spawners:GetChildren()) do
+                -- MUST have a "MissionMarker" child
+                local missionMarker = spawner:FindFirstChild("MissionMarker")
+                if missionMarker then
+                    local pos = nil
+                    
+                    -- Get position from the MissionMarker object
+                    pcall(function()
+                        if missionMarker:IsA("Model") then
+                            pos = missionMarker:GetPivot().Position
+                        elseif missionMarker:IsA("BasePart") then
+                            pos = missionMarker.Position
+                        elseif missionMarker:IsA("Folder") or missionMarker:IsA("Configuration") then
+                            -- Check for a part inside
+                            local part = missionMarker:FindFirstChildWhichIsA("BasePart", true)
+                            if part then
+                                pos = part.Position
+                            end
+                        end
+                    end)
+                    
+                    if pos then
+                        table.insert(MissionMarkers.FoundMarkers, {
+                            name = string.format("%s #%d (%s)", locationFolder.Name, i, spawner.Name),
+                            location = locationFolder.Name,
+                            index = i,
+                            spawner = spawner,
+                            missionMarker = missionMarker,
+                            pos = pos
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    if #MissionMarkers.FoundMarkers > 0 then
+        MissionMarkers.StatusLabel:SetText("Found " .. #MissionMarkers.FoundMarkers .. " markers")
+        Library:Notify("Found " .. #MissionMarkers.FoundMarkers .. " mission markers", 2)
+        
+        -- Print list to console for selection
+        local msg = "Mission Markers:\n"
+        for i, marker in ipairs(MissionMarkers.FoundMarkers) do
+            msg = msg .. string.format("%d. %s\n", i, marker.name)
+        end
+        print(msg)
+    else
+        MissionMarkers.StatusLabel:SetText("No markers found")
+        Library:Notify("No mission markers found", 3)
+    end
+end
+
+MissionMarkers.StatusLabel = MissionMarkerGroup:AddLabel("Status: Not scanned")
+
+MissionMarkerGroup:AddButton({
+    Text = "Teleport to Nearest Mission",
+    Func = function()
+        -- Scan first
+        ScanMissionMarkers()
+        
+        if #MissionMarkers.FoundMarkers == 0 then
+            Library:Notify("No mission markers found", 3)
+            return
+        end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+        if not root then return end
+        
+        local playerPos = root.Position
+        local nearest = nil
+        local minDist = math.huge
+        
+        -- Find nearest marker
+        for _, marker in ipairs(MissionMarkers.FoundMarkers) do
+            local dist = (playerPos - marker.pos).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = marker
+            end
+        end
+        
+        if nearest then
+            TeleportTo(nearest.pos)
+            Library:Notify("Teleported to " .. nearest.name .. " (" .. math.floor(minDist) .. " studs)", 2)
+        end
+    end,
+    Tooltip = "Auto-scan and teleport to closest mission marker"
+}):AddKeyPicker("MissionMarkerKey", {
+    Default = "M",
+    SyncToggleState = false,
+    Mode = "Hold",
+    Text = "Quick Mission TP",
+})
+
+MissionMarkerGroup:AddButton({
+    Text = "Scan for Mission Markers",
+    Func = ScanMissionMarkers,
+    Tooltip = "Scans workspace.Debris['Mission Locations'] for all spawners"
+})
+
+MissionMarkerGroup:AddInput("MissionMarkerIndex", {
+    Text = "Marker Index",
+    Default = "1",
+    Numeric = true,
+    Finished = true,
+    Placeholder = "e.g. 1",
+    Callback = function(val)
+        local idx = tonumber(val)
+        if not idx or not MissionMarkers.FoundMarkers or not MissionMarkers.FoundMarkers[idx] then
+            Library:Notify("Invalid index", 3)
+            return
+        end
+        
+        local marker = MissionMarkers.FoundMarkers[idx]
+        TeleportTo(marker.pos)
+        Library:Notify("Teleported to " .. marker.name, 2)
+    end
+})
+
+MissionMarkerGroup:AddLabel("Press M to instantly TP to nearest mission.")
+MissionMarkerGroup:AddLabel("Only spawners with MissionMarker child.")
+
 -- Right group: Hardcoded teleport list
 local TeleportListGroup = TeleportTab:AddRightGroupbox("Teleport Locations")
 
