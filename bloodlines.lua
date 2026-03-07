@@ -14,16 +14,6 @@ end
 local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
 
--- Load Chakra Sense (Leaderboard Spectate System)
-task.spawn(function()
-    local success, err = pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/MosIsOG/playground/refs/heads/main/chakra_sense.lua"))()
-    end)
-    if not success then
-        warn("Chakra Sense failed to load:", err)
-    end
-end)
-
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -4658,6 +4648,147 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 Library:SetWatermark("Universal Hub")
 Library:SetWatermarkVisibility(true)
 SaveManager:LoadAutoloadConfig()
+
+-- ==================== LEADERBOARD SPECTATE SYSTEM ====================
+do
+    local spectate_originalCameraSubject = nil
+    local spectate_isSpectating = false
+    local spectate_spectatedCharacter = nil
+    local spectate_spectatedCharacterName = nil
+    local spectate_healthConnection = nil
+    local spectate_lastHealth = nil
+
+    -- Forward declarations
+    local spectate_stopSpectating
+
+    -- Function to monitor LocalPlayer health for damage
+    local function spectate_setupHealthMonitor()
+        if spectate_healthConnection then
+            spectate_healthConnection:Disconnect()
+            spectate_healthConnection = nil
+        end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        spectate_lastHealth = humanoid.Health
+        
+        spectate_healthConnection = humanoid.HealthChanged:Connect(function(newHealth)
+            if spectate_isSpectating and newHealth < spectate_lastHealth then
+                spectate_stopSpectating()
+            end
+            spectate_lastHealth = newHealth
+        end)
+    end
+
+    -- Function to spectate a character
+    local function spectate_spectateCharacter(characterName)
+        local character = Workspace:FindFirstChild(characterName)
+        if not character then return false end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        
+        if not humanoid or not humanoidRootPart then return false end
+        
+        if not spectate_isSpectating then
+            spectate_originalCameraSubject = Camera.CameraSubject
+        end
+        
+        Camera.CameraSubject = humanoid
+        spectate_isSpectating = true
+        spectate_spectatedCharacter = character
+        spectate_spectatedCharacterName = characterName
+        
+        spectate_setupHealthMonitor()
+        
+        return true
+    end
+
+    -- Function to stop spectating and return to own character
+    spectate_stopSpectating = function()
+        if spectate_isSpectating and spectate_originalCameraSubject then
+            Camera.CameraSubject = spectate_originalCameraSubject
+            spectate_isSpectating = false
+            spectate_spectatedCharacter = nil
+            spectate_spectatedCharacterName = nil
+            
+            if spectate_healthConnection then
+                spectate_healthConnection:Disconnect()
+                spectate_healthConnection = nil
+            end
+        end
+    end
+
+    -- Main function to setup leaderboard click detection
+    local function spectate_setupLeaderboardClickDetector()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+        local clientGui = playerGui:WaitForChild("ClientGui", 10)
+        if not clientGui then return end
+        
+        local mainframe = clientGui:WaitForChild("Mainframe", 10)
+        if not mainframe then return end
+        
+        local playerList = mainframe:WaitForChild("PlayerList", 10)
+        if not playerList then return end
+        
+        local list = playerList:WaitForChild("List", 10)
+        if not list then return end
+        
+        -- Function to setup click detection for a PlayerTemplate
+        local function setupPlayerTemplate(template)
+            if template:IsA("GuiObject") and template.Name == "PlayerTemplate" then
+                local playerName = template:FindFirstChild("PlayerName")
+                if playerName and playerName:IsA("TextLabel") then
+                    template.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            local characterName = playerName.Text
+                            
+                            if spectate_isSpectating and spectate_spectatedCharacterName == characterName then
+                                spectate_stopSpectating()
+                            else
+                                spectate_spectateCharacter(characterName)
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+        
+        -- Setup existing templates
+        for _, child in pairs(list:GetChildren()) do
+            setupPlayerTemplate(child)
+        end
+        
+        -- Setup new templates as they're added
+        list.ChildAdded:Connect(setupPlayerTemplate)
+    end
+
+    -- Monitor if spectated character is removed/dies
+    task.spawn(function()
+        while true do
+            if spectate_isSpectating and spectate_spectatedCharacter and not spectate_spectatedCharacter.Parent then
+                spectate_stopSpectating()
+            end
+            task.wait(1)
+        end
+    end)
+
+    -- Setup health monitor when character spawns
+    LocalPlayer.CharacterAdded:Connect(function()
+        if spectate_isSpectating then
+            task.wait(0.5)
+            spectate_setupHealthMonitor()
+        end
+    end)
+
+    -- Initialize the detector
+    task.spawn(spectate_setupLeaderboardClickDetector)
+end
+-- ==================== END LEADERBOARD SPECTATE SYSTEM ====================
 
 print("=== Universal Hub Loaded ===")
 print("Press RightControl to toggle menu")

@@ -144,3 +144,66 @@ end)
 
 -- Initialize the detector
 task.spawn(setupLeaderboardClickDetector)
+
+-- ==================== SERVER NAME DISPLAY WITH CONFIGURATION GUI ====================
+task.spawn(function()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local clientGui = playerGui:WaitForChild("ClientGui", 10)
+    if not clientGui then return end
+    
+    local mainframe = clientGui:WaitForChild("Mainframe", 10)
+    if not mainframe then return end
+    
+    local rest = mainframe:WaitForChild("Rest", 10)
+    if not rest then return end
+    
+    local mainMenuFrame = rest:WaitForChild("MainMenuFrame", 10)
+    if not mainMenuFrame then return end
+    
+    local serverNameLabel = mainMenuFrame:WaitForChild("ServerName", 10)
+    if not serverNameLabel then return end
+    
+    -- Create ScreenGui for display
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ServerNameDisplay"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+    
+    -- Create black shadow/outline TextLabel
+    local shadowLabel = Instance.new("TextLabel")
+    shadowLabel.Name = "ShadowLabel"
+    shadowLabel.Size = UDim2.new(0, 300, 0, 30)
+    shadowLabel.Position = UDim2.new(0, 352, 0, -31)
+    shadowLabel.BackgroundTransparency = 1
+    shadowLabel.BorderSizePixel = 0
+    shadowLabel.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    shadowLabel.TextSize = 16
+    shadowLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    shadowLabel.TextXAlignment = Enum.TextXAlignment.Left
+    shadowLabel.TextYAlignment = Enum.TextYAlignment.Top
+    shadowLabel.Text = serverNameLabel.Text
+    shadowLabel.ZIndex = 1
+    shadowLabel.Parent = screenGui
+    
+    -- Create white main TextLabel
+    local displayLabel = Instance.new("TextLabel")
+    displayLabel.Name = "ServerLabel"
+    displayLabel.Size = UDim2.new(0, 300, 0, 30)
+    displayLabel.Position = UDim2.new(0, 351, 0, -32)
+    displayLabel.BackgroundTransparency = 1
+    displayLabel.BorderSizePixel = 0
+    displayLabel.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    displayLabel.TextSize = 16
+    displayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    displayLabel.TextXAlignment = Enum.TextXAlignment.Left
+    displayLabel.TextYAlignment = Enum.TextYAlignment.Top
+    displayLabel.Text = serverNameLabel.Text
+    displayLabel.ZIndex = 2
+    displayLabel.Parent = screenGui
+    
+    -- Update if server name changes
+    serverNameLabel:GetPropertyChangedSignal("Text"):Connect(function()
+        displayLabel.Text = serverNameLabel.Text
+        shadowLabel.Text = serverNameLabel.Text
+    end)
+end)
