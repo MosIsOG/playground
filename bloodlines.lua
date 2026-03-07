@@ -2524,18 +2524,19 @@ local function ScanBossFarmTargets()
 end
 
 -- Fire the melee hit remote
-local BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
-    game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-
 local function BossFarmAttack()
-    if not BossFarmDataEvent then return end
+    local dataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
+                      game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+    if not dataEvent then return end
     pcall(function()
-        BossFarmDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
+        dataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
     end)
 end
 
 local function BossFarmDash()
-    if not BossFarmDataEvent then return end
+    local dataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
+                      game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+    if not dataEvent then return end
     local hum = BossFarm.Target
     if not hum or not hum.Parent then return end
     local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
@@ -2545,15 +2546,11 @@ local function BossFarmDash()
                   or hum.Parent:FindFirstChildWhichIsA("BasePart")
     if not bossRoot then return end
     pcall(function()
-        BossFarmDataEvent:FireServer("Dash", "Sub", bossRoot.Position)
+        dataEvent:FireServer("Dash", "Sub", bossRoot.Position)
     end)
 end
 
 -- Start the farm loop (anchor + click)
--- Simplify Boss Farm - remove the continuous heartbeat connection
--- Replace the StartBossFarm function with this:
--- Simplify Boss Farm - remove the continuous heartbeat connection
--- Replace the StartBossFarm function with this:
 local function StartBossFarm()
     if not BossFarm.Target or not BossFarm.Target.Parent then
         Library:Notify("No valid boss target!", 3)
@@ -2562,15 +2559,41 @@ local function StartBossFarm()
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
 
-    -- Remove the Heartbeat connection - just attack without anchoring
     if BossFarm.Thread then
         task.cancel(BossFarm.Thread)
     end
     
     BossFarm.Thread = task.spawn(function()
         while BossFarm.Enabled and BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 do
-            BossFarmAttack()
+            -- Get boss root part
+            local bossRoot = BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") 
+                          or BossFarm.Target.Parent:FindFirstChild("Head")
+                          or BossFarm.Target.Parent:FindFirstChild("Torso")
+                          or BossFarm.Target.Parent:FindFirstChild("UpperTorso")
+                          or BossFarm.Target.Parent:FindFirstChildWhichIsA("BasePart")
+            
+            -- Get player root part
+            local char = LocalPlayer.Character
+            local playerRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+            
+            if bossRoot and playerRoot then
+                -- Teleport above boss
+                local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+                playerRoot.CFrame = CFrame.new(targetPos)
+                
+                -- Attack
+                BossFarmAttack()
+            else
+                -- Lost target or player character
+                break
+            end
+            
             task.wait(BossFarm.AttackDelay)
+        end
+        
+        if BossFarm.Enabled then
+            Library:Notify("Boss farm ended (target lost or dead)", 2)
+            BossFarm.Enabled = false
         end
     end)
 end
