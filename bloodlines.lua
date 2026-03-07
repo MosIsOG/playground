@@ -3857,6 +3857,74 @@ local function ScanMissionMarkers()
         end
     end
     
+    -- ALSO scan workspace directly for Models with MissionMarker child (like "The Frosty Facilitator")
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") then
+            local missionMarker = model:FindFirstChild("MissionMarker")
+            if missionMarker then
+                local pos = nil
+                
+                -- Try to get position from the model (check Torso, HumanoidRootPart, or any part)
+                pcall(function()
+                    local torso = model:FindFirstChild("Torso")
+                    if torso and torso:IsA("BasePart") then
+                        pos = torso.Position
+                    end
+                end)
+                
+                -- Fallback 1: Try HumanoidRootPart
+                if not pos then
+                    pcall(function()
+                        local hrp = model:FindFirstChild("HumanoidRootPart")
+                        if hrp and hrp:IsA("BasePart") then
+                            pos = hrp.Position
+                        end
+                    end)
+                end
+                
+                -- Fallback 2: Try model pivot
+                if not pos then
+                    pcall(function()
+                        pos = model:GetPivot().Position
+                    end)
+                end
+                
+                -- Fallback 3: Try MissionMarker itself
+                if not pos then
+                    pcall(function()
+                        if missionMarker:IsA("BasePart") then
+                            pos = missionMarker.Position
+                        elseif missionMarker:IsA("Model") then
+                            pos = missionMarker:GetPivot().Position
+                        end
+                    end)
+                end
+                
+                -- Fallback 4: Any BasePart in the model
+                if not pos then
+                    pcall(function()
+                        local part = model:FindFirstChildWhichIsA("BasePart", true)
+                        if part then
+                            pos = part.Position
+                        end
+                    end)
+                end
+                
+                -- Add if found
+                if pos then
+                    table.insert(MissionMarkers.FoundMarkers, {
+                        name = string.format("Workspace: %s", model.Name),
+                        location = "Workspace",
+                        index = 0,
+                        spawner = model,
+                        missionMarker = missionMarker,
+                        pos = pos
+                    })
+                end
+            end
+        end
+    end
+    
     if #MissionMarkers.FoundMarkers > 0 then
         MissionMarkers.StatusLabel:SetText("Found " .. #MissionMarkers.FoundMarkers .. " markers")
         Library:Notify("Found " .. #MissionMarkers.FoundMarkers .. " mission markers", 2)
