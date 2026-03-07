@@ -2556,35 +2556,52 @@ local function BossFarmDash()
     end)
 end
 
--- Monitor Haku Boss for special animations that require height adjustment
-local function MonitorHakuBossAnimations(bossModel)
+-- Monitor Haku Boss for IceDragonHead object spawning
+local function MonitorHakuBossIceDragon()
     if BossFarm.HakuAnimConnection then
         BossFarm.HakuAnimConnection:Disconnect()
         BossFarm.HakuAnimConnection = nil
     end
     
-    if not bossModel then return end
+    -- Get or create Debris folder reference
+    local debris = workspace:FindFirstChild("Debris")
+    if not debris then
+        -- Wait for Debris folder to be created
+        local debrisCreatedConn
+        debrisCreatedConn = workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Debris" then
+                debris = child
+                debrisCreatedConn:Disconnect()
+                -- Start monitoring after Debris is found
+                MonitorHakuBossIceDragon()
+            end
+        end)
+        return
+    end
     
-    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    BossFarm.HakuAnimConnection = animator.AnimationPlayed:Connect(function(track)
+    -- Monitor for IceDragonHead and Beam121 spawning
+    BossFarm.HakuAnimConnection = debris.ChildAdded:Connect(function(child)
         if not BossFarm.Enabled then return end
         
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        local shouldTeleport = false
+        local detectionMsg = ""
         
-        -- Haku Boss special animation - teleport to safe spot
-        if assetId == "8999165990" then
+        if child.Name == "IceDragonHead" then
+            shouldTeleport = true
+            detectionMsg = "Haku IceDragonHead detected! Teleported to safe spot (3s)"
+        elseif child:IsA("Beam") and child.Name == "Beam121" then
+            shouldTeleport = true
+            detectionMsg = "Haku Beam121 detected! Teleported to safe spot (3s)"
+        end
+        
+        if shouldTeleport then
             -- Teleport to safe position
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
                 char.HumanoidRootPart.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
                 BossFarm.HakuSafeSpot = true
                 BossFarm.HakuSafeSpotEndTime = tick() + 3
-                Library:Notify("Haku Attack! Teleported to safe spot (3s)", 1)
+                Library:Notify(detectionMsg, 1)
             end
         end
     end)
@@ -2664,9 +2681,9 @@ local function StartBossFarm()
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
     end
     
-    -- If farming Haku Boss, monitor for special animations
+    -- If farming Haku Boss, monitor for IceDragonHead spawning
     if BossFarm.TargetName == "Haku Boss" then
-        MonitorHakuBossAnimations(BossFarm.Target.Parent)
+        MonitorHakuBossIceDragon()
     end
 
     -- Anchor: every frame, teleport on top of boss
@@ -2743,7 +2760,7 @@ local function StopBossFarm()
         BossFarm.HyugaAnimConnection = nil
     end
     
-    -- Disconnect Haku animation monitoring
+    -- Disconnect Haku object monitoring
     if BossFarm.HakuAnimConnection then
         BossFarm.HakuAnimConnection:Disconnect()
         BossFarm.HakuAnimConnection = nil
