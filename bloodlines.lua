@@ -2096,7 +2096,7 @@ end)
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Misc")
 
 -- ==================== BOSS HEALTH BARS (AUTO + MANUAL) ====================
-local BossBarTab = Window:AddTab("Boss Bars")
+local BossBarTab = Window:AddTab("AutoFarm")
 
 -- Global default max distance (studs) for auto detection
 local DEFAULT_MAX_DISTANCE = 500
@@ -2758,6 +2758,152 @@ BossFarmGroup:AddSlider("BossFarmMinHP", {
 
 BossFarmGroup:AddLabel("Anchors above boss + fires CheckMeleeHit.")
 BossFarmGroup:AddLabel("Toggle with G key. Boss dies → auto stops.")
+
+-- ==================== AUTO ACTIVATION FARM ====================
+local AutoActivation = {
+    Enabled = false,
+    Thread = nil,
+    TeleportPos = Vector3.new(-2883.2, 652.6, -5448.9),
+    Iterations = 0,
+}
+
+local AutoActivationGroup = BossBarTab:AddRightGroupbox("Auto Activation Farm")
+local AutoActivationStatus = AutoActivationGroup:AddLabel("Status: Idle (0 cycles)")
+
+-- Function to check if player has forcefield
+local function HasForcefield()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    return char:FindFirstChildOfClass("ForceField") ~= nil
+end
+
+-- Function to wait for forcefield to disappear
+local function WaitForNoForcefield()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    
+    -- Wait up to 30 seconds for forcefield to disappear
+    local waited = 0
+    while HasForcefield() and waited < 30 do
+        task.wait(0.1)
+        waited = waited + 0.1
+        char = LocalPlayer.Character
+        if not char then return false end
+    end
+    
+    return not HasForcefield()
+end
+
+-- Main activation farm loop
+local function StartAutoActivation()
+    if AutoActivation.Thread then
+        task.cancel(AutoActivation.Thread)
+    end
+    
+    AutoActivation.Thread = task.spawn(function()
+        while AutoActivation.Enabled do
+            -- Wait for character and forcefield to clear
+            local char = LocalPlayer.Character
+            if char then
+                -- Wait for forcefield to disappear from previous respawn
+                AutoActivationStatus:SetText("Waiting for forcefield...")
+                if not WaitForNoForcefield() then
+                    Library:Notify("Forcefield timeout - retrying", 2)
+                    task.wait(1)
+                    continue
+                end
+                
+                -- Teleport to activation location
+                AutoActivationStatus:SetText("Teleporting...")
+                local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+                if root then
+                    root.CFrame = CFrame.new(AutoActivation.TeleportPos)
+                    task.wait(0.5) -- Wait for teleport to register
+                    
+                    -- Fire events sequentially
+                    AutoActivationStatus:SetText("Selecting item...")
+                    local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                    if DataEvent then
+                        DataEvent = DataEvent:FindFirstChild("DataEvent")
+                        if DataEvent then
+                            pcall(function()
+                                DataEvent:FireServer("Item", "Selected", "Sharingan [Stage 1]")
+                            end)
+                            task.wait(0.3)
+                        end
+                    end
+                    
+                    AutoActivationStatus:SetText("Awakening...")
+                    local DataFunction = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                    if DataFunction then
+                        DataFunction = DataFunction:FindFirstChild("DataFunction")
+                        if DataFunction then
+                            pcall(function()
+                                DataFunction:InvokeServer("Awaken", "Sharingan [Stage 1]")
+                            end)
+                            task.wait(0.3)
+                        end
+                    end
+                    
+                    -- Reset player
+                    AutoActivationStatus:SetText("Resetting...")
+                    if char and char:FindFirstChild("Humanoid") then
+                        char.Humanoid.Health = 0
+                    end
+                    
+                    AutoActivation.Iterations = AutoActivation.Iterations + 1
+                    AutoActivationStatus:SetText(string.format("Status: Running (%d cycles)", AutoActivation.Iterations))
+                    
+                    -- Wait for respawn
+                    task.wait(2)
+                end
+            else
+                -- No character, wait for respawn
+                AutoActivationStatus:SetText("Waiting for respawn...")
+                task.wait(1)
+            end
+        end
+        
+        AutoActivationStatus:SetText(string.format("Status: Stopped (%d cycles)", AutoActivation.Iterations))
+    end)
+end
+
+local function StopAutoActivation()
+    AutoActivation.Enabled = false
+    if AutoActivation.Thread then
+        task.cancel(AutoActivation.Thread)
+        AutoActivation.Thread = nil
+    end
+end
+
+AutoActivationGroup:AddToggle("AutoActivationToggle", {
+    Text = "Enable Auto Activation",
+    Default = false,
+    Callback = function(v)
+        AutoActivation.Enabled = v
+        if v then
+            AutoActivation.Iterations = 0
+            StartAutoActivation()
+            Library:Notify("Auto Activation started", 2)
+        else
+            StopAutoActivation()
+            Library:Notify("Auto Activation stopped", 2)
+        end
+    end
+})
+
+AutoActivationGroup:AddButton({
+    Text = "Reset Counter",
+    Func = function()
+        AutoActivation.Iterations = 0
+        AutoActivationStatus:SetText("Status: Idle (0 cycles)")
+        Library:Notify("Counter reset", 2)
+    end
+})
+
+AutoActivationGroup:AddLabel("TPs to location, selects & awakens item,")
+AutoActivationGroup:AddLabel("then resets. Waits for forcefield to clear.")
+AutoActivationGroup:AddLabel("Location: Snow Village (activation spot)")
 
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
