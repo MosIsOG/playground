@@ -2095,8 +2095,8 @@ end)
 -- Misc Tab
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Misc")
 
--- ==================== BOSS HEALTH BARS (AUTO + MANUAL) ====================
-local BossBarTab = Window:AddTab("Boss Bars")
+-- ==================== AUTOFARM ====================
+local AutoFarmTab = Window:AddTab("AutoFarm")
 
 -- Global default max distance (studs) for auto detection
 local DEFAULT_MAX_DISTANCE = 500
@@ -2395,7 +2395,7 @@ end)
 
 -- ===== UI =====
 -- Boss detection settings
-local BossGroup = BossBarTab:AddLeftGroupbox("Predefined Boss Detection")
+local BossGroup = AutoFarmTab:AddLeftGroupbox("Predefined Boss Detection")
 BossGroup:AddToggle("BossDetectToggle", {
     Text = "Enable Boss Detection",
     Default = true,
@@ -2451,7 +2451,7 @@ local BossFarm = {
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
 }
 
-local BossFarmGroup = BossBarTab:AddLeftGroupbox("Boss Farm")
+local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
 
 -- Scan for nearby bosses and return a list (OPTIMIZED)
 local function ScanBossFarmTargets()
@@ -2549,66 +2549,26 @@ local function BossFarmDash()
 end
 
 -- Start the farm loop (anchor + click)
+-- Simplify Boss Farm - remove the continuous heartbeat connection
+-- Replace the StartBossFarm function with this:
+-- Simplify Boss Farm - remove the continuous heartbeat connection
+-- Replace the StartBossFarm function with this:
 local function StartBossFarm()
-    -- Stop any previous
-    if BossFarm.AnchorConn then
-        BossFarm.AnchorConn:Disconnect()
-        BossFarm.AnchorConn = nil
-    end
-    if BossFarm.Thread then
-        pcall(task.cancel, BossFarm.Thread)
-        BossFarm.Thread = nil
-    end
-
     if not BossFarm.Target or not BossFarm.Target.Parent then
         Library:Notify("No valid boss target!", 3)
-        BossFarm.Enabled = false
         return
     end
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
 
-    -- Anchor: every frame, teleport on top of boss
-    BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
-        if not BossFarm.Enabled then return end
-        local hum = BossFarm.Target
-        if not hum or not hum.Parent or hum.Health <= 0 then
-            -- Boss died or despawned
-            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
-            BossFarm.Enabled = false
-            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
-            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
-            return
-        end
-
-        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
-                      or hum.Parent:FindFirstChild("Head")
-                      or hum.Parent:FindFirstChild("Torso")
-                      or hum.Parent:FindFirstChild("UpperTorso")
-                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
-        
-        if not bossRoot then 
-            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
-            return 
-        end
-
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-
-        -- Position above the boss, facing down at it
-        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
-    end)
-
-    -- Attack spam loop (fires remote)
+    -- Remove the Heartbeat connection - just attack without anchoring
+    if BossFarm.Thread then
+        task.cancel(BossFarm.Thread)
+    end
+    
     BossFarm.Thread = task.spawn(function()
-        while BossFarm.Enabled do
-            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
-                BossFarmDash()
-                BossFarmAttack()
-            end
+        while BossFarm.Enabled and BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 do
+            BossFarmAttack()
             task.wait(BossFarm.AttackDelay)
         end
     end)
@@ -2759,6 +2719,102 @@ BossFarmGroup:AddSlider("BossFarmMinHP", {
 BossFarmGroup:AddLabel("Anchors above boss + fires CheckMeleeHit.")
 BossFarmGroup:AddLabel("Toggle with G key. Boss dies → auto stops.")
 
+-- ==================== AUTO EYE FARM (Sharingan) ====================
+local AutoEye = {
+    Enabled = false,
+    Thread = nil,
+    TargetPos = Vector3.new(-2883.2, 652.6, -5448.9),  -- teleport coordinates
+}
+
+-- Remote references
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+local DataFunction = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                     game:GetService("ReplicatedStorage").Events:FindFirstChild("DataFunction")
+
+local function autoEyeLoop()
+    while AutoEye.Enabled do
+        -- Wait for character to exist
+        local char = LocalPlayer.Character
+        if not char then
+            char = LocalPlayer.CharacterAdded:Wait()
+        end
+
+        -- Wait for root part to exist (HumanoidRootPart or Head)
+        local root = char:WaitForChild("HumanoidRootPart") or char:WaitForChild("Head")
+        
+        if root and root.Parent then  -- Ensure root is still valid
+            -- 1. Teleport
+            root.CFrame = CFrame.new(AutoEye.TargetPos)
+            task.wait(0.2)
+
+            -- 2. Fire remotes
+            if DataEvent then
+                pcall(function()
+                    DataEvent:FireServer("Item", "Selected", "Sharingan [Stage 1]")
+                end)
+            end
+            if DataFunction then
+                pcall(function()
+                    DataFunction:InvokeServer("Awaken", "Sharingan [Stage 1]")
+                end)
+            end
+
+            task.wait(0.2)
+
+            -- 3. Reset character (same as Player tab button)
+            if char and char:FindFirstChild("Humanoid") then
+                char.Humanoid.Health = 0
+                task.wait(0.1)
+                char:BreakJoints()
+            end
+        else
+            -- If root disappeared, just wait a bit and let the loop restart
+            task.wait(0.3)
+        end
+
+        -- Small pause before next iteration to prevent flooding
+        task.wait(0.2)
+    end
+end
+
+local function startAutoEye()
+    if AutoEye.Thread then
+        task.cancel(AutoEye.Thread)
+    end
+    AutoEye.Thread = task.spawn(autoEyeLoop)
+end
+
+local function stopAutoEye()
+    AutoEye.Enabled = false
+    if AutoEye.Thread then
+        task.cancel(AutoEye.Thread)
+        AutoEye.Thread = nil
+    end
+end
+
+-- UI in AutoFarm tab
+local AutoEyeGroup = AutoFarmTab:AddRightGroupbox("AutoEye")
+
+AutoEyeGroup:AddToggle("AutoEyeToggle", {
+    Text = "Enable AutoEye Farm",
+    Default = false,
+    Callback = function(value)
+        if value then
+            AutoEye.Enabled = true
+            startAutoEye()
+        else
+            AutoEye.Enabled = false
+            stopAutoEye()
+        end
+    end
+})
+
+AutoEyeGroup:AddLabel("Teleports to Sharingan altar,")
+AutoEyeGroup:AddLabel("fires Item/Selected + Awaken,")
+AutoEyeGroup:AddLabel("then resets and repeats.")
+AutoEyeGroup:AddLabel("Waits for character to respawn")
+AutoEyeGroup:AddLabel("before each iteration.")
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
     ActiveUsers = {},
@@ -3669,41 +3725,6 @@ AnimPlayerGroup:AddButton({
 
 AnimPlayerGroup:AddLabel("Paste an ID from the fetcher to preview it.")
 
--- ==================== ANTI-CHEAT BYPASS & SERVER UTILITIES ====================
-local MiscGroup = Tabs.Misc:AddLeftGroupbox("Anti-Cheat & Server")
-
--- Anti-Cheat bypass toggle
-local AntiCheat = {
-    Enabled = false,
-    Connections = {}
-}
-
-local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
-                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-
-if DataEvent then
-    -- Block outgoing "BanMe" calls (if client tries to trigger it)
-    local oldFireServer
-    oldFireServer = hookfunction(DataEvent.FireServer, function(self, ...)
-        if AntiCheat.Enabled then
-            local args = {...}
-            if args[1] == "BanMe" then
-                Library:Notify("Blocked BanMe remote", 2)
-                return -- block
-            end
-        end
-        return oldFireServer(self, ...)
-    end)
-end
-
-
-MiscGroup:AddToggle("ACToggle", {
-    Text = "Enable Anti-Cheat Bypass",
-    Default = false,
-    Callback = function(v)
-        AntiCheat.Enabled = v
-    end
-})
 
 -- ==================== TELEPORT TAB ====================
 local TeleportTab = Window:AddTab("Teleports")
