@@ -14,6 +14,16 @@ end
 local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
 
+-- Load Chakra Sense (Leaderboard Spectate System)
+task.spawn(function()
+    local success, err = pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/MosIsOG/playground/refs/heads/main/chakra_sense.lua"))()
+    end)
+    if not success then
+        warn("Chakra Sense failed to load:", err)
+    end
+end)
+
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -4652,4 +4662,3 @@ SaveManager:LoadAutoloadConfig()
 print("=== Universal Hub Loaded ===")
 print("Press RightControl to toggle menu")
 print("Healthbar ESP is active (name + distance + health)")
-
