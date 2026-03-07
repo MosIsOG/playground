@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub",
+    Title = "Universal Hub v1.0.0",
     Center = true,
     AutoShow = true
 })
@@ -2111,6 +2111,7 @@ local PredefinedBosses = {
     { name = "Barbarit The Rose", maxDistance = 500 },
     { name = "Lava Snake", maxDistance = 500 },
     { name = "Hyuga Boss", maxDistance = 500},
+    { name = "Haku Boss", maxDistance = 500},
 }
 
 -- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
@@ -2453,6 +2454,10 @@ local BossFarm = {
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
     HyugaHeightBoost = 0,   -- additional height for Hyuga Boss special animations
     HyugaAnimConnection = nil, -- connection to monitor Hyuga Boss animations
+    HakuHeightBoost = 0,    -- additional height for Haku Boss (mirror: 300, anim: 100)
+    HakuAnimConnection = nil, -- connection to monitor Haku Boss animations
+    HakuInMirror = false,   -- tracks if Haku is currently in a mirror
+    HakuMirrorWaitTime = 0, -- timestamp when Haku entered mirror
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2552,6 +2557,71 @@ local function BossFarmDash()
     end)
 end
 
+-- Check if Haku Boss is near any mirror (within 2 studs average distance)
+local function CheckHakuMirrorProximity(bossPosition)
+    local mirrorRealm = workspace:FindFirstChild("Mirror Realm")
+    if not mirrorRealm then return false end
+    
+    local mirrorsFolder = mirrorRealm:FindFirstChild("Mirrors")
+    if not mirrorsFolder then return false end
+    
+    local mirrors = mirrorsFolder:GetChildren()
+    
+    for _, mirror in ipairs(mirrors) do
+        local mirrorPos = mirror.Position
+        
+        -- Calculate average absolute difference
+        local avgDiff = (math.abs(bossPosition.X - mirrorPos.X) + 
+                         math.abs(bossPosition.Y - mirrorPos.Y) + 
+                         math.abs(bossPosition.Z - mirrorPos.Z)) / 3
+        
+        -- If within 2 studs, boss is in/near this mirror
+        if avgDiff <= 2 then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Monitor Haku Boss for special animations that require height adjustment
+local function MonitorHakuBossAnimations(bossModel)
+    if BossFarm.HakuAnimConnection then
+        BossFarm.HakuAnimConnection:Disconnect()
+        BossFarm.HakuAnimConnection = nil
+    end
+    
+    if not bossModel then return end
+    
+    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    
+    BossFarm.HakuAnimConnection = animator.AnimationPlayed:Connect(function(track)
+        if not BossFarm.Enabled then return end
+        
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        
+        -- Haku Boss special animation
+        if assetId == "83279463673214" then
+            -- Increase height by 100 studs for 3 seconds
+            BossFarm.HakuHeightBoost = 100
+            Library:Notify("Haku Attack! Height +100 (3s)", 1)
+            
+            -- Reset after 3 seconds
+            task.spawn(function()
+                task.wait(3)
+                -- Only reset if not in mirror (mirror takes priority)
+                if not BossFarm.HakuInMirror then
+                    BossFarm.HakuHeightBoost = 0
+                end
+            end)
+        end
+    end)
+end
+
 -- Monitor Hyuga Boss for special animations that require height adjustment
 local function MonitorHyugaBossAnimations(bossModel)
     if BossFarm.HyugaAnimConnection then
@@ -2625,6 +2695,11 @@ local function StartBossFarm()
     if BossFarm.TargetName == "Hyuga Boss" then
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
     end
+    
+    -- If farming Haku Boss, monitor for special animations
+    if BossFarm.TargetName == "Haku Boss" then
+        MonitorHakuBossAnimations(BossFarm.Target.Parent)
+    end
 
     -- Anchor: every frame, teleport on top of boss
     BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
@@ -2655,9 +2730,40 @@ local function StartBossFarm()
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
 
+        -- Haku Boss mirror detection logic
+        if BossFarm.TargetName == "Haku Boss" then
+            local inMirror = CheckHakuMirrorProximity(bossRoot.Position)
+            
+            if inMirror then
+                -- Boss is in a mirror
+                if not BossFarm.HakuInMirror then
+                    -- Just entered mirror
+                    BossFarm.HakuInMirror = true
+                    BossFarm.HakuMirrorWaitTime = tick()
+                    BossFarm.HakuHeightBoost = 300
+                    Library:Notify("Haku in Mirror! Height +300", 2)
+                end
+                
+                -- Check if 5 seconds have passed
+                if tick() - BossFarm.HakuMirrorWaitTime >= 5 then
+                    -- Return to normal
+                    BossFarm.HakuInMirror = false
+                    BossFarm.HakuHeightBoost = 0
+                end
+            else
+                -- Boss is not in a mirror
+                if BossFarm.HakuInMirror then
+                    -- Just left mirror
+                    BossFarm.HakuInMirror = false
+                    BossFarm.HakuHeightBoost = 0
+                end
+            end
+        end
+
         -- Position above the boss, facing down at it
         -- For Hyuga Boss, add extra height boost during special animations
-        local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
+        -- For Haku Boss, add extra height boost during mirror or special animations
+        local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost + BossFarm.HakuHeightBoost
         local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
         root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
     end)
@@ -2677,11 +2783,20 @@ end
 local function StopBossFarm()
     BossFarm.Enabled = false
     BossFarm.HyugaHeightBoost = 0
+    BossFarm.HakuHeightBoost = 0
+    BossFarm.HakuInMirror = false
+    BossFarm.HakuMirrorWaitTime = 0
     
     -- Disconnect Hyuga animation monitoring
     if BossFarm.HyugaAnimConnection then
         BossFarm.HyugaAnimConnection:Disconnect()
         BossFarm.HyugaAnimConnection = nil
+    end
+    
+    -- Disconnect Haku animation monitoring
+    if BossFarm.HakuAnimConnection then
+        BossFarm.HakuAnimConnection:Disconnect()
+        BossFarm.HakuAnimConnection = nil
     end
     
     if BossFarm.AnchorConn then
@@ -3729,6 +3844,7 @@ local TeleportLocations = {
      { Name = "Durana", Pos = Vector3.new(1851.0, -125.5, 1065.2)},
      { Name = "Secret Spot", Pos = Vector3.new(-4458.5, 660.7, -4895.2)},
      { Name = "Hyuga Boss", Pos = Vector3.new(-693.7, -359.9, -765.7)},
+     { Name = "Haku Boss", Pos = Vector3.new(-3838.2, -231.4, -9657.0)},
 }
 
 -- Function to teleport
