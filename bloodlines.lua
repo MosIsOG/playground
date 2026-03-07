@@ -2451,6 +2451,8 @@ local BossFarm = {
     Thread = nil,
     AnchorConn = nil,
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
+    Dodging = false,        -- flag to prevent multiple simultaneous dodges
+    BossAnimConnection = nil, -- connection to boss animations
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2551,6 +2553,69 @@ local function BossFarmDash()
     end)
 end
 
+-- Dodge boss attack by flying 200 studs up for 1 second
+local function DodgeBossAttack()
+    if BossFarm.Dodging or not BossFarm.Enabled then return end
+    BossFarm.Dodging = true
+    
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
+        local bossRoot = BossFarm.Target and BossFarm.Target.Parent and 
+                         (BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") or 
+                          BossFarm.Target.Parent:FindFirstChild("Head"))
+        
+        if playerRoot and bossRoot then
+            -- Teleport 200 studs above boss
+            local dodgePos = bossRoot.Position + Vector3.new(0, 200, 0)
+            playerRoot.CFrame = CFrame.new(dodgePos)
+            
+            -- Wait 1 second
+            task.wait(1)
+            
+            -- Return to normal farm height
+            if BossFarm.Enabled and bossRoot and playerRoot then
+                local returnPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+                playerRoot.CFrame = CFrame.new(returnPos)
+            end
+        end
+        
+        task.wait(0.5) -- Cooldown before next dodge
+        BossFarm.Dodging = false
+    end)
+end
+
+-- Monitor boss for animations that should trigger dodge
+local function MonitorBossAnimations(bossModel)
+    if BossFarm.BossAnimConnection then
+        BossFarm.BossAnimConnection:Disconnect()
+        BossFarm.BossAnimConnection = nil
+    end
+    
+    if not bossModel then return end
+    
+    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    
+    BossFarm.BossAnimConnection = animator.AnimationPlayed:Connect(function(track)
+        if not BossFarm.Enabled then return end
+        
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        
+        -- Check if this animation is in BlockRules (need to declare BlockRules first)
+        -- We'll check against the list defined later in the script
+        for _, rule in ipairs(BlockRules or {}) do
+            if assetId == rule.animID then
+                DodgeBossAttack()
+                return
+            end
+        end
+    end)
+end
+
 -- Start the farm loop (anchor + click)
 local function StartBossFarm()
     if not BossFarm.Target or not BossFarm.Target.Parent then
@@ -2566,6 +2631,9 @@ local function StartBossFarm()
     if playerRoot then
         playerRoot.Anchored = true
     end
+    
+    -- Monitor boss animations for dodge
+    MonitorBossAnimations(BossFarm.Target.Parent)
 
     if BossFarm.Thread then
         task.cancel(BossFarm.Thread)
@@ -2615,12 +2683,19 @@ end
 
 local function StopBossFarm()
     BossFarm.Enabled = false
+    BossFarm.Dodging = false
     
     -- Unanchor player
     local char = LocalPlayer.Character
     local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
     if playerRoot then
         playerRoot.Anchored = false
+    end
+    
+    -- Disconnect boss animation monitoring
+    if BossFarm.BossAnimConnection then
+        BossFarm.BossAnimConnection:Disconnect()
+        BossFarm.BossAnimConnection = nil
     end
     
     if BossFarm.AnchorConn then
