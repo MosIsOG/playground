@@ -1,5 +1,4 @@
 -- Universal Hub - LinoriaLib + Unnamed ESP Core (No duplicate UI)
-print("Loading Universal Hub...")
 
 -- Load LinoriaLib
 local success, Library = pcall(function()
@@ -7,7 +6,6 @@ local success, Library = pcall(function()
 end)
 
 if not success then
-    warn("Failed to load Library - trying alternative...")
     Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
 end
 
@@ -2856,185 +2854,6 @@ AutoEyeGroup:AddToggle("AutoEyeToggle", {
 AutoEyeGroup:AddLabel("Select your eye item from dropdown above.")
 AutoEyeGroup:AddLabel("If forcefield: spams teleport until gone,")
 AutoEyeGroup:AddLabel("then teleports, fires events, and resets.")
--- ==================== CHAKRA SENSE TRACKER ====================
-local ChakraTracker = {
-    ActiveUsers = {},
-    ScreenAlerts = {},   -- Drawing.new("Text") per player — persistent on-screen indicators we fully control
-    Tracks = {},
-    Connections = {},
-    PendingStops = {},
-    SkillID = "9864206537",
-    Label = nil
-}
-
--- Persistent on-screen alert management (Drawing objects, not Library:Notify)
-local function CreateScreenAlert(playerName)
-    if ChakraTracker.ScreenAlerts[playerName] then return end -- already exists
-    local alert = Drawing.new("Text")
-    alert.Text = playerName .. " is using Chakra Sense"
-    alert.Size = 18
-    alert.Center = true
-    alert.Outline = true
-    alert.OutlineColor = Color3.new(0, 0, 0)
-    alert.Color = Color3.fromRGB(255, 100, 100)
-    alert.Visible = true
-    alert.Position = Vector2.new(Camera.ViewportSize.X / 2, 50)
-    ChakraTracker.ScreenAlerts[playerName] = alert
-    -- Reposition all alerts so they stack vertically
-    local idx = 0
-    for _, a in pairs(ChakraTracker.ScreenAlerts) do
-        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
-        idx = idx + 1
-    end
-end
-
-local function RemoveScreenAlert(playerName)
-    local alert = ChakraTracker.ScreenAlerts[playerName]
-    if alert then
-        alert.Visible = false
-        alert:Remove()
-        ChakraTracker.ScreenAlerts[playerName] = nil
-    end
-    -- Reposition remaining alerts
-    local idx = 0
-    for _, a in pairs(ChakraTracker.ScreenAlerts) do
-        a.Position = Vector2.new(Camera.ViewportSize.X / 2, 50 + idx * 22)
-        idx = idx + 1
-    end
-end
-
-local function UpdateLabel()
-    if not ChakraTracker.Label then return end
-    local names = {}
-    for name, _ in pairs(ChakraTracker.ActiveUsers) do
-        table.insert(names, name)
-    end
-    if #names == 0 then
-        ChakraTracker.Label:SetText("No one using Chakra Sense")
-    else
-        ChakraTracker.Label:SetText("Chakra Sense: " .. table.concat(names, ", "))
-    end
-end
-
-local function StopTracking(player)
-    if ChakraTracker.ActiveUsers[player.Name] then
-        ChakraTracker.ActiveUsers[player.Name] = nil
-        ChakraTracker.Tracks[player.Name] = nil
-        RemoveScreenAlert(player.Name)
-        UpdateLabel()
-        Library:Notify(player.Name .. " stopped Chakra Sense", 3)
-    end
-end
-
-local function MonitorPlayer(player)
-    if player == LocalPlayer then return end
-    local function onCharacterAdded(character)
-        task.wait(0.5)
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return end
-        local animator = humanoid:FindFirstChildOfClass("Animator")
-        if not animator then return end
-
-        -- Clean up old connections for this player
-        if ChakraTracker.Connections[player] then
-            for _, conn in ipairs(ChakraTracker.Connections[player]) do
-                conn:Disconnect()
-            end
-        end
-        ChakraTracker.Connections[player] = {}
-
-        local function onAnimPlayed(track)
-            local assetId = track.Animation.AnimationId:match("rbxassetid://(%d+)")
-            if assetId ~= ChakraTracker.SkillID then return end
-
-            -- Cancel any pending stop (animation re-fired before grace period expired)
-            if ChakraTracker.PendingStops[player.Name] then
-                ChakraTracker.PendingStops[player.Name] = nil
-            end
-
-            -- If already active, just update the track reference (animation re-fired) — don't create another notification
-            if ChakraTracker.ActiveUsers[player.Name] then
-                ChakraTracker.Tracks[player.Name] = track
-                return
-            end
-
-            -- Activate
-            ChakraTracker.ActiveUsers[player.Name] = true
-            ChakraTracker.Tracks[player.Name] = track
-            UpdateLabel()
-            CreateScreenAlert(player.Name)  -- persistent on-screen Drawing text, removed only when they stop
-
-            -- Monitor this track for stopping with grace period
-            local trackConnections = {}
-
-            -- Heartbeat check with 1-second grace period
-            local heartbeatConn
-            heartbeatConn = RunService.Heartbeat:Connect(function()
-                if not track or not track.IsPlaying then
-                    -- Don't stop immediately — set a pending stop with grace period
-                    if ChakraTracker.ActiveUsers[player.Name] and not ChakraTracker.PendingStops[player.Name] then
-                        ChakraTracker.PendingStops[player.Name] = tick()
-                    end
-                    -- If grace period (1 second) expired and still pending, actually stop
-                    if ChakraTracker.PendingStops[player.Name] and (tick() - ChakraTracker.PendingStops[player.Name]) > 1 then
-                        ChakraTracker.PendingStops[player.Name] = nil
-                        StopTracking(player)
-                        heartbeatConn:Disconnect()
-                    end
-                else
-                    -- Animation is playing again, cancel any pending stop
-                    ChakraTracker.PendingStops[player.Name] = nil
-                end
-            end)
-            table.insert(trackConnections, heartbeatConn)
-
-            -- Store track-specific connections for cleanup
-            ChakraTracker.Connections[player] = ChakraTracker.Connections[player] or {}
-            for _, conn in ipairs(trackConnections) do
-                table.insert(ChakraTracker.Connections[player], conn)
-            end
-        end
-
-        local playedConn = animator.AnimationPlayed:Connect(onAnimPlayed)
-        table.insert(ChakraTracker.Connections[player], playedConn)
-
-        -- Check existing tracks
-        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-            onAnimPlayed(track)
-        end
-    end
-
-    player.CharacterAdded:Connect(onCharacterAdded)
-    if player.Character then
-        onCharacterAdded(player.Character)
-    end
-end
-
--- Initialize existing players
-for _, player in ipairs(Players:GetPlayers()) do
-    MonitorPlayer(player)
-end
-
--- New players
-Players.PlayerAdded:Connect(MonitorPlayer)
-
--- Cleanup on player leave
-Players.PlayerRemoving:Connect(function(player)
-    if ChakraTracker.Connections[player] then
-        for _, conn in ipairs(ChakraTracker.Connections[player]) do
-            conn:Disconnect()
-        end
-        ChakraTracker.Connections[player] = nil
-    end
-    if ChakraTracker.ActiveUsers[player.Name] then
-        StopTracking(player)
-    end
-end)
-
--- Add UI to Misc tab
-local MiscGroup = Tabs.Misc:AddLeftGroupbox("Skill Status")
-ChakraTracker.Label = MiscGroup:AddLabel("No one using Chakra Sense")
-UpdateLabel()
 
 -- ==================== AUTO PERFECT BLOCK (FIXED) ====================
 -- Permanent config (edit this table directly)
@@ -3097,7 +2916,6 @@ local function ScheduleBlock(entityName, delay)
         end
         Block()
         task.delay(0.5, function()
-            if AutoBlock.Enabled then Unblock() end
             AutoBlock.Triggered[entityName] = nil
         end)
     end
@@ -3359,413 +3177,7 @@ BlockGroup:AddToggle("AutoBlockToggle", {
 BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
 BlockGroup:AddLabel("a registered animation ID within distance.")
 BlockGroup:AddLabel("Scans NPCs/Mobs/Players within 250 studs.")
-BlockGroup:AddLabel("Optimized: Distance-filtered entity scanning.")
-
--- Test section
-local TestGroup = Tabs.Misc:AddLeftGroupbox("Test a Rule")
-
--- Inputs
-TestGroup:AddInput("TestAnimID", {
-    Text = "Animation ID",
-    Default = "",
-    Placeholder = "e.g., 9864206537",
-    Numeric = true,
-    Finished = false,
-    Callback = function(v) _G.TestAnimID = v end
-})
-
-TestGroup:AddSlider("TestDelay", {
-    Text = "Block Delay (s)",
-    Default = 0.3,
-    Min = 0, Max = 2, Rounding = 2, Suffix = "s",
-    Callback = function(v) _G.TestDelay = v end
-})
-
-TestGroup:AddSlider("TestDistance", {
-    Text = "Max Distance (0 = no limit)",
-    Default = 0, Min = 0, Max = 500, Rounding = 0, Suffix = "studs",
-    Callback = function(v) _G.TestDistance = v end
-})
-
-TestGroup:AddToggle("TestContinuous", {
-    Text = "Continuous (long anim)",
-    Default = false,
-    Tooltip = "Keep blocking while animation plays and player is in range",
-    Callback = function(v) _G.TestContinuous = v end
-})
-
--- Test rule status display
-local TestStatus = TestGroup:AddLabel("No test rule active.")
-
-local function UpdateTestStatus()
-    if TestRule then
-        TestStatus:SetText(string.format("ID: %s | Delay: %.3fs | Dist: %s | %s",
-            TestRule.animID,
-            TestRule.delay,
-            TestRule.distance and (TestRule.distance.." studs") or "No limit",
-            TestRule.continuous and "Continuous" or "One-shot"))
-    else
-        TestStatus:SetText("No test rule active.")
-    end
-end
-
-TestGroup:AddButton({
-    Text = "Apply Test Rule",
-    Func = function()
-        local id = _G.TestAnimID or ""
-        if id == "" then Library:Notify("Enter an ID", 3); return end
-        TestRule = {
-            animID = id,
-            delay = _G.TestDelay or 0.3,
-            distance = (_G.TestDistance and _G.TestDistance > 0) and _G.TestDistance or nil,
-            continuous = _G.TestContinuous or false
-        }
-        UpdateTestStatus()
-        Library:Notify("Test rule applied", 2)
-    end
-})
-
-TestGroup:AddButton({
-    Text = "Clear Test Rule",
-    Func = function()
-        TestRule = nil
-        UpdateTestStatus()
-        Library:Notify("Test rule cleared", 2)
-    end
-})
-
-TestGroup:AddButton({
-    Text = "Copy Rule as Lua",
-    Func = function()
-        if not TestRule then Library:Notify("No rule to copy", 3); return end
-        local dist = TestRule.distance and (", distance = " .. TestRule.distance) or ""
-        local cont = TestRule.continuous and ", continuous = true" or ""
-        local code = string.format('{ animID = "%s", delay = %.3f%s%s },', TestRule.animID, TestRule.delay, dist, cont)
-        setclipboard(code)
-        Library:Notify("Lua code copied", 2)
-    end
-})
-
--- Permanent rules display
-local PermGroup = Tabs.Misc:AddLeftGroupbox("Permanent Rules")
-local permText = ""
-for i, rule in ipairs(BlockRules) do
-    local mode = rule.continuous and "Continuous" or "One-shot"
-    permText = permText .. string.format("%d. ID: %s, Delay: %.3fs, Dist: %s, %s\n", i, rule.animID, rule.delay or 0.3, rule.distance and (rule.distance.." studs") or "Any", mode)
-end
-if permText == "" then permText = "No permanent rules." end
-PermGroup:AddLabel(permText)
-PermGroup:AddLabel("Edit BlockRules table in script to add/modify.")
--- ==================== ANIMATION FETCHER ====================
-local AnimFetcher = {
-    Enabled = false,
-    MobEnabled = false,
-    MaxDistance = 50,
-    Connections = {},
-    MobConnections = {},    -- key = model instance
-    MobScanThread = nil,
-    MobScanInterval = 2,
-}
-
-local function GetDistanceToPlayer(player)
-    local localChar = LocalPlayer.Character
-    local targetChar = player.Character
-    if not localChar or not targetChar then return nil end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
-    if not localRoot or not targetRoot then return nil end
-    return (localRoot.Position - targetRoot.Position).Magnitude
-end
-
-local function GetDistanceToModel(model)
-    local localChar = LocalPlayer.Character
-    if not localChar then return nil end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
-    if not localRoot then return nil end
-    local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
-    if not targetRoot then return nil end
-    return (localRoot.Position - targetRoot.Position).Magnitude
-end
-
-local function MonitorPlayerAnim(player, character)
-    if not character or player == LocalPlayer then return end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-
-    local function onAnimPlayed(track)
-        if not AnimFetcher.Enabled then return end
-        local distance = GetDistanceToPlayer(player)
-        if not distance or distance > AnimFetcher.MaxDistance then return end
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-        Library:Notify(string.format("[%d studs] %s: %s", math.floor(distance), player.Name, assetId), 5)
-    end
-
-    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
-    if not AnimFetcher.Connections[player] then AnimFetcher.Connections[player] = {} end
-    table.insert(AnimFetcher.Connections[player], conn)
-
-    -- Also log currently playing animations
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        onAnimPlayed(track)
-    end
-end
-
--- Monitor a mob/NPC model for animations
-local function MonitorMobAnim(model)
-    if AnimFetcher.MobConnections[model] then return end -- already monitoring
-    local humanoid = model:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-
-    local function onAnimPlayed(track)
-        if not AnimFetcher.MobEnabled then return end
-        local distance = GetDistanceToModel(model)
-        if not distance or distance > AnimFetcher.MaxDistance then return end
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-        Library:Notify(string.format("[MOB %d studs] %s: %s", math.floor(distance), model.Name, assetId), 5)
-    end
-
-    local conn = animator.AnimationPlayed:Connect(onAnimPlayed)
-    AnimFetcher.MobConnections[model] = {conn}
-
-    -- Log currently playing
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        onAnimPlayed(track)
-    end
-end
-
-local function ScanForMobs()
-    -- DISABLED TO IMPROVE PERFORMANCE
-    -- This was causing lag by scanning entire workspace repeatedly
-    -- Autoblock system already handles entity detection
-    return
-end
-
-local function StartMobScan()
-    if AnimFetcher.MobScanThread then pcall(task.cancel, AnimFetcher.MobScanThread) end
-    AnimFetcher.MobScanThread = task.spawn(function()
-        while AnimFetcher.MobEnabled do
-            ScanForMobs()
-            task.wait(AnimFetcher.MobScanInterval)
-        end
-    end)
-end
-
-local function StopMobScan()
-    if AnimFetcher.MobScanThread then
-        pcall(task.cancel, AnimFetcher.MobScanThread)
-        AnimFetcher.MobScanThread = nil
-    end
-    for model, conns in pairs(AnimFetcher.MobConnections) do
-        for _, c in ipairs(conns) do c:Disconnect() end
-    end
-    AnimFetcher.MobConnections = {}
-end
-
--- Initialize existing players (same as before)
-for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        player.CharacterAdded:Connect(function(char)
-            task.wait(0.5)
-            MonitorPlayerAnim(player, char)
-        end)
-        if player.Character then
-            MonitorPlayerAnim(player, player.Character)
-        end
-    end
-end
-
--- New players
-Players.PlayerAdded:Connect(function(player)
-    if player == LocalPlayer then return end
-    player.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        MonitorPlayerAnim(player, char)
-    end)
-    if player.Character then
-        MonitorPlayerAnim(player, player.Character)
-    end
-end)
-
--- Cleanup
-Players.PlayerRemoving:Connect(function(player)
-    if AnimFetcher.Connections[player] then
-        for _, conn in ipairs(AnimFetcher.Connections[player]) do
-            conn:Disconnect()
-        end
-        AnimFetcher.Connections[player] = nil
-    end
-end)
-
--- UI Controls
-local FetcherGroup = Tabs.Misc:AddLeftGroupbox("Animation Fetcher")
-FetcherGroup:AddToggle("AnimFetcherToggle", {
-    Text = "Log Animations",
-    Default = false,
-    Callback = function(value)
-        AnimFetcher.Enabled = value
-    end
-})
-FetcherGroup:AddSlider("AnimFetcherDistance", {
-    Text = "Max Distance",
-    Default = 50,
-    Min = 10,
-    Max = 500,
-    Rounding = 0,
-    Suffix = " studs",
-    Callback = function(value)
-        AnimFetcher.MaxDistance = value
-    end
-})
-FetcherGroup:AddLabel("Only logs animations within this range.")
-FetcherGroup:AddToggle("AnimFetcherMobToggle", {
-    Text = "Log Mob/NPC Animations",
-    Default = false,
-    Callback = function(value)
-        AnimFetcher.MobEnabled = value
-        if value then
-            StartMobScan()
-        else
-            StopMobScan()
-        end
-    end
-})
-FetcherGroup:AddLabel("Mob anims shown as [MOB] in notifications.")
-
--- ==================== ANIMATION PLAYER ====================
-local AnimPlayer = {
-    CurrentTrack = nil,
-    AnimId = "",
-    Looping = false,
-    Speed = 1
-}
-
-local AnimPlayerGroup = Tabs.Misc:AddRightGroupbox("Animation Player")
-
-AnimPlayerGroup:AddInput("AnimPlayerId", {
-    Default = "",
-    Numeric = false,
-    Finished = false,
-    Text = "Animation ID",
-    Tooltip = "Enter a Roblox animation asset ID (numbers only or rbxassetid://...)",
-    Placeholder = "e.g. 12345678",
-    Callback = function(value)
-        AnimPlayer.AnimId = value
-    end
-})
-
-AnimPlayerGroup:AddToggle("AnimPlayerLoop", {
-    Text = "Loop Animation",
-    Default = false,
-    Callback = function(value)
-        AnimPlayer.Looping = value
-        if AnimPlayer.CurrentTrack then
-            AnimPlayer.CurrentTrack.Looped = value
-        end
-    end
-})
-
-AnimPlayerGroup:AddSlider("AnimPlayerSpeed", {
-    Text = "Playback Speed",
-    Default = 1,
-    Min = 0.1,
-    Max = 3,
-    Rounding = 1,
-    Suffix = "x",
-    Callback = function(value)
-        AnimPlayer.Speed = value
-        if AnimPlayer.CurrentTrack and AnimPlayer.CurrentTrack.IsPlaying then
-            AnimPlayer.CurrentTrack:AdjustSpeed(value)
-        end
-    end
-})
-
-AnimPlayerGroup:AddButton({
-    Text = "Play Animation",
-    Func = function()
-        local id = AnimPlayer.AnimId
-        if not id or id == "" then
-            Library:Notify("Enter an animation ID first!", 3)
-            return
-        end
-
-        -- Normalize the ID
-        if not id:match("rbxassetid://") then
-            id = "rbxassetid://" .. id:match("%d+")
-        end
-
-        local char = LocalPlayer.Character
-        if not char then
-            Library:Notify("No character found!", 3)
-            return
-        end
-
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if not humanoid then
-            Library:Notify("No humanoid found!", 3)
-            return
-        end
-
-        local animator = humanoid:FindFirstChildOfClass("Animator")
-        if not animator then
-            animator = Instance.new("Animator")
-            animator.Parent = humanoid
-        end
-
-        -- Stop previous preview
-        if AnimPlayer.CurrentTrack then
-            pcall(function() AnimPlayer.CurrentTrack:Stop() end)
-            pcall(function() AnimPlayer.CurrentTrack:Destroy() end)
-            AnimPlayer.CurrentTrack = nil
-        end
-
-        local anim = Instance.new("Animation")
-        anim.AnimationId = id
-
-        local ok, track = pcall(function()
-            return animator:LoadAnimation(anim)
-        end)
-
-        if not ok or not track then
-            Library:Notify("Failed to load animation: " .. tostring(id), 3)
-            anim:Destroy()
-            return
-        end
-
-        track.Looped = AnimPlayer.Looping
-        track:Play()
-        track:AdjustSpeed(AnimPlayer.Speed)
-        AnimPlayer.CurrentTrack = track
-
-        Library:Notify("Playing animation: " .. id, 3)
-    end,
-    DoubleClick = false,
-    Tooltip = "Play the animation on your character"
-})
-
-AnimPlayerGroup:AddButton({
-    Text = "Stop Animation",
-    Func = function()
-        if AnimPlayer.CurrentTrack then
-            pcall(function() AnimPlayer.CurrentTrack:Stop() end)
-            pcall(function() AnimPlayer.CurrentTrack:Destroy() end)
-            AnimPlayer.CurrentTrack = nil
-            Library:Notify("Animation stopped", 2)
-        else
-            Library:Notify("No animation is playing", 2)
-        end
-    end,
-    DoubleClick = false,
-    Tooltip = "Stop the currently previewed animation"
-})
-
-AnimPlayerGroup:AddLabel("Paste an ID from the fetcher to preview it.")
-
+BlockGroup:AddLabel("Optimal Distance-filtered entity scanning.")
 
 -- ==================== TELEPORT TAB ====================
 local TeleportTab = Window:AddTab("Teleports")
@@ -4649,147 +4061,214 @@ Library:SetWatermark("Universal Hub")
 Library:SetWatermarkVisibility(true)
 SaveManager:LoadAutoloadConfig()
 
--- ==================== LEADERBOARD SPECTATE SYSTEM ====================
-do
-    local spectate_originalCameraSubject = nil
-    local spectate_isSpectating = false
-    local spectate_spectatedCharacter = nil
-    local spectate_spectatedCharacterName = nil
-    local spectate_healthConnection = nil
-    local spectate_lastHealth = nil
+print("=== Universal Hub Loaded ===")
 
+-- ==================== SPECTATE SYSTEM (Chakra Sense) ====================
+do
+    local Players = game:GetService("Players")
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local LocalPlayer = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+    
+    local spectate_currentSpectatingPlayer = nil
+    local spectate_originalCameraSubject = nil
+    local spectate_healthChangedConnection = nil
+    local spectate_lastPollTime = 0
+    
     -- Forward declarations
     local spectate_stopSpectating
-
-    -- Function to monitor LocalPlayer health for damage
-    local function spectate_setupHealthMonitor()
-        if spectate_healthConnection then
-            spectate_healthConnection:Disconnect()
-            spectate_healthConnection = nil
+    
+    local function spectate_spectateCharacter(playerName)
+        local targetPlayer = Players:FindFirstChild(playerName)
+        if not targetPlayer then return end
+        
+        local targetCharacter = targetPlayer.Character
+        if not targetCharacter then return end
+        
+        local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+        if not targetHumanoid then return end
+        
+        if spectate_currentSpectatingPlayer == targetPlayer then
+            spectate_stopSpectating()
+            return
         end
         
-        local character = LocalPlayer.Character
-        if not character then return end
-        
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return end
-        
-        spectate_lastHealth = humanoid.Health
-        
-        spectate_healthConnection = humanoid.HealthChanged:Connect(function(newHealth)
-            if spectate_isSpectating and newHealth < spectate_lastHealth then
-                spectate_stopSpectating()
-            end
-            spectate_lastHealth = newHealth
-        end)
-    end
-
-    -- Function to spectate a character
-    local function spectate_spectateCharacter(characterName)
-        local character = Workspace:FindFirstChild(characterName)
-        if not character then return false end
-        
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        
-        if not humanoid or not humanoidRootPart then return false end
-        
-        if not spectate_isSpectating then
+        if not spectate_originalCameraSubject then
             spectate_originalCameraSubject = Camera.CameraSubject
         end
         
-        Camera.CameraSubject = humanoid
-        spectate_isSpectating = true
-        spectate_spectatedCharacter = character
-        spectate_spectatedCharacterName = characterName
+        spectate_currentSpectatingPlayer = targetPlayer
+        Camera.CameraSubject = targetHumanoid
         
-        spectate_setupHealthMonitor()
-        
-        return true
-    end
-
-    -- Function to stop spectating and return to own character
-    spectate_stopSpectating = function()
-        if spectate_isSpectating and spectate_originalCameraSubject then
-            Camera.CameraSubject = spectate_originalCameraSubject
-            spectate_isSpectating = false
-            spectate_spectatedCharacter = nil
-            spectate_spectatedCharacterName = nil
-            
-            if spectate_healthConnection then
-                spectate_healthConnection:Disconnect()
-                spectate_healthConnection = nil
+        local localCharacter = LocalPlayer.Character
+        if localCharacter then
+            local localHumanoid = localCharacter:FindFirstChildOfClass("Humanoid")
+            if localHumanoid and not spectate_healthChangedConnection then
+                local lastHealth = localHumanoid.Health
+                spectate_healthChangedConnection = localHumanoid.HealthChanged:Connect(function(newHealth)
+                    if newHealth < lastHealth then
+                        spectate_stopSpectating()
+                    end
+                    lastHealth = newHealth
+                end)
             end
         end
     end
-
-    -- Main function to setup leaderboard click detection
-    local function spectate_setupLeaderboardClickDetector()
-        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-        local clientGui = playerGui:WaitForChild("ClientGui", 10)
+    
+    function spectate_stopSpectating()
+        if spectate_originalCameraSubject then
+            Camera.CameraSubject = spectate_originalCameraSubject
+            spectate_originalCameraSubject = nil
+        end
+        spectate_currentSpectatingPlayer = nil
+        
+        if spectate_healthChangedConnection then
+            spectate_healthChangedConnection:Disconnect()
+            spectate_healthChangedConnection = nil
+        end
+    end
+    
+    local function spectate_setupClickDetection()
+        RunService.Heartbeat:Connect(function()
+            if tick() - spectate_lastPollTime < 1 then return end
+            spectate_lastPollTime = tick()
+            
+            local playerGui = LocalPlayer:WaitForChild("PlayerGui", 1)
+            if not playerGui then return end
+            
+            local clientGui = playerGui:FindFirstChild("ClientGui")
+            if not clientGui then return end
+            
+            local mainframe = clientGui:FindFirstChild("Mainframe")
+            if not mainframe then return end
+            
+            local playerList = mainframe:FindFirstChild("PlayerList")
+            if not playerList then return end
+            
+            local listContainer = playerList:FindFirstChild("List")
+            if not listContainer then return end
+            
+            for _, child in pairs(listContainer:GetChildren()) do
+                if child.Name == "PlayerTemplate" and child:IsA("Frame") then
+                    local nameLabel = child:FindFirstChild("PlayerName")
+                    if nameLabel and nameLabel:IsA("TextLabel") then
+                        local existingDetector = child:FindFirstChild("SpectateClickDetector")
+                        if not existingDetector then
+                            local clickDetector = Instance.new("TextButton")
+                            clickDetector.Name = "SpectateClickDetector"
+                            clickDetector.Size = UDim2.new(1, 0, 1, 0)
+                            clickDetector.Position = UDim2.new(0, 0, 0, 0)
+                            clickDetector.BackgroundTransparency = 1
+                            clickDetector.Text = ""
+                            clickDetector.ZIndex = 10
+                            clickDetector.Parent = child
+                            
+                            clickDetector.MouseButton1Click:Connect(function()
+                                local playerName = nameLabel.Text
+                                spectate_spectateCharacter(playerName)
+                            end)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    spectate_setupClickDetection()
+    
+    -- Server Name Display
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ServerNameDisplay"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Shadow label (black, offset by 1 pixel)
+    local shadowLabel = Instance.new("TextLabel")
+    shadowLabel.Name = "ShadowLabel"
+    shadowLabel.Position = UDim2.new(0, 352, 0, -31)
+    shadowLabel.Size = UDim2.new(0, 200, 0, 50)
+    shadowLabel.BackgroundTransparency = 1
+    shadowLabel.Font = Enum.Font.SourceSans
+    shadowLabel.TextSize = 16
+    shadowLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    shadowLabel.TextXAlignment = Enum.TextXAlignment.Left
+    shadowLabel.TextYAlignment = Enum.TextYAlignment.Top
+    shadowLabel.ZIndex = 1
+    shadowLabel.Parent = screenGui
+    
+    -- Main label (white, base position)
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Name = "MainLabel"
+    textLabel.Position = UDim2.new(0, 351, 0, -32)
+    textLabel.Size = UDim2.new(0, 200, 0, 50)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.SourceSans
+    textLabel.TextSize = 16
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.ZIndex = 2
+    textLabel.Parent = screenGui
+    
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    local function updateServerName()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+        if not playerGui then return end
+        
+        local clientGui = playerGui:FindFirstChild("ClientGui")
         if not clientGui then return end
         
-        local mainframe = clientGui:WaitForChild("Mainframe", 10)
+        local mainframe = clientGui:FindFirstChild("Mainframe")
         if not mainframe then return end
         
-        local playerList = mainframe:WaitForChild("PlayerList", 10)
-        if not playerList then return end
+        local rest = mainframe:FindFirstChild("Rest")
+        if not rest then return end
         
-        local list = playerList:WaitForChild("List", 10)
-        if not list then return end
+        local mainMenuFrame = rest:FindFirstChild("MainMenuFrame")
+        if not mainMenuFrame then return end
         
-        -- Function to setup click detection for a PlayerTemplate
-        local function setupPlayerTemplate(template)
-            if template:IsA("GuiObject") and template.Name == "PlayerTemplate" then
-                local playerName = template:FindFirstChild("PlayerName")
-                if playerName and playerName:IsA("TextLabel") then
-                    template.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                            local characterName = playerName.Text
-                            
-                            if spectate_isSpectating and spectate_spectatedCharacterName == characterName then
-                                spectate_stopSpectating()
-                            else
-                                spectate_spectateCharacter(characterName)
-                            end
+        local serverName = mainMenuFrame:FindFirstChild("ServerName")
+        if serverName and serverName:IsA("TextLabel") then
+            local text = serverName.Text
+            textLabel.Text = text
+            shadowLabel.Text = text
+        end
+    end
+    
+    task.spawn(function()
+        while task.wait(1) do
+            pcall(updateServerName)
+        end
+    end)
+    
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+    if playerGui then
+        local clientGui = playerGui:WaitForChild("ClientGui", 5)
+        if clientGui then
+            local mainframe = clientGui:WaitForChild("Mainframe", 5)
+            if mainframe then
+                local rest = mainframe:WaitForChild("Rest", 5)
+                if rest then
+                    local mainMenuFrame = rest:WaitForChild("MainMenuFrame", 5)
+                    if mainMenuFrame then
+                        local serverName = mainMenuFrame:WaitForChild("ServerName", 5)
+                        if serverName then
+                            serverName:GetPropertyChangedSignal("Text"):Connect(function()
+                                textLabel.Text = serverName.Text
+                                shadowLabel.Text = serverName.Text
+                            end)
+                            textLabel.Text = serverName.Text
+                            shadowLabel.Text = serverName.Text
                         end
-                    end)
+                    end
                 end
             end
         end
-        
-        -- Setup existing templates
-        for _, child in pairs(list:GetChildren()) do
-            setupPlayerTemplate(child)
-        end
-        
-        -- Setup new templates as they're added
-        list.ChildAdded:Connect(setupPlayerTemplate)
     end
-
-    -- Monitor if spectated character is removed/dies
-    task.spawn(function()
-        while true do
-            if spectate_isSpectating and spectate_spectatedCharacter and not spectate_spectatedCharacter.Parent then
-                spectate_stopSpectating()
-            end
-            task.wait(1)
-        end
-    end)
-
-    -- Setup health monitor when character spawns
-    LocalPlayer.CharacterAdded:Connect(function()
-        if spectate_isSpectating then
-            task.wait(0.5)
-            spectate_setupHealthMonitor()
-        end
-    end)
-
-    -- Initialize the detector
-    task.spawn(spectate_setupLeaderboardClickDetector)
 end
--- ==================== END LEADERBOARD SPECTATE SYSTEM ====================
-
-print("=== Universal Hub Loaded ===")
-print("Press RightControl to toggle menu")
-print("Healthbar ESP is active (name + distance + health)")
+print("Chakra Sense (Spectate + Server Display) loaded")
