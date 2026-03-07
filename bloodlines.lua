@@ -3642,6 +3642,7 @@ local TeleportLocations = {
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
      { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
      { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},
+     { Name = "Durana", Pos = Vector3.new(1851.0, -125.5, 1065.2)},
      { Name = "Secret Spot", Pos = Vector3.new(-4458.5, 660.7, -4895.2)},
 }
 
