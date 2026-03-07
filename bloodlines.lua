@@ -2770,98 +2770,117 @@ local AutoActivation = {
 local AutoActivationGroup = BossBarTab:AddRightGroupbox("Auto Activation Farm")
 local AutoActivationStatus = AutoActivationGroup:AddLabel("Status: Idle (0 cycles)")
 
--- Function to check if player has forcefield
+-- Function to check if player has forcefield (with safety)
 local function HasForcefield()
-    local char = LocalPlayer.Character
-    if not char then return false end
-    return char:FindFirstChildOfClass("ForceField") ~= nil
+    local success, result = pcall(function()
+        local char = LocalPlayer.Character
+        if not char or not char.Parent then return false end
+        return char:FindFirstChildOfClass("ForceField") ~= nil
+    end)
+    return success and result
 end
 
--- Function to wait for forcefield to disappear
+-- Function to wait for forcefield to disappear (slower, safer)
 local function WaitForNoForcefield()
-    local char = LocalPlayer.Character
-    if not char then return false end
+    if not AutoActivation.Enabled then return false end
     
-    -- Wait up to 30 seconds for forcefield to disappear
+    -- Wait up to 20 seconds for forcefield to disappear
     local waited = 0
-    while HasForcefield() and waited < 30 do
-        task.wait(0.1)
-        waited = waited + 0.1
-        char = LocalPlayer.Character
-        if not char then return false end
+    while HasForcefield() and waited < 20 and AutoActivation.Enabled do
+        task.wait(0.5) -- Slower check to reduce load
+        waited = waited + 0.5
     end
     
     return not HasForcefield()
 end
 
--- Main activation farm loop
+-- Main activation farm loop (with safety checks)
 local function StartAutoActivation()
     if AutoActivation.Thread then
-        task.cancel(AutoActivation.Thread)
+        pcall(task.cancel, AutoActivation.Thread)
     end
     
     AutoActivation.Thread = task.spawn(function()
         while AutoActivation.Enabled do
-            -- Wait for character and forcefield to clear
-            local char = LocalPlayer.Character
-            if char then
-                -- Wait for forcefield to disappear from previous respawn
-                AutoActivationStatus:SetText("Waiting for forcefield...")
-                if not WaitForNoForcefield() then
-                    Library:Notify("Forcefield timeout - retrying", 2)
-                    task.wait(1)
-                    continue
+            pcall(function()
+                -- Wait for character to exist
+                local char = LocalPlayer.Character
+                local attempts = 0
+                while (not char or not char.Parent) and AutoActivation.Enabled and attempts < 20 do
+                    task.wait(0.5)
+                    char = LocalPlayer.Character
+                    attempts = attempts + 1
                 end
                 
+                if not char or not char.Parent or not AutoActivation.Enabled then
+                    task.wait(1)
+                    return
+                end
+                
+                -- Wait for forcefield to disappear
+                AutoActivationStatus:SetText("Waiting for forcefield...")
+                if not WaitForNoForcefield() then
+                    task.wait(2)
+                    return
+                end
+                
+                task.wait(1) -- Extra safety delay
+                
                 -- Teleport to activation location
+                char = LocalPlayer.Character
+                if not char or not char.Parent or not AutoActivation.Enabled then return end
+                
                 AutoActivationStatus:SetText("Teleporting...")
                 local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
                 if root then
                     root.CFrame = CFrame.new(AutoActivation.TeleportPos)
-                    task.wait(0.5) -- Wait for teleport to register
+                    task.wait(1) -- Wait for teleport to fully register
                     
-                    -- Fire events sequentially
+                    -- Fire events sequentially (with protection)
                     AutoActivationStatus:SetText("Selecting item...")
-                    local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
-                    if DataEvent then
-                        DataEvent = DataEvent:FindFirstChild("DataEvent")
-                        if DataEvent then
-                            pcall(function()
+                    pcall(function()
+                        local Events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                        if Events then
+                            local DataEvent = Events:FindFirstChild("DataEvent")
+                            if DataEvent then
                                 DataEvent:FireServer("Item", "Selected", "Sharingan [Stage 1]")
-                            end)
-                            task.wait(0.3)
+                            end
                         end
-                    end
+                    end)
+                    task.wait(0.5)
                     
                     AutoActivationStatus:SetText("Awakening...")
-                    local DataFunction = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
-                    if DataFunction then
-                        DataFunction = DataFunction:FindFirstChild("DataFunction")
-                        if DataFunction then
-                            pcall(function()
+                    pcall(function()
+                        local Events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                        if Events then
+                            local DataFunction = Events:FindFirstChild("DataFunction")
+                            if DataFunction then
                                 DataFunction:InvokeServer("Awaken", "Sharingan [Stage 1]")
-                            end)
-                            task.wait(0.3)
+                            end
                         end
-                    end
+                    end)
+                    task.wait(0.5)
                     
-                    -- Reset player
+                    -- Reset player (with protection)
                     AutoActivationStatus:SetText("Resetting...")
-                    if char and char:FindFirstChild("Humanoid") then
-                        char.Humanoid.Health = 0
+                    char = LocalPlayer.Character
+                    if char and char.Parent then
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid.Health = 0
+                        end
                     end
                     
                     AutoActivation.Iterations = AutoActivation.Iterations + 1
                     AutoActivationStatus:SetText(string.format("Status: Running (%d cycles)", AutoActivation.Iterations))
                     
-                    -- Wait for respawn
-                    task.wait(2)
+                    -- Wait for respawn (longer delay)
+                    task.wait(3)
                 end
-            else
-                -- No character, wait for respawn
-                AutoActivationStatus:SetText("Waiting for respawn...")
-                task.wait(1)
-            end
+            end)
+            
+            -- Cooldown between cycles to prevent spam
+            task.wait(1)
         end
         
         AutoActivationStatus:SetText(string.format("Status: Stopped (%d cycles)", AutoActivation.Iterations))
@@ -2871,7 +2890,7 @@ end
 local function StopAutoActivation()
     AutoActivation.Enabled = false
     if AutoActivation.Thread then
-        task.cancel(AutoActivation.Thread)
+        pcall(task.cancel, AutoActivation.Thread)
         AutoActivation.Thread = nil
     end
 end
