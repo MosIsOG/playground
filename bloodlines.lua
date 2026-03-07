@@ -2559,6 +2559,13 @@ local function DodgeBossAttack()
     BossFarm.Dodging = true
     
     task.spawn(function()
+        -- Temporarily disable heartbeat positioning during dodge
+        local tempConn = BossFarm.AnchorConn
+        if tempConn then
+            tempConn:Disconnect()
+            BossFarm.AnchorConn = nil
+        end
+        
         local char = LocalPlayer.Character
         local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
         local bossRoot = BossFarm.Target and BossFarm.Target.Parent and 
@@ -2566,6 +2573,7 @@ local function DodgeBossAttack()
                           BossFarm.Target.Parent:FindFirstChild("Head"))
         
         if playerRoot and bossRoot then
+            playerRoot.Anchored = true
             -- Teleport 200 studs above boss
             local dodgePos = bossRoot.Position + Vector3.new(0, 200, 0)
             playerRoot.CFrame = CFrame.new(dodgePos)
@@ -2573,10 +2581,40 @@ local function DodgeBossAttack()
             -- Wait 1 second
             task.wait(1)
             
-            -- Return to normal farm height
-            if BossFarm.Enabled and bossRoot and playerRoot then
-                local returnPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-                playerRoot.CFrame = CFrame.new(returnPos)
+            -- Unanchor and restore heartbeat positioning
+            if playerRoot then
+                playerRoot.Anchored = false
+            end
+            
+            -- Restore heartbeat connection if still farming
+            if BossFarm.Enabled and not BossFarm.AnchorConn then
+                BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
+                    if not BossFarm.Enabled or BossFarm.Dodging then return end
+                    local hum = BossFarm.Target
+                    if not hum or not hum.Parent or hum.Health <= 0 then
+                        Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
+                        BossFarm.Enabled = false
+                        if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+                        if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+                        return
+                    end
+
+                    local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                                  or hum.Parent:FindFirstChild("Head")
+                                  or hum.Parent:FindFirstChild("Torso")
+                                  or hum.Parent:FindFirstChild("UpperTorso")
+                                  or hum.Parent:FindFirstChildWhichIsA("BasePart")
+                    
+                    if not bossRoot then return end
+
+                    local char = LocalPlayer.Character
+                    if not char then return end
+                    local root = char:FindFirstChild("HumanoidRootPart")
+                    if not root then return end
+
+                    local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+                    root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+                end)
             end
         end
         
@@ -2618,65 +2656,69 @@ end
 
 -- Start the farm loop (anchor + click)
 local function StartBossFarm()
+    -- Stop any previous
+    if BossFarm.AnchorConn then
+        BossFarm.AnchorConn:Disconnect()
+        BossFarm.AnchorConn = nil
+    end
+    if BossFarm.Thread then
+        pcall(task.cancel, BossFarm.Thread)
+        BossFarm.Thread = nil
+    end
+
     if not BossFarm.Target or not BossFarm.Target.Parent then
         Library:Notify("No valid boss target!", 3)
+        BossFarm.Enabled = false
         return
     end
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
-
-    -- Anchor player
-    local char = LocalPlayer.Character
-    local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
-    if playerRoot then
-        playerRoot.Anchored = true
-    end
     
     -- Monitor boss animations for dodge
     MonitorBossAnimations(BossFarm.Target.Parent)
 
-    if BossFarm.Thread then
-        task.cancel(BossFarm.Thread)
-    end
-    
-    BossFarm.Thread = task.spawn(function()
-        while BossFarm.Enabled and BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 do
-            -- Get boss root part
-            local bossRoot = BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") 
-                          or BossFarm.Target.Parent:FindFirstChild("Head")
-                          or BossFarm.Target.Parent:FindFirstChild("Torso")
-                          or BossFarm.Target.Parent:FindFirstChild("UpperTorso")
-                          or BossFarm.Target.Parent:FindFirstChildWhichIsA("BasePart")
-            
-            -- Get player root part
-            local char = LocalPlayer.Character
-            local playerRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
-            
-            if bossRoot and playerRoot then
-                -- Teleport above boss
-                local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-                playerRoot.CFrame = CFrame.new(targetPos)
-                
-                -- Attack
-                BossFarmAttack()
-            else
-                -- Lost target or player character
-                break
-            end
-            
-            task.wait(BossFarm.AttackDelay)
-        end
-        
-        -- Unanchor player when loop ends
-        local char = LocalPlayer.Character
-        local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
-        if playerRoot then
-            playerRoot.Anchored = false
-        end
-        
-        if BossFarm.Enabled then
-            Library:Notify("Boss farm ended (target lost or dead)", 2)
+    -- Anchor: every frame, teleport on top of boss (unless dodging)
+    BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
+        if not BossFarm.Enabled or BossFarm.Dodging then return end
+        local hum = BossFarm.Target
+        if not hum or not hum.Parent or hum.Health <= 0 then
+            -- Boss died or despawned
+            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
             BossFarm.Enabled = false
+            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+            return
+        end
+
+        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                      or hum.Parent:FindFirstChild("Head")
+                      or hum.Parent:FindFirstChild("Torso")
+                      or hum.Parent:FindFirstChild("UpperTorso")
+                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
+        
+        if not bossRoot then 
+            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
+            return 
+        end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+
+        -- Position above the boss, facing down at it
+        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+    end)
+
+    -- Attack spam loop (fires remote)
+    BossFarm.Thread = task.spawn(function()
+        while BossFarm.Enabled do
+            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
+                BossFarmDash()
+                BossFarmAttack()
+            end
+            task.wait(BossFarm.AttackDelay)
         end
     end)
 end
@@ -2684,13 +2726,6 @@ end
 local function StopBossFarm()
     BossFarm.Enabled = false
     BossFarm.Dodging = false
-    
-    -- Unanchor player
-    local char = LocalPlayer.Character
-    local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
-    if playerRoot then
-        playerRoot.Anchored = false
-    end
     
     -- Disconnect boss animation monitoring
     if BossFarm.BossAnimConnection then
