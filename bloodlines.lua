@@ -3881,6 +3881,7 @@ local TeleportLocations = {
      { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
      { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
+     { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},   
 }
 
 -- Function to teleport
@@ -4754,3 +4755,4 @@ SaveManager:LoadAutoloadConfig()
 print("=== Universal Hub Loaded ===")
 print("Press RightControl to toggle menu")
 print("Healthbar ESP is active (name + distance + health)")
+
