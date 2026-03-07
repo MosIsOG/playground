@@ -3882,11 +3882,6 @@ MissionMarkerGroup:AddButton({
         end
     end,
     Tooltip = "Auto-scan and teleport to closest mission marker"
-}):AddKeyPicker("MissionMarkerKey", {
-    Default = "M",
-    SyncToggleState = false,
-    Mode = "Hold",
-    Text = "Quick Mission TP",
 })
 
 MissionMarkerGroup:AddButton({
@@ -3914,7 +3909,7 @@ MissionMarkerGroup:AddInput("MissionMarkerIndex", {
     end
 })
 
-MissionMarkerGroup:AddLabel("Press M to instantly TP to nearest mission.")
+MissionMarkerGroup:AddLabel("Auto-scans and TPs to nearest mission.")
 MissionMarkerGroup:AddLabel("Only spawners with MissionMarker child.")
 
 -- Right group: Hardcoded teleport list
@@ -4250,6 +4245,7 @@ local trinketNames = {
     "Ring Of Resistance",
     "Ring Of Nourishment",
     "Ring Of Favor",
+    "Ring Of Remedy",
     "Aqua Gem",
     "Flame Gem",
     "Spark Gem",
