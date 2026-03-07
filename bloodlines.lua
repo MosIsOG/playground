@@ -2724,16 +2724,7 @@ local AutoEye = {
     Enabled = false,
     Thread = nil,
     TargetPos = Vector3.new(-2883.2, 652.6, -5448.9),  -- teleport coordinates
-    DetectedItem = nil,  -- Stores the detected eye item
-    PossibleItems = {
-        "Byakugan [Stage 4]",
-        "Byakugan [Stage 3]",
-        "Byakugan [Stage 2]",
-        "Byakugan [Stage 1]",
-        "Sharingan [Stage 3]",
-        "Sharingan [Stage 2]",
-        "Sharingan [Stage 1]",
-    }
+    SelectedItem = "Sharingan [Stage 1]",  -- Default selection
 }
 
 -- Remote references
@@ -2778,65 +2769,30 @@ local function autoEyeLoop()
             root.CFrame = CFrame.new(AutoEye.TargetPos)
             task.wait(0.2)
 
-            -- 2. If no item detected yet, try each one until one works
-            if not AutoEye.DetectedItem then
-                for _, item in ipairs(AutoEye.PossibleItems) do
-                    -- Try Item/Selected
-                    if DataEvent then
-                        pcall(function()
-                            DataEvent:FireServer("Item", "Selected", item)
-                        end)
-                    end
-                    
-                    task.wait(0.3)
-                    
-                    -- Try Awaken and check if it works
-                    if DataFunction then
-                        local success, result = pcall(function()
-                            return DataFunction:InvokeServer("Awaken", item)
-                        end)
-                        if success then
-                            -- This item worked! Store it for future iterations
-                            AutoEye.DetectedItem = item
-                            Library:Notify("Detected eye item: " .. item, 3)
-                            task.wait(0.5)
-                            break -- Exit the loop, we found the right item
-                        end
-                    end
-                    
-                    task.wait(0.2)
-                end
-            else
-                -- Use the previously detected item
-                -- 3. Fire Item/Selected remote
-                if DataEvent then
-                    pcall(function()
-                        DataEvent:FireServer("Item", "Selected", AutoEye.DetectedItem)
-                    end)
-                end
-                
-                task.wait(0.3)
+            -- 2. Fire Item/Selected remote
+            if DataEvent then
+                pcall(function()
+                    DataEvent:FireServer("Item", "Selected", AutoEye.SelectedItem)
+                end)
+            end
+            
+            task.wait(0.3)
 
-                -- 4. Fire Awaken remote and wait for it to complete
-                if DataFunction then
-                    local success, result = pcall(function()
-                        return DataFunction:InvokeServer("Awaken", AutoEye.DetectedItem)
-                    end)
-                    if success then
-                        task.wait(0.5)
-                    end
+            -- 3. Fire Awaken remote and wait for it to complete
+            if DataFunction then
+                local success, result = pcall(function()
+                    return DataFunction:InvokeServer("Awaken", AutoEye.SelectedItem)
+                end)
+                if success then
+                    task.wait(0.5)
                 end
             end
 
-            -- 5. Reset character after successful awaken
-            if AutoEye.DetectedItem and char and char:FindFirstChild("Humanoid") then
+            -- 4. Reset character
+            if char and char:FindFirstChild("Humanoid") then
                 char.Humanoid.Health = 0
                 task.wait(0.1)
                 char:BreakJoints()
-            elseif not AutoEye.DetectedItem then
-                -- If no item was detected, wait and retry
-                Library:Notify("No valid eye item found. Retrying...", 3)
-                task.wait(2)
             end
         else
             -- If root disappeared, just wait a bit and let the loop restart
@@ -2861,12 +2817,27 @@ local function stopAutoEye()
         task.cancel(AutoEye.Thread)
         AutoEye.Thread = nil
     end
-    -- Reset detected item so it re-detects on next enable
-    AutoEye.DetectedItem = nil
 end
 
 -- UI in AutoFarm tab
 local AutoEyeGroup = AutoFarmTab:AddRightGroupbox("AutoEye")
+
+AutoEyeGroup:AddDropdown("EyeItemSelect", {
+    Text = "Select Eye Item",
+    Default = 1,
+    Values = {
+        "Sharingan [Stage 1]",
+        "Sharingan [Stage 2]",
+        "Sharingan [Stage 3]",
+        "Byakugan [Stage 1]",
+        "Byakugan [Stage 2]",
+        "Byakugan [Stage 3]",
+        "Byakugan [Stage 4]"
+    },
+    Callback = function(value)
+        AutoEye.SelectedItem = value
+    end
+})
 
 AutoEyeGroup:AddToggle("AutoEyeToggle", {
     Text = "Enable AutoEye Farm",
@@ -2882,11 +2853,9 @@ AutoEyeGroup:AddToggle("AutoEyeToggle", {
     end
 })
 
-AutoEyeGroup:AddLabel("Auto-detects your eye item on first run,")
-AutoEyeGroup:AddLabel("supports Byakugan/Sharingan (all stages).")
+AutoEyeGroup:AddLabel("Select your eye item from dropdown above.")
 AutoEyeGroup:AddLabel("If forcefield: spams teleport until gone,")
 AutoEyeGroup:AddLabel("then teleports, fires events, and resets.")
-AutoEyeGroup:AddLabel("Toggle off/on to re-detect item.")
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
     ActiveUsers = {},
