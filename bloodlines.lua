@@ -3788,7 +3788,7 @@ local function ScanMissionMarkers()
         return
     end
     
-    -- Scan all location folders (Snow, etc.)
+    -- Scan all location folders (Snow, etc.) - NO DISTANCE LIMIT
     for _, locationFolder in ipairs(missionLocations:GetChildren()) do
         local spawners = locationFolder:FindFirstChild("Spawners")
         if spawners then
@@ -3799,21 +3799,49 @@ local function ScanMissionMarkers()
                 if missionMarker then
                     local pos = nil
                     
-                    -- Get position from the MissionMarker object
+                    -- Try multiple methods to get position (no distance limit, find ALL markers)
                     pcall(function()
-                        if missionMarker:IsA("Model") then
-                            pos = missionMarker:GetPivot().Position
-                        elseif missionMarker:IsA("BasePart") then
+                        if missionMarker:IsA("BasePart") then
                             pos = missionMarker.Position
-                        elseif missionMarker:IsA("Folder") or missionMarker:IsA("Configuration") then
-                            -- Check for a part inside
+                        elseif missionMarker:IsA("Model") then
+                            pos = missionMarker:GetPivot().Position
+                        elseif missionMarker:IsA("Attachment") then
+                            pos = missionMarker.WorldPosition
+                        end
+                    end)
+                    
+                    -- Fallback 1: Try any BasePart child
+                    if not pos then
+                        pcall(function()
                             local part = missionMarker:FindFirstChildWhichIsA("BasePart", true)
                             if part then
                                 pos = part.Position
                             end
-                        end
-                    end)
+                        end)
+                    end
                     
+                    -- Fallback 2: Try the spawner's position
+                    if not pos then
+                        pcall(function()
+                            if spawner:IsA("BasePart") then
+                                pos = spawner.Position
+                            elseif spawner:IsA("Model") then
+                                pos = spawner:GetPivot().Position
+                            end
+                        end)
+                    end
+                    
+                    -- Fallback 3: Try any part in the spawner
+                    if not pos then
+                        pcall(function()
+                            local part = spawner:FindFirstChildWhichIsA("BasePart", true)
+                            if part then
+                                pos = part.Position
+                            end
+                        end)
+                    end
+                    
+                    -- Add marker if ANY method found a position
                     if pos then
                         table.insert(MissionMarkers.FoundMarkers, {
                             name = string.format("%s #%d (%s)", locationFolder.Name, i, spawner.Name),
