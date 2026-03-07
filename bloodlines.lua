@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.0.1",
+    Title = "Universal Hub v1.0.1b",
     Center = true,
     AutoShow = true
 })
@@ -2458,6 +2458,8 @@ local BossFarm = {
     HakuAnimConnection = nil, -- connection to monitor Haku Boss animations
     HakuInMirror = false,   -- tracks if Haku is currently in a mirror
     HakuMirrorWaitTime = 0, -- timestamp when Haku entered mirror
+    HakuSafeSpot = false,   -- tracks if player is in safe spot (teleported away)
+    HakuSafeSpotEndTime = 0, -- when safe spot timer expires
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2615,20 +2617,16 @@ local function MonitorHakuBossAnimations(bossModel)
         local animId = track.Animation.AnimationId
         local assetId = animId:match("rbxassetid://(%d+)") or animId
         
-        -- Haku Boss special animation
+        -- Haku Boss special animation - teleport to safe spot
         if assetId == "83279463673214" then
-            -- Increase height by 100 studs for 3 seconds
-            BossFarm.HakuHeightBoost = 100
-            Library:Notify("Haku Attack! Height +100 (3s)", 1)
-            
-            -- Reset after 3 seconds
-            task.spawn(function()
-                task.wait(3)
-                -- Only reset if not in mirror (mirror takes priority)
-                if not BossFarm.HakuInMirror then
-                    BossFarm.HakuHeightBoost = 0
-                end
-            end)
+            -- Teleport to safe position
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = CFrame.new(-2969.2, 832.9, -9610.4)
+                BossFarm.HakuSafeSpot = true
+                BossFarm.HakuSafeSpotEndTime = tick() + 3
+                Library:Notify("Haku Attack! Teleported to safe spot (3s)", 1)
+            end
         end
     end)
 end
@@ -2746,38 +2744,38 @@ local function StartBossFarm()
             if BossFarm.TargetName == "Haku Boss" then
                 local inMirror = CheckHakuMirrorProximity(bossRoot.Position)
             
-            if inMirror then
-                -- Boss is in a mirror
-                if not BossFarm.HakuInMirror then
-                    -- Just entered mirror
-                    BossFarm.HakuInMirror = true
-                    BossFarm.HakuMirrorWaitTime = tick()
-                    BossFarm.HakuHeightBoost = 300
-                    Library:Notify("Haku in Mirror! Height +300", 2)
+                if inMirror then
+                    -- Boss is in a mirror - teleport to safe spot
+                    if not BossFarm.HakuInMirror then
+                        -- Just entered mirror
+                        root.CFrame = CFrame.new(-2969.2, 832.9, -9610.4)
+                        BossFarm.HakuInMirror = true
+                        BossFarm.HakuSafeSpot = true
+                        BossFarm.HakuSafeSpotEndTime = tick() + 5
+                        Library:Notify("Haku in Mirror! Teleported to safe spot (5s)", 2)
+                    end
+                else
+                    -- Boss is not in a mirror
+                    if BossFarm.HakuInMirror then
+                        -- Just left mirror
+                        BossFarm.HakuInMirror = false
+                    end
                 end
                 
-                -- Check if 5 seconds have passed
-                if tick() - BossFarm.HakuMirrorWaitTime >= 5 then
-                    -- Return to normal
-                    BossFarm.HakuInMirror = false
-                    BossFarm.HakuHeightBoost = 0
-                end
-            else
-                -- Boss is not in a mirror
-                if BossFarm.HakuInMirror then
-                    -- Just left mirror
-                    BossFarm.HakuInMirror = false
-                    BossFarm.HakuHeightBoost = 0
+                -- Check if safe spot timer expired
+                if BossFarm.HakuSafeSpot and tick() >= BossFarm.HakuSafeSpotEndTime then
+                    BossFarm.HakuSafeSpot = false
                 end
             end
-        end
 
-        -- Position above the boss, facing down at it
-        -- For Hyuga Boss, add extra height boost during special animations
-        -- For Haku Boss, add extra height boost during mirror or special animations
-        local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost + BossFarm.HakuHeightBoost
-        local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
-        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+            -- Only position if NOT in safe spot
+            if not BossFarm.HakuSafeSpot then
+                -- Position above the boss, facing down at it
+                -- For Hyuga Boss, add extra height boost during special animations
+                local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
+                local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
+                root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+            end
         end)
         
         if not success then
@@ -2803,6 +2801,8 @@ local function StopBossFarm()
     BossFarm.HakuHeightBoost = 0
     BossFarm.HakuInMirror = false
     BossFarm.HakuMirrorWaitTime = 0
+    BossFarm.HakuSafeSpot = false
+    BossFarm.HakuSafeSpotEndTime = 0
     
     -- Disconnect Hyuga animation monitoring
     if BossFarm.HyugaAnimConnection then
