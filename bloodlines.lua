@@ -2452,7 +2452,7 @@ local BossFarm = {
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
 }
 
-local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
+local BossFarmGroup = BossBarTab:AddLeftGroupbox("Boss Farm")
 
 -- Scan for nearby bosses and return a list (OPTIMIZED)
 local function ScanBossFarmTargets()
@@ -2524,19 +2524,18 @@ local function ScanBossFarmTargets()
 end
 
 -- Fire the melee hit remote
+local BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
+    game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
 local function BossFarmAttack()
-    local dataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
-                      game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-    if not dataEvent then return end
+    if not BossFarmDataEvent then return end
     pcall(function()
-        dataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
+        BossFarmDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
     end)
 end
 
 local function BossFarmDash()
-    local dataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
-                      game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-    if not dataEvent then return end
+    if not BossFarmDataEvent then return end
     local hum = BossFarm.Target
     if not hum or not hum.Parent then return end
     local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
@@ -2546,54 +2545,72 @@ local function BossFarmDash()
                   or hum.Parent:FindFirstChildWhichIsA("BasePart")
     if not bossRoot then return end
     pcall(function()
-        dataEvent:FireServer("Dash", "Sub", bossRoot.Position)
+        BossFarmDataEvent:FireServer("Dash", "Sub", bossRoot.Position)
     end)
 end
 
 -- Start the farm loop (anchor + click)
 local function StartBossFarm()
+    -- Stop any previous
+    if BossFarm.AnchorConn then
+        BossFarm.AnchorConn:Disconnect()
+        BossFarm.AnchorConn = nil
+    end
+    if BossFarm.Thread then
+        pcall(task.cancel, BossFarm.Thread)
+        BossFarm.Thread = nil
+    end
+
     if not BossFarm.Target or not BossFarm.Target.Parent then
         Library:Notify("No valid boss target!", 3)
+        BossFarm.Enabled = false
         return
     end
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
 
-    if BossFarm.Thread then
-        task.cancel(BossFarm.Thread)
-    end
-    
-    BossFarm.Thread = task.spawn(function()
-        while BossFarm.Enabled and BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 do
-            -- Get boss root part
-            local bossRoot = BossFarm.Target.Parent:FindFirstChild("HumanoidRootPart") 
-                          or BossFarm.Target.Parent:FindFirstChild("Head")
-                          or BossFarm.Target.Parent:FindFirstChild("Torso")
-                          or BossFarm.Target.Parent:FindFirstChild("UpperTorso")
-                          or BossFarm.Target.Parent:FindFirstChildWhichIsA("BasePart")
-            
-            -- Get player root part
-            local char = LocalPlayer.Character
-            local playerRoot = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
-            
-            if bossRoot and playerRoot then
-                -- Teleport above boss
-                local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
-                playerRoot.CFrame = CFrame.new(targetPos)
-                
-                -- Attack
-                BossFarmAttack()
-            else
-                -- Lost target or player character
-                break
-            end
-            
-            task.wait(BossFarm.AttackDelay)
-        end
-        
-        if BossFarm.Enabled then
-            Library:Notify("Boss farm ended (target lost or dead)", 2)
+    -- Anchor: every frame, teleport on top of boss
+    BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
+        if not BossFarm.Enabled then return end
+        local hum = BossFarm.Target
+        if not hum or not hum.Parent or hum.Health <= 0 then
+            -- Boss died or despawned
+            Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
             BossFarm.Enabled = false
+            if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+            if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+            return
+        end
+
+        local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
+                      or hum.Parent:FindFirstChild("Head")
+                      or hum.Parent:FindFirstChild("Torso")
+                      or hum.Parent:FindFirstChild("UpperTorso")
+                      or hum.Parent:FindFirstChildWhichIsA("BasePart")
+        
+        if not bossRoot then 
+            print("[BOSS FARM] No root part found for", BossFarm.TargetName)
+            return 
+        end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+
+        -- Position above the boss, facing down at it
+        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+        root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+    end)
+
+    -- Attack spam loop (fires remote)
+    BossFarm.Thread = task.spawn(function()
+        while BossFarm.Enabled do
+            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
+                BossFarmDash()
+                BossFarmAttack()
+            end
+            task.wait(BossFarm.AttackDelay)
         end
     end)
 end
