@@ -2643,10 +2643,19 @@ local function MonitorBossAnimations(bossModel)
         local animId = track.Animation.AnimationId
         local assetId = animId:match("rbxassetid://(%d+)") or animId
         
-        -- Check if this animation is in BlockRules (need to declare BlockRules first)
-        -- We'll check against the list defined later in the script
-        for _, rule in ipairs(BlockRules or {}) do
-            if assetId == rule.animID then
+        -- Dangerous boss animations that trigger dodge (same as BlockRules)
+        local dangerousAnims = {
+            "6360969229",
+            "11330795390",
+            "7275651023",
+            "86213040968703",
+            "116907126244057",
+            "120758909308511"
+        }
+        
+        for _, dangerAnimID in ipairs(dangerousAnims) do
+            if assetId == dangerAnimID then
+                Library:Notify("Boss Attack Detected! Dodging...", 1)
                 DodgeBossAttack()
                 return
             end
