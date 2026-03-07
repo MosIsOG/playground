@@ -2110,6 +2110,7 @@ local PredefinedBosses = {
     { name = "The Barbarian", maxDistance = 500, allowDuplicates = true },
     { name = "Barbarit The Rose", maxDistance = 500 },
     { name = "Lava Snake", maxDistance = 500 },
+    { name = "Lavarossa", maxDistance = 500 },
 }
 
 -- Tracked bosses: key = boss instance (Model or Humanoid), value = { bar, humanoid, maxDist, name }
@@ -2559,6 +2560,13 @@ local function StartBossFarm()
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
 
+    -- Anchor player
+    local char = LocalPlayer.Character
+    local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
+    if playerRoot then
+        playerRoot.Anchored = true
+    end
+
     if BossFarm.Thread then
         task.cancel(BossFarm.Thread)
     end
@@ -2591,6 +2599,13 @@ local function StartBossFarm()
             task.wait(BossFarm.AttackDelay)
         end
         
+        -- Unanchor player when loop ends
+        local char = LocalPlayer.Character
+        local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
+        if playerRoot then
+            playerRoot.Anchored = false
+        end
+        
         if BossFarm.Enabled then
             Library:Notify("Boss farm ended (target lost or dead)", 2)
             BossFarm.Enabled = false
@@ -2600,6 +2615,14 @@ end
 
 local function StopBossFarm()
     BossFarm.Enabled = false
+    
+    -- Unanchor player
+    local char = LocalPlayer.Character
+    local playerRoot = char and char:FindFirstChild("HumanoidRootPart")
+    if playerRoot then
+        playerRoot.Anchored = false
+    end
+    
     if BossFarm.AnchorConn then
         BossFarm.AnchorConn:Disconnect()
         BossFarm.AnchorConn = nil
