@@ -4352,6 +4352,7 @@ local trinketNames = {
     "Poison Gem",
     "Extraction Spoon",
     "Scalpel",
+    "Chakra Heart",
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
