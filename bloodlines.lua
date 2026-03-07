@@ -2881,6 +2881,249 @@ AutoEyeGroup:AddLabel("Select your eye item from dropdown above.")
 AutoEyeGroup:AddLabel("If forcefield: spams teleport until gone,")
 AutoEyeGroup:AddLabel("then teleports, fires events, and resets.")
 
+-- ==================== AUTO GRIP FARM ====================
+local AutoGripFarm = {
+    AltEnabled = false,
+    MainEnabled = false,
+    AltThread = nil,
+    MainThread = nil,
+    TargetPos = Vector3.new(-4458.5, 660.7, -4895.2),
+    LocationCheckRadius = 50,  -- studs
+    PlayerDetectRadius = 20,   -- studs for Main mode
+    GripWaitTime = 4,          -- seconds to wait after gripping
+}
+
+-- Get DataEvent for grip/damage remotes
+local GripDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
+                      game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+-- Helper: check if character is out of forcefield
+local function isGripOutOfForcefield(character)
+    return character and not character:FindFirstChild("ForceField")
+end
+
+-- Helper: get distance from character to target position
+local function getDistanceToTargetPos(character, targetPos)
+    if not character then return nil end
+    local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    if not root then return nil end
+    return (root.Position - targetPos).Magnitude
+end
+
+-- Helper: check if humanoid is knocked (health <= 0 or specific state)
+local function isKnocked(humanoid)
+    if not humanoid then return false end
+    return humanoid.Health <= 0 or humanoid:GetState() == Enum.HumanoidStateType.Dead
+end
+
+-- ALT MODE: Teleport, check location, take damage to get knocked, wait to be gripped
+local function autoGripAltLoop()
+    while AutoGripFarm.AltEnabled do
+        local char = LocalPlayer.Character
+        if not char then
+            char = LocalPlayer.CharacterAdded:Wait()
+        end
+
+        local root = char:WaitForChild("HumanoidRootPart", 5) or char:WaitForChild("Head", 5)
+        if not root then
+            task.wait(0.3)
+            continue
+        end
+        
+        -- If forcefield exists, spam teleport until it's gone
+        if not isGripOutOfForcefield(char) then
+            while char and not isGripOutOfForcefield(char) and AutoGripFarm.AltEnabled do
+                if root and root.Parent then
+                    root.CFrame = CFrame.new(AutoGripFarm.TargetPos)
+                end
+                task.wait(0.05)
+            end
+        end
+        
+        -- Teleport to location
+        if root and root.Parent and isGripOutOfForcefield(char) then
+            root.CFrame = CFrame.new(AutoGripFarm.TargetPos)
+            task.wait(0.2)
+            
+            -- Check if within 50 studs of target location
+            local distance = getDistanceToTargetPos(char, AutoGripFarm.TargetPos)
+            if distance and distance <= AutoGripFarm.LocationCheckRadius then
+                -- Fire TakeDamage remote to get knocked
+                if GripDataEvent then
+                    pcall(function()
+                        GripDataEvent:FireServer("TakeDamage", 9999)
+                    end)
+                end
+                
+                -- Wait to be knocked and gripped
+                task.wait(2)
+                
+                -- Check if knocked
+                local humanoid = char:FindFirstChild("Humanoid")
+                if humanoid and isKnocked(humanoid) then
+                    -- Wait to be gripped (wait longer for grip to happen)
+                    task.wait(5)
+                    
+                    -- Reset to repeat
+                    if char and char:FindFirstChild("Humanoid") then
+                        char.Humanoid.Health = 0
+                        task.wait(0.1)
+                        char:BreakJoints()
+                    end
+                end
+            else
+                -- Not in range, retry teleport
+                task.wait(0.3)
+            end
+        else
+            task.wait(0.3)
+        end
+
+        task.wait(0.2)
+    end
+end
+
+-- MAIN MODE: Teleport to location, find nearby player, teleport to them, grip them
+local function autoGripMainLoop()
+    while AutoGripFarm.MainEnabled do
+        local char = LocalPlayer.Character
+        if not char then
+            char = LocalPlayer.CharacterAdded:Wait()
+        end
+
+        local root = char:WaitForChild("HumanoidRootPart", 5) or char:WaitForChild("Head", 5)
+        if not root then
+            task.wait(0.3)
+            continue
+        end
+        
+        -- Teleport to target location
+        if root and root.Parent then
+            root.CFrame = CFrame.new(AutoGripFarm.TargetPos)
+            task.wait(0.3)
+            
+            -- Find a player within 20 studs
+            local targetPlayer = nil
+            local shortestDist = AutoGripFarm.PlayerDetectRadius
+            
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    local targetChar = player.Character
+                    if targetChar then
+                        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+                        if targetRoot then
+                            local dist = (root.Position - targetRoot.Position).Magnitude
+                            if dist <= shortestDist then
+                                shortestDist = dist
+                                targetPlayer = player
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- If found a target, teleport to them and grip
+            if targetPlayer then
+                local targetChar = targetPlayer.Character
+                if targetChar then
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+                    if targetRoot then
+                        -- Teleport to target player
+                        root.CFrame = CFrame.new(targetRoot.Position)
+                        task.wait(0.1)
+                        
+                        -- Fire grip remote
+                        if GripDataEvent then
+                            pcall(function()
+                                GripDataEvent:FireServer("Grip")
+                            end)
+                        end
+                        
+                        -- Wait 4 seconds for grip to complete
+                        task.wait(AutoGripFarm.GripWaitTime)
+                    end
+                end
+            else
+                -- No player found, wait a bit
+                task.wait(1)
+            end
+        else
+            task.wait(0.3)
+        end
+
+        task.wait(0.2)
+    end
+end
+
+local function startGripAlt()
+    if AutoGripFarm.AltThread then
+        task.cancel(AutoGripFarm.AltThread)
+    end
+    AutoGripFarm.AltThread = task.spawn(autoGripAltLoop)
+end
+
+local function stopGripAlt()
+    AutoGripFarm.AltEnabled = false
+    if AutoGripFarm.AltThread then
+        task.cancel(AutoGripFarm.AltThread)
+        AutoGripFarm.AltThread = nil
+    end
+end
+
+local function startGripMain()
+    if AutoGripFarm.MainThread then
+        task.cancel(AutoGripFarm.MainThread)
+    end
+    AutoGripFarm.MainThread = task.spawn(autoGripMainLoop)
+end
+
+local function stopGripMain()
+    AutoGripFarm.MainEnabled = false
+    if AutoGripFarm.MainThread then
+        task.cancel(AutoGripFarm.MainThread)
+        AutoGripFarm.MainThread = nil
+    end
+end
+
+-- UI in AutoFarm tab (right side)
+local AutoGripGroup = AutoFarmTab:AddRightGroupbox("Auto Grip Farm")
+
+AutoGripGroup:AddToggle("GripAltToggle", {
+    Text = "Enable Alt Mode",
+    Default = false,
+    Callback = function(value)
+        if value then
+            AutoGripFarm.AltEnabled = true
+            startGripAlt()
+        else
+            AutoGripFarm.AltEnabled = false
+            stopGripAlt()
+        end
+    end
+})
+
+AutoGripGroup:AddToggle("GripMainToggle", {
+    Text = "Enable Main Mode",
+    Default = false,
+    Callback = function(value)
+        if value then
+            AutoGripFarm.MainEnabled = true
+            startGripMain()
+        else
+            AutoGripFarm.MainEnabled = false
+            stopGripMain()
+        end
+    end
+})
+
+AutoGripGroup:AddLabel("Alt: Teleport, check location (50 studs),")
+AutoGripGroup:AddLabel("take 9999 damage to get knocked & gripped.")
+AutoGripGroup:AddLabel("Forcefield check: spams teleport until gone.")
+AutoGripGroup:AddLabel("")
+AutoGripGroup:AddLabel("Main: Teleport to location, find player")
+AutoGripGroup:AddLabel("within 20 studs, teleport to them, grip.")
+AutoGripGroup:AddLabel("Location: (-4458.5, 660.7, -4895.2)")
+
 
 -- ==================== CHAKRA SENSE TRACKER ====================
 local ChakraTracker = {
