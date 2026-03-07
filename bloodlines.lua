@@ -2451,6 +2451,8 @@ local BossFarm = {
     Thread = nil,
     AnchorConn = nil,
     FoundBosses = {},       -- { humanoid = Humanoid, name = string }
+    HyugaHeightBoost = 0,   -- additional height for Hyuga Boss special animations
+    HyugaAnimConnection = nil, -- connection to monitor Hyuga Boss animations
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2550,6 +2552,55 @@ local function BossFarmDash()
     end)
 end
 
+-- Monitor Hyuga Boss for special animations that require height adjustment
+local function MonitorHyugaBossAnimations(bossModel)
+    if BossFarm.HyugaAnimConnection then
+        BossFarm.HyugaAnimConnection:Disconnect()
+        BossFarm.HyugaAnimConnection = nil
+    end
+    
+    if not bossModel then return end
+    
+    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    
+    BossFarm.HyugaAnimConnection = animator.AnimationPlayed:Connect(function(track)
+        if not BossFarm.Enabled then return end
+        
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        
+        -- Hyuga Boss special animations: 64 Palms and Rotation
+        local hyugaDangerousAnims = {
+            "8699113073", -- 64 palms
+            "8580099842"  -- Rotation
+        }
+        
+        for _, dangerAnimID in ipairs(hyugaDangerousAnims) do
+            if assetId == dangerAnimID then
+                -- Increase height by 20 studs
+                BossFarm.HyugaHeightBoost = 20
+                Library:Notify("Hyuga Attack! Height +20", 1)
+                
+                -- Monitor the track to reset height when animation stops
+                local resetThread
+                resetThread = task.spawn(function()
+                    while track and track.IsPlaying and BossFarm.Enabled do
+                        task.wait(0.1)
+                    end
+                    -- Animation ended, reset boost
+                    task.wait(0.5) -- Small grace period
+                    BossFarm.HyugaHeightBoost = 0
+                end)
+                
+                return
+            end
+        end
+    end)
+end
+
 -- Start the farm loop (anchor + click)
 local function StartBossFarm()
     -- Stop any previous
@@ -2569,6 +2620,11 @@ local function StartBossFarm()
     end
 
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
+    
+    -- If farming Hyuga Boss, monitor for special animations
+    if BossFarm.TargetName == "Hyuga Boss" then
+        MonitorHyugaBossAnimations(BossFarm.Target.Parent)
+    end
 
     -- Anchor: every frame, teleport on top of boss
     BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
@@ -2600,7 +2656,9 @@ local function StartBossFarm()
         if not root then return end
 
         -- Position above the boss, facing down at it
-        local targetPos = bossRoot.Position + Vector3.new(0, BossFarm.HeightOffset, 0)
+        -- For Hyuga Boss, add extra height boost during special animations
+        local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
+        local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
         root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
     end)
 
@@ -2618,6 +2676,14 @@ end
 
 local function StopBossFarm()
     BossFarm.Enabled = false
+    BossFarm.HyugaHeightBoost = 0
+    
+    -- Disconnect Hyuga animation monitoring
+    if BossFarm.HyugaAnimConnection then
+        BossFarm.HyugaAnimConnection:Disconnect()
+        BossFarm.HyugaAnimConnection = nil
+    end
+    
     if BossFarm.AnchorConn then
         BossFarm.AnchorConn:Disconnect()
         BossFarm.AnchorConn = nil
