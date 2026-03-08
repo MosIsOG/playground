@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.3b",
+    Title = "Universal Hub v1.1.4a",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3168,8 +3168,9 @@ local function StartBossFarm()
 
             -- Position based on safe spot status
             if BossFarm.HyugaInVoid then
-                -- Hyuga is in the void — wait at his arena safe spot
+                -- Hyuga is in the void — hold player at arena safe spot, do nothing else
                 root.CFrame = CFrame.new(HYUGA_VOID_SAFE_SPOT)
+                return  -- skip the rest of heartbeat (no moving/anchoring to boss)
             elseif BossFarm.HakuSafeSpot then
                 -- Anchor at safe spot position
                 root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
@@ -3190,6 +3191,11 @@ local function StartBossFarm()
     -- Attack spam loop (fires remote)
     BossFarm.Thread = task.spawn(function()
         while BossFarm.Enabled do
+            -- Pause all attacks while Hyuga is in the void
+            if BossFarm.HyugaInVoid then
+                task.wait(0.5)
+                continue
+            end
             if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
                 BossFarmDash()
                 BossFarmAttack()
@@ -4979,60 +4985,79 @@ CollectBossLoot = function(bossName)
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local root = char.HumanoidRootPart
-    local playerPos = root.Position
-    
-    Library:Notify("✓ Collecting loot from " .. bossName .. "...", 2)
-    
-    -- Enable trinket autopickup if not already enabled
+
+    Library:Notify("Waiting 7s for loot to spawn...", 2)
+
+    -- Enable trinket autopickup so DescendantAdded catches anything that spawns
     local wasEnabled = TrinketCollector.Enabled
     if not wasEnabled then
         TrinketCollector.Enabled = true
         StartTrinketCollector()
     end
-    
-    -- Wait 7 seconds for loot pile to appear
-    Library:Notify("⏳ Waiting 7 seconds for loot pile...", 2)
+
     task.wait(7)
-    
-    -- Scan workspace for nearby trinkets
+
+    -- Re-check character after wait
+    char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
+        if not wasEnabled then StopTrinketCollector() end
+        return
+    end
+    root = char.HumanoidRootPart
+    local playerPos = root.Position
+
+    -- Scan ALL descendants for trinkets within 300 studs
     local nearbyTrinkets = {}
-    local maxDistance = 200 -- Only collect trinkets within 200 studs
-    
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if obj:IsA("BasePart") and IsTrinket(obj) then
-            local distance = (playerPos - obj.Position).Magnitude
-            if distance <= maxDistance then
-                table.insert(nearbyTrinkets, {trinket = obj, distance = distance})
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if IsTrinket(obj) then
+            local pos = nil
+            if obj:IsA("BasePart") then
+                pos = obj.Position
+            elseif obj:IsA("Model") then
+                local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if part then pos = part.Position end
+            end
+            if pos and (playerPos - pos).Magnitude <= 300 then
+                table.insert(nearbyTrinkets, {obj = obj, pos = pos})
             end
         end
     end
-    
-    -- Sort by distance (closest first)
+
+    if #nearbyTrinkets == 0 then
+        Library:Notify("No trinkets found near spawn area", 2)
+        if not wasEnabled then StopTrinketCollector() end
+        return
+    end
+
+    -- Sort closest first
     table.sort(nearbyTrinkets, function(a, b)
-        return a.distance < b.distance
+        return (playerPos - a.pos).Magnitude < (playerPos - b.pos).Magnitude
     end)
-    
-    -- Teleport to each trinket and collect
+
+    Library:Notify("Collecting " .. #nearbyTrinkets .. " trinkets...", 2)
+
     local collected = 0
     for _, data in ipairs(nearbyTrinkets) do
-        local trinket = data.trinket
-        if trinket and trinket.Parent then
-            pcall(function()
-                root.CFrame = CFrame.new(trinket.Position)
-            end)
+        local obj = data.obj
+        if obj and obj.Parent then
+            -- Teleport on top of it
+            pcall(function() root.CFrame = CFrame.new(data.pos + Vector3.new(0, 2, 0)) end)
+            task.wait(0.3)
+            -- Fire pickup remote
+            CollectTrinket(obj)
             collected = collected + 1
-            task.wait(1) -- 1 second per trinket for reliable pickup
+            task.wait(0.8)
         end
     end
-    
-    -- Restore original autopickup state
+
+    -- Restore autopickup state
     if not wasEnabled then
         task.wait(0.5)
         StopTrinketCollector()
         TrinketCollector.Enabled = false
     end
-    
-    Library:Notify("✓ Loot collection complete! (" .. collected .. " trinkets found)", 2)
+
+    Library:Notify("Loot done! (" .. collected .. " collected)", 2)
 end
 
 TrinketGroup:AddToggle("TrinketCollectorToggle", {
