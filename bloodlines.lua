@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.4a",
+    Title = "Universal Hub v1.1.4b",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2696,6 +2696,7 @@ local BossFarm = {
     HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
     HakuSafeSpot = false,   -- whether to teleport to safe spot
     HakuSafeSpotEndTime = 0, -- when to end safe spot (tick())
+    AutoLootOnKill = false,  -- teleport to boss loot spot and collect trinkets when boss dies
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -3139,9 +3140,16 @@ local function StartBossFarm()
             if not hum or not hum.Parent or hum.Health <= 0 then
                 -- Boss died or despawned
                 Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
+                local deadBossName = BossFarm.TargetName
                 BossFarm.Enabled = false
                 if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
                 if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
+                -- Auto-loot: teleport to loot spot, wait 8s, collect trinkets
+                if BossFarm.AutoLootOnKill then
+                    task.spawn(function()
+                        pcall(function() CollectBossLoot(deadBossName) end)
+                    end)
+                end
                 return
             end
 
@@ -3294,6 +3302,16 @@ BossFarmGroup:AddSlider("BossFarmAttackDelay", {
 BossFarmGroup:AddLabel("Enter weapon name → Select boss → Toggle ON")
 BossFarmGroup:AddLabel("Auto-equips weapon before farming starts")
 BossFarmGroup:AddLabel("Auto-stops when boss dies")
+
+BossFarmGroup:AddToggle("BossAutoLootToggle", {
+    Text = "Auto Loot On Kill",
+    Default = false,
+    Callback = function(v)
+        BossFarm.AutoLootOnKill = v
+        Library:Notify("Auto Loot On Kill: " .. (v and "ON" or "OFF"), 2)
+    end
+})
+BossFarmGroup:AddLabel("Teleports to loot spot after boss dies, waits 8s, then collects trinkets.")
 
 -- ==================== AUTO EYE FARM (Sharingan/Byakugan) ====================
 local AutoEye = {
@@ -5097,5 +5115,13 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 
 -- Initialize
 SaveManager:LoadAutoloadConfig()
+
+-- Re-apply toggles that require active start functions (SaveManager only restores values, not side-effects)
+pcall(function()
+    if Toggles and Toggles.TrinketCollectorToggle and Toggles.TrinketCollectorToggle.Value then
+        TrinketCollector.Enabled = true
+        StartTrinketCollector()
+    end
+end)
 
 print("=== Universal Hub Loaded ===")
