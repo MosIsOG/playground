@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.2d",
+    Title = "Universal Hub v1.1.3",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2816,6 +2816,7 @@ local BossFarm = {
     Target = nil,           -- the Humanoid we're farming
     TargetName = "",        -- display name of the boss model
     SelectedBoss = "Wooden Golem", -- currently selected boss name
+    WeaponName = "Onyx Resanagi",  -- weapon to equip before farming
     HeightOffset = 50,      -- studs above the boss root
     AttackDelay = 0.12,     -- seconds between remote fire calls
     Thread = nil,
@@ -2909,6 +2910,16 @@ local function BossFarmAttack()
     pcall(function()
         BossFarmDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
     end)
+end
+
+local function BossFarmSelectWeapon()
+    if not BossFarmDataEvent then return end
+    if not BossFarm.WeaponName or BossFarm.WeaponName == "" then return end
+    
+    pcall(function()
+        BossFarmDataEvent:FireServer("Item", "Selected", BossFarm.WeaponName)
+    end)
+    Library:Notify("Equipped: " .. BossFarm.WeaponName, 2)
 end
 
 local function BossFarmDash()
@@ -3194,6 +3205,10 @@ local function StartBossFarm()
         MonitorHakuBossIceDragon()
     end
 
+    -- Equip weapon before starting
+    BossFarmSelectWeapon()
+    task.wait(0.5) -- Wait for weapon to equip
+
     Library:Notify("Farming: " .. BossFarm.TargetName, 3)
 
     -- Anchor: every frame, teleport on top of boss
@@ -3289,6 +3304,18 @@ local function StopBossFarm()
     end
 end
 
+BossFarmGroup:AddInput("BossFarmWeapon", {
+    Text = "Weapon Name",
+    Default = "Onyx Resanagi",
+    Placeholder = "Enter weapon name",
+    Numeric = false,
+    Finished = true,
+    Callback = function(value)
+        BossFarm.WeaponName = value
+        Library:Notify("Weapon set: " .. value, 2)
+    end
+})
+
 BossFarmGroup:AddDropdown("BossSelector", {
     Text = "Select Boss",
     Default = 1,
@@ -3328,8 +3355,8 @@ BossFarmGroup:AddSlider("BossFarmAttackDelay", {
     Callback = function(v) BossFarm.AttackDelay = v end
 })
 
-BossFarmGroup:AddLabel("Select boss → Toggle ON (or press G)")
-BossFarmGroup:AddLabel("Each boss has custom height & behaviors")
+BossFarmGroup:AddLabel("Enter weapon name → Select boss → Toggle ON")
+BossFarmGroup:AddLabel("Auto-equips weapon before farming starts")
 BossFarmGroup:AddLabel("Auto-stops when boss dies")
 
 -- ==================== AUTO EYE FARM (Sharingan/Byakugan) ====================
