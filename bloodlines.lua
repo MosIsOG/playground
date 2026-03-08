@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.4b",
+    Title = "Universal Hub v1.1.4c",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2907,9 +2907,18 @@ local function MonitorHakuBossIceDragon()
     end)
 end
 
--- Monitor Hyuga Boss proximity to Void Parts; if inside, anchor player at arena safe spot
+-- Monitor Hyuga Boss proximity to the Void zone (defined by two XZ corners)
+-- Zone corners: (-526.0, -925.1) to (-824.4, -623.1) in X/Z, with ±2 stud padding
 local HYUGA_VOID_SAFE_SPOT = Vector3.new(-700.8, -334.3, -780.8)
-local HYUGA_VOID_THRESHOLD = 40 -- studs — consider boss "in void" if this close
+local HYUGA_VOID_MIN_X = math.min(-526.0, -824.4) - 2  -- -826.4
+local HYUGA_VOID_MAX_X = math.max(-526.0, -824.4) + 2  -- -524.0
+local HYUGA_VOID_MIN_Z = math.min(-925.1, -623.1) - 2  -- -927.1
+local HYUGA_VOID_MAX_Z = math.max(-925.1, -623.1) + 2  -- -621.1
+
+local function IsInHyugaVoidZone(pos)
+    return pos.X >= HYUGA_VOID_MIN_X and pos.X <= HYUGA_VOID_MAX_X
+       and pos.Z >= HYUGA_VOID_MIN_Z and pos.Z <= HYUGA_VOID_MAX_Z
+end
 
 local function MonitorHyugaVoid(bossModel)
     if BossFarm.HyugaVoidConn then
@@ -2920,36 +2929,19 @@ local function MonitorHyugaVoid(bossModel)
 
     if not bossModel then return end
 
-    -- Cache Void parts once so we don't scan all descendants every tick
-    local voidParts = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Void" and obj.ClassName == "Part" then
-            table.insert(voidParts, obj)
-        end
-    end
-
-    if #voidParts == 0 then return end
-
     local bossRoot = bossModel:FindFirstChild("HumanoidRootPart")
     if not bossRoot then return end
 
     BossFarm.HyugaVoidConn = task.spawn(function()
         while BossFarm.Enabled do
-            local inVoid = false
-            local bossPos = bossRoot.Position
-            for _, part in ipairs(voidParts) do
-                if part and part.Parent and (part.Position - bossPos).Magnitude < HYUGA_VOID_THRESHOLD then
-                    inVoid = true
-                    break
-                end
-            end
+            local inVoid = IsInHyugaVoidZone(bossRoot.Position)
 
             if inVoid and not BossFarm.HyugaInVoid then
                 BossFarm.HyugaInVoid = true
-                Library:Notify("Hyuga entered void — waiting at arena", 2)
+                Library:Notify("Hyuga entered void zone — waiting at arena", 2)
             elseif not inVoid and BossFarm.HyugaInVoid then
                 BossFarm.HyugaInVoid = false
-                Library:Notify("Hyuga left void — resuming farm", 2)
+                Library:Notify("Hyuga left void zone — resuming farm", 2)
             end
 
             task.wait(0.5)
