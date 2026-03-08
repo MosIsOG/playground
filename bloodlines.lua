@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.3a",
+    Title = "Universal Hub v1.1.3b",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -1926,199 +1926,65 @@ RemoteAttackGroup:AddLabel("Spams melee attack remote (CheckMeleeHit).")
 RemoteAttackGroup:AddLabel("Toggle with K. No targeting required.")
 
 -- ==================== VOID & LAVA PROTECTION ====================
-local KillPartProtection = {
+local KillBrickProtection = {
     Enabled = false,
-    KillParts = {},
-    HealthConnection = nil,
-    CharacterAddedConnection = nil,
-    LastHealth = 100,
-    SafePosition = nil,
+    TouchConns = {},
 }
 
-local function FindKillParts()
-    local killParts = {}
-    
-    -- Search workspace for parts named "Void", "FakeVoid", "Lava", "FakeLava" (optimized)
-    pcall(function()
-        for _, obj in ipairs(workspace:GetChildren()) do
-            if obj:IsA("Model") or obj:IsA("Folder") then
-                for _, child in ipairs(obj:GetDescendants()) do
-                    if child:IsA("BasePart") then
-                        local name = child.Name
-                        if name == "Void" or name == "FakeVoid" or name == "Lava" or name == "FakeLava" then
-                            if not table.find(killParts, child) then
-                                table.insert(killParts, child)
-                            end
-                        end
-                    end
-                end
-            elseif obj:IsA("BasePart") then
-                local name = obj.Name
-                if name == "Void" or name == "FakeVoid" or name == "Lava" or name == "FakeLava" then
-                    if not table.find(killParts, obj) then
-                        table.insert(killParts, obj)
-                    end
-                end
-            end
+local function EnableVoidLavaProtection()
+    -- Disconnect any existing touch connections
+    for _, conn in ipairs(KillBrickProtection.TouchConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    KillBrickProtection.TouchConns = {}
+
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if (obj.Name == "Void" or obj.Name == "Lava") and obj.ClassName == "Part" then
+            pcall(function()
+                obj.CanTouch = false
+                count = count + 1
+            end)
         end
-    end)
-    
-    return killParts
+    end
+    Library:Notify("Void/Lava Protection ON (" .. count .. " parts disabled)", 2)
 end
 
-local function SetupHealthProtection()
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    
-    KillPartProtection.LastHealth = humanoid.Health
-    
-    if KillPartProtection.HealthConnection then
-        KillPartProtection.HealthConnection:Disconnect()
-    end
-    
-    KillPartProtection.HealthConnection = humanoid.HealthChanged:Connect(function(newHealth)
-        if not KillPartProtection.Enabled then return end
-        
-        local healthDrop = KillPartProtection.LastHealth - newHealth
-        if healthDrop > 20 or newHealth <= 0 then
-            humanoid.Health = KillPartProtection.LastHealth
-            -- No teleporting - just restore health
-            Library:Notify("Kill part damage prevented!", 1)
-        else
-            KillPartProtection.LastHealth = newHealth
-        end
-    end)
-end
-
-local function EnableKillPartProtection()
-    KillPartProtection.KillParts = FindKillParts()
-    
-    local voidCount = 0
-    local lavaCount = 0
-    
-    for _, part in ipairs(KillPartProtection.KillParts) do
-        pcall(function()
-            -- Rename appropriately
-            if part.Name == "Void" then
-                part.Name = "FakeVoid"
-                voidCount = voidCount + 1
-            elseif part.Name == "Lava" then
-                part.Name = "FakeLava"
-                lavaCount = lavaCount + 1
-            end
-            
-            -- Make walkable but disable kill script
-            part.CanCollide = true
-            part.CanTouch = false
-            part.CanQuery = false
-        end)
-    end
-    
-    local msg = ""
-    if voidCount > 0 then msg = msg .. voidCount .. " Void" end
-    if lavaCount > 0 then
-        if msg ~= "" then msg = msg .. ", " end
-        msg = msg .. lavaCount .. " Lava"
-    end
-    
-    if msg ~= "" then
-        Library:Notify("Protected: " .. msg .. " (now safe & walkable)", 2)
-    else
-        Library:Notify("No Void/Lava parts found", 2)
-    end
-    
-    SetupHealthProtection()
-    
-    local char = LocalPlayer.Character
-    if char then
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            KillPartProtection.SafePosition = root.Position
+local function DisableVoidLavaProtection()
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if (obj.Name == "Void" or obj.Name == "Lava") and obj.ClassName == "Part" then
+            pcall(function()
+                obj.CanTouch = true
+                count = count + 1
+            end)
         end
     end
-    
-    if KillPartProtection.CharacterAddedConnection then
-        KillPartProtection.CharacterAddedConnection:Disconnect()
-    end
-    KillPartProtection.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
-        if KillPartProtection.Enabled then
-            task.wait(1)
-            SetupHealthProtection()
-        end
-    end)
-end
-
-local function DisableKillPartProtection()
-    if KillPartProtection.HealthConnection then
-        KillPartProtection.HealthConnection:Disconnect()
-        KillPartProtection.HealthConnection = nil
-    end
-    
-    if KillPartProtection.CharacterAddedConnection then
-        KillPartProtection.CharacterAddedConnection:Disconnect()
-        KillPartProtection.CharacterAddedConnection = nil
-    end
-    
-    for _, part in ipairs(KillPartProtection.KillParts) do
-        pcall(function()
-            if part.Name == "FakeVoid" then
-                part.Name = "Void"
-            elseif part.Name == "FakeLava" then
-                part.Name = "Lava"
-            end
-            
-            part.CanCollide = true
-            part.CanTouch = true
-            part.CanQuery = true
-        end)
-    end
-    
-    KillPartProtection.KillParts = {}
-    KillPartProtection.SafePosition = nil
-    Library:Notify("Protection OFF - Void & Lava are deadly again", 2)
+    Library:Notify("Void/Lava Protection OFF (" .. count .. " parts restored)", 2)
 end
 
 local KillPartGroup = Tabs.Player:AddRightGroupbox("Void & Lava Protection")
 
-KillPartGroup:AddToggle("KillPartProtectionToggle", {
-    Text = "Enable Void & Lava Protection",
+KillPartGroup:AddToggle("KillBrickToggle", {
+    Text = "Enable Void/Lava Protection",
     Default = false,
     Callback = function(v)
-        KillPartProtection.Enabled = v
+        KillBrickProtection.Enabled = v
         if v then
-            EnableKillPartProtection()
+            EnableVoidLavaProtection()
         else
-            DisableKillPartProtection()
+            DisableVoidLavaProtection()
         end
     end
-}):AddKeyPicker("KillPartProtectionKey", {
+}):AddKeyPicker("KillBrickKey", {
     Default = "V",
     SyncToggleState = true,
     Mode = "Toggle",
     Text = "Void/Lava Protection",
 })
 
-KillPartGroup:AddButton({
-    Text = "Set Safe Position",
-    Func = function()
-        local char = LocalPlayer.Character
-        if char then
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then
-                KillPartProtection.SafePosition = root.Position
-                Library:Notify("Safe position set at current location", 2)
-            end
-        end
-    end,
-    Tooltip = "Sets current position as safe zone for teleport"
-})
-
-KillPartGroup:AddLabel("Makes Void & Lava safe walkable surfaces.")
-KillPartGroup:AddLabel("Renames: Void→FakeVoid, Lava→FakeLava")
-KillPartGroup:AddLabel("Health backup: restores HP on damage.")
+KillPartGroup:AddLabel("Sets CanTouch=false on all Parts named Void/Lava.")
+KillPartGroup:AddLabel("Hyuga void avoidance handled separately in boss farm.")
 
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
@@ -2823,6 +2689,8 @@ local BossFarm = {
     AnchorConn = nil,
     HyugaHeightBoost = 0,   -- additional height for Hyuga Boss special animations
     HyugaAnimConnection = nil, -- connection to monitor Hyuga Boss animations
+    HyugaInVoid = false,       -- true when Hyuga Boss is near a Void Part
+    HyugaVoidConn = nil,       -- loop thread for monitoring Hyuga void proximity
     LavaSnakeHeightBoost = 0,   -- additional height for Lava Snake special animation
     LavaSnakeAnimConnection = nil, -- connection to monitor Lava Snake animations
     HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
@@ -3038,6 +2906,57 @@ local function MonitorHakuBossIceDragon()
     end)
 end
 
+-- Monitor Hyuga Boss proximity to Void Parts; if inside, anchor player at arena safe spot
+local HYUGA_VOID_SAFE_SPOT = Vector3.new(-700.8, -334.3, -780.8)
+local HYUGA_VOID_THRESHOLD = 40 -- studs — consider boss "in void" if this close
+
+local function MonitorHyugaVoid(bossModel)
+    if BossFarm.HyugaVoidConn then
+        task.cancel(BossFarm.HyugaVoidConn)
+        BossFarm.HyugaVoidConn = nil
+    end
+    BossFarm.HyugaInVoid = false
+
+    if not bossModel then return end
+
+    -- Cache Void parts once so we don't scan all descendants every tick
+    local voidParts = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Void" and obj.ClassName == "Part" then
+            table.insert(voidParts, obj)
+        end
+    end
+
+    if #voidParts == 0 then return end
+
+    local bossRoot = bossModel:FindFirstChild("HumanoidRootPart")
+    if not bossRoot then return end
+
+    BossFarm.HyugaVoidConn = task.spawn(function()
+        while BossFarm.Enabled do
+            local inVoid = false
+            local bossPos = bossRoot.Position
+            for _, part in ipairs(voidParts) do
+                if part and part.Parent and (part.Position - bossPos).Magnitude < HYUGA_VOID_THRESHOLD then
+                    inVoid = true
+                    break
+                end
+            end
+
+            if inVoid and not BossFarm.HyugaInVoid then
+                BossFarm.HyugaInVoid = true
+                Library:Notify("Hyuga entered void — waiting at arena", 2)
+            elseif not inVoid and BossFarm.HyugaInVoid then
+                BossFarm.HyugaInVoid = false
+                Library:Notify("Hyuga left void — resuming farm", 2)
+            end
+
+            task.wait(0.5)
+        end
+        BossFarm.HyugaInVoid = false
+    end)
+end
+
 -- Monitor Hyuga Boss for special animations that require height adjustment
 local function MonitorHyugaBossAnimations(bossModel)
     if BossFarm.HyugaAnimConnection then
@@ -3190,9 +3109,10 @@ local function StartBossFarm()
         BossFarm.HeightOffset = config.height
     end
     
-    -- If farming Hyuga Boss, monitor for special animations
+    -- If farming Hyuga Boss, monitor for special animations and void proximity
     if BossFarm.TargetName == "Hyuga Boss" then
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
+        MonitorHyugaVoid(BossFarm.Target.Parent)
     end
     
     -- If farming Lava Snake, monitor for special animation
@@ -3247,7 +3167,10 @@ local function StartBossFarm()
             end
 
             -- Position based on safe spot status
-            if BossFarm.HakuSafeSpot then
+            if BossFarm.HyugaInVoid then
+                -- Hyuga is in the void — wait at his arena safe spot
+                root.CFrame = CFrame.new(HYUGA_VOID_SAFE_SPOT)
+            elseif BossFarm.HakuSafeSpot then
                 -- Anchor at safe spot position
                 root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
             else
@@ -3279,9 +3202,16 @@ end
 local function StopBossFarm()
     BossFarm.Enabled = false
     BossFarm.HyugaHeightBoost = 0
+    BossFarm.HyugaInVoid = false
     BossFarm.HakuSafeSpot = false
     BossFarm.HakuSafeSpotEndTime = 0
-    
+
+    -- Stop Hyuga void monitor
+    if BossFarm.HyugaVoidConn then
+        task.cancel(BossFarm.HyugaVoidConn)
+        BossFarm.HyugaVoidConn = nil
+    end
+
     -- Disconnect Hyuga animation monitoring
     if BossFarm.HyugaAnimConnection then
         BossFarm.HyugaAnimConnection:Disconnect()
@@ -4676,8 +4606,12 @@ local function CollectChakraPoints()
         end
 
         if targetPos then
-            -- Teleport to the point (-4 studs on Y axis)
-            root.CFrame = CFrame.new(targetPos + Vector3.new(0, -4, 0))
+            -- Teleport to the point (+3 studs above so we land on it)
+            local teleportCF = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+            root.CFrame = teleportCF
+            -- secondary nudge after 1 frame to ensure it sticks
+            task.wait()
+            root.CFrame = teleportCF
             if M1Spam and M1Spam.Debug then
                 print(string.format("[Chakra] Teleported to point %d at (%.1f, %.1f, %.1f)", i, targetPos.X, targetPos.Y, targetPos.Z))
             end
@@ -4691,8 +4625,23 @@ local function CollectChakraPoints()
             -- Wait for interaction to complete
             task.wait(ChakraCollector.Delay)
         else
+            -- Last-resort: try GetDescendants for a BasePart position
+            pcall(function()
+                for _, desc in ipairs(point:GetDescendants()) do
+                    if desc:IsA("BasePart") then
+                        local tp = CFrame.new(desc.Position + Vector3.new(0, 3, 0))
+                        root.CFrame = tp
+                        task.wait()
+                        root.CFrame = tp
+                        task.wait(0.5)
+                        PressE()
+                        task.wait(ChakraCollector.Delay)
+                        break
+                    end
+                end
+            end)
             if M1Spam and M1Spam.Debug then
-                print(string.format("[Chakra] Could not get position for point %d (%s)", i, point.Name))
+                print(string.format("[Chakra] Used fallback for point %d (%s)", i, point.Name))
             end
         end
     end
@@ -5027,91 +4976,12 @@ end
 
 -- Collect boss loot after kill (defined here after trinket collector functions)
 CollectBossLoot = function(bossName)
-    local config = BossConfigs[bossName]
-    if not config or not config.lootPath or not config.trinketCount then
-        return
-    end
-    
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local root = char.HumanoidRootPart
+    local playerPos = root.Position
     
     Library:Notify("✓ Collecting loot from " .. bossName .. "...", 2)
-    
-    -- Special handling for Wooden Golem (split across two folders)
-    if bossName == "Wooden Golem" then
-        local rewardsBase = workspace:FindFirstChild("WoodenGolemRewards")
-        if not rewardsBase then
-            Library:Notify("⚠️ WoodenGolemRewards not found", 2)
-            return
-        end
-        
-        local folder1 = rewardsBase:FindFirstChild("Model")
-        local folder2 = rewardsBase:GetChildren()[2]
-        
-        -- Enable trinket autopickup if not already enabled
-        local wasEnabled = TrinketCollector.Enabled
-        if not wasEnabled then
-            TrinketCollector.Enabled = true
-            StartTrinketCollector()
-        end
-        
-        -- Wait 7 seconds for loot pile to appear
-        Library:Notify("⏳ Waiting 7 seconds for loot pile...", 2)
-        task.wait(7)
-        
-        -- Teleport to each trinket spawn with 1 second delay
-        -- TrinketSpawn1-7 in Model
-        if folder1 then
-            for i = 1, 7 do
-                local trinketSpawn = folder1:FindFirstChild("TrinketSpawn" .. i)
-                if trinketSpawn then
-                    pcall(function()
-                        root.CFrame = trinketSpawn.CFrame
-                    end)
-                    task.wait(1)
-                end
-            end
-        end
-        
-        -- TrinketSpawn8-14 in second folder
-        if folder2 then
-            for i = 8, 14 do
-                local trinketSpawn = folder2:FindFirstChild("TrinketSpawn" .. i)
-                if trinketSpawn then
-                    pcall(function()
-                        root.CFrame = trinketSpawn.CFrame
-                    end)
-                    task.wait(1)
-                end
-            end
-        end
-        
-        -- Restore original autopickup state
-        if not wasEnabled then
-            task.wait(0.5)
-            StopTrinketCollector()
-            TrinketCollector.Enabled = false
-        end
-        
-        Library:Notify("✓ Loot collection complete!", 2)
-        return
-    end
-    
-    -- Standard handling for other bosses
-    local pathParts = {}
-    for part in config.lootPath:gmatch("[^%.]+") do
-        table.insert(pathParts, part)
-    end
-    
-    local rewardsFolder = workspace
-    for _, part in ipairs(pathParts) do
-        rewardsFolder = rewardsFolder:FindFirstChild(part)
-        if not rewardsFolder then
-            Library:Notify("⚠️ Loot folder not found: " .. part, 2)
-            return
-        end
-    end
     
     -- Enable trinket autopickup if not already enabled
     local wasEnabled = TrinketCollector.Enabled
@@ -5124,14 +4994,34 @@ CollectBossLoot = function(bossName)
     Library:Notify("⏳ Waiting 7 seconds for loot pile...", 2)
     task.wait(7)
     
-    -- Teleport to each trinket spawn with 1 second delay
-    for i = 1, config.trinketCount do
-        local trinketSpawn = rewardsFolder:FindFirstChild("TrinketSpawn" .. i)
-        if trinketSpawn then
+    -- Scan workspace for nearby trinkets
+    local nearbyTrinkets = {}
+    local maxDistance = 200 -- Only collect trinkets within 200 studs
+    
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("BasePart") and IsTrinket(obj) then
+            local distance = (playerPos - obj.Position).Magnitude
+            if distance <= maxDistance then
+                table.insert(nearbyTrinkets, {trinket = obj, distance = distance})
+            end
+        end
+    end
+    
+    -- Sort by distance (closest first)
+    table.sort(nearbyTrinkets, function(a, b)
+        return a.distance < b.distance
+    end)
+    
+    -- Teleport to each trinket and collect
+    local collected = 0
+    for _, data in ipairs(nearbyTrinkets) do
+        local trinket = data.trinket
+        if trinket and trinket.Parent then
             pcall(function()
-                root.CFrame = trinketSpawn.CFrame
+                root.CFrame = CFrame.new(trinket.Position)
             end)
-            task.wait(1) -- 1 second per teleport for reliable pickup
+            collected = collected + 1
+            task.wait(1) -- 1 second per trinket for reliable pickup
         end
     end
     
@@ -5142,7 +5032,7 @@ CollectBossLoot = function(bossName)
         TrinketCollector.Enabled = false
     end
     
-    Library:Notify("✓ Loot collection complete!", 2)
+    Library:Notify("✓ Loot collection complete! (" .. collected .. " trinkets found)", 2)
 end
 
 TrinketGroup:AddToggle("TrinketCollectorToggle", {
