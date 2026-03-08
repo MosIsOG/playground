@@ -4981,83 +4981,83 @@ StopTrinketCollector = function()
 end
 
 -- Collect boss loot after kill (defined here after trinket collector functions)
+local BossLootSpots = {
+    ["Hyuga Boss"]    = Vector3.new(-663.8,  -359.9,  -728.9),
+    ["Wooden Golem"]  = Vector3.new(-4716.2,  344.1, -2932.0),
+    ["Haku Boss"]     = Vector3.new(-3788.1, -238.5, -9723.9),
+    ["Lava Snake"]    = Vector3.new(-546.7,  -546.9, -1461.6),
+}
+
 CollectBossLoot = function(bossName)
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local root = char.HumanoidRootPart
 
-    Library:Notify("Waiting 7s for loot to spawn...", 2)
-
-    -- Enable trinket autopickup so DescendantAdded catches anything that spawns
-    local wasEnabled = TrinketCollector.Enabled
-    if not wasEnabled then
-        TrinketCollector.Enabled = true
-        StartTrinketCollector()
+    -- Teleport to the known loot spawn position for this boss
+    local lootSpot = BossLootSpots[bossName]
+    if lootSpot then
+        root.CFrame = CFrame.new(lootSpot)
+        Library:Notify("Moved to " .. bossName .. " loot spot", 2)
     end
 
-    task.wait(7)
+    Library:Notify("Waiting 8s for loot to spawn...", 2)
+    task.wait(8)
 
     -- Re-check character after wait
     char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then
-        if not wasEnabled then StopTrinketCollector() end
-        return
-    end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     root = char.HumanoidRootPart
-    local playerPos = root.Position
 
-    -- Scan ALL descendants for trinkets within 300 studs
+    local scanOrigin = lootSpot or root.Position
+
+    -- Scan ALL workspace descendants for trinkets within 300 studs of loot spot
     local nearbyTrinkets = {}
+    local seen = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if IsTrinket(obj) then
+        if not seen[obj] and IsTrinket(obj) then
+            seen[obj] = true
             local pos = nil
             if obj:IsA("BasePart") then
                 pos = obj.Position
-            elseif obj:IsA("Model") then
+            else
                 local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                 if part then pos = part.Position end
             end
-            if pos and (playerPos - pos).Magnitude <= 300 then
+            if pos and (scanOrigin - pos).Magnitude <= 300 then
                 table.insert(nearbyTrinkets, {obj = obj, pos = pos})
             end
         end
     end
 
     if #nearbyTrinkets == 0 then
-        Library:Notify("No trinkets found near spawn area", 2)
-        if not wasEnabled then StopTrinketCollector() end
+        Library:Notify("No trinkets found at " .. bossName .. " loot spot", 2)
         return
     end
 
     -- Sort closest first
     table.sort(nearbyTrinkets, function(a, b)
-        return (playerPos - a.pos).Magnitude < (playerPos - b.pos).Magnitude
+        return (scanOrigin - a.pos).Magnitude < (scanOrigin - b.pos).Magnitude
     end)
 
-    Library:Notify("Collecting " .. #nearbyTrinkets .. " trinkets...", 2)
+    Library:Notify("Looting " .. #nearbyTrinkets .. " trinkets...", 2)
 
     local collected = 0
     for _, data in ipairs(nearbyTrinkets) do
         local obj = data.obj
-        if obj and obj.Parent then
-            -- Teleport on top of it
-            pcall(function() root.CFrame = CFrame.new(data.pos + Vector3.new(0, 2, 0)) end)
-            task.wait(0.3)
-            -- Fire pickup remote
-            CollectTrinket(obj)
-            collected = collected + 1
-            task.wait(0.8)
-        end
+        -- Skip if already gone
+        if not obj or not obj.Parent then continue end
+
+        -- Teleport onto it
+        root.CFrame = CFrame.new(data.pos + Vector3.new(0, 2, 0))
+        task.wait(0.3)
+
+        -- Attempt pickup once, don't retry
+        CollectTrinket(obj)
+        collected = collected + 1
+        task.wait(0.8)
     end
 
-    -- Restore autopickup state
-    if not wasEnabled then
-        task.wait(0.5)
-        StopTrinketCollector()
-        TrinketCollector.Enabled = false
-    end
-
-    Library:Notify("Loot done! (" .. collected .. " collected)", 2)
+    Library:Notify("Loot done! (" .. collected .. " attempted)", 2)
 end
 
 TrinketGroup:AddToggle("TrinketCollectorToggle", {
