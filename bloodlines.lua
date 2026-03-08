@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.4d",
+    Title = "Universal Hub v1.1.4e",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -4954,6 +4954,8 @@ local function EnqueueTrinket(obj)
     table.insert(TrinketQueue, obj)
 end
 
+local TRINKET_PICKUP_RADIUS = 200 -- studs
+
 local function TrinketWorker()
     while TrinketCollector.Enabled do
         if #TrinketQueue > 0 then
@@ -4964,19 +4966,23 @@ local function TrinketWorker()
                 local char = LocalPlayer.Character
                 local root = char and char:FindFirstChild("HumanoidRootPart")
                 if root then
-                    -- Find a world part to teleport to
                     local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
                     if part and part.Parent then
-                        -- Teleport on top of the trinket
-                        root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-                        task.wait(0.4)  -- let the server register our position
-                        -- Attempt pickup if still there
-                        if obj.Parent then
-                            if CollectTrinket(obj) then
-                                TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-                                TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+                        -- Only collect if within 200 studs of current position
+                        local dist = (root.Position - part.Position).Magnitude
+                        if dist <= TRINKET_PICKUP_RADIUS then
+                            -- Teleport on top of the trinket
+                            root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+                            task.wait(0.4)  -- let the server register our position
+                            -- Attempt pickup if still there
+                            if obj.Parent then
+                                if CollectTrinket(obj) then
+                                    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+                                    TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+                                end
                             end
                         end
+                        -- If too far away, just skip it (don't re-queue)
                     end
                 end
             end
