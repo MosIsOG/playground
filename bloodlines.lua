@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.3",
+    Title = "Universal Hub v1.1.3a",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3133,9 +3133,9 @@ end
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
-    ["Hyuga Boss"] = { height = 10 },
+    ["Hyuga Boss"] = { height = 10.75, },
     ["Lava Snake"] = { height = 38 },
-    ["Haku Boss"] = { height = 10 },
+    ["Haku Boss"] = { height = 10.75, },
     ["Barbarit The Rose"] = { height = 12 },
     ["Manda"] = { height = 38 },
 }
