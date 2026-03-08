@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.4c",
+    Title = "Universal Hub v1.1.4d",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2907,16 +2907,19 @@ local function MonitorHakuBossIceDragon()
     end)
 end
 
--- Monitor Hyuga Boss proximity to the Void zone (defined by two XZ corners)
--- Zone corners: (-526.0, -925.1) to (-824.4, -623.1) in X/Z, with ±2 stud padding
+-- Monitor Hyuga Boss proximity to the Void zone (defined by two corners)
+-- Corners: Vector3(-526.0, -452.8, -925.1)  and  Vector3(-824.4, -452.8, -623.1)  ±2 stud padding
 local HYUGA_VOID_SAFE_SPOT = Vector3.new(-700.8, -334.3, -780.8)
 local HYUGA_VOID_MIN_X = math.min(-526.0, -824.4) - 2  -- -826.4
 local HYUGA_VOID_MAX_X = math.max(-526.0, -824.4) + 2  -- -524.0
+local HYUGA_VOID_MIN_Y = -452.8 - 2                     -- -454.8
+local HYUGA_VOID_MAX_Y = -452.8 + 2                     -- -450.8
 local HYUGA_VOID_MIN_Z = math.min(-925.1, -623.1) - 2  -- -927.1
 local HYUGA_VOID_MAX_Z = math.max(-925.1, -623.1) + 2  -- -621.1
 
 local function IsInHyugaVoidZone(pos)
     return pos.X >= HYUGA_VOID_MIN_X and pos.X <= HYUGA_VOID_MAX_X
+       and pos.Y >= HYUGA_VOID_MIN_Y and pos.Y <= HYUGA_VOID_MAX_Y
        and pos.Z >= HYUGA_VOID_MIN_Z and pos.Z <= HYUGA_VOID_MAX_Z
 end
 
