@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.2b",
+    Title = "Universal Hub v1.1.2c",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2822,6 +2822,8 @@ local BossFarm = {
     AnchorConn = nil,
     HyugaHeightBoost = 0,   -- additional height for Hyuga Boss special animations
     HyugaAnimConnection = nil, -- connection to monitor Hyuga Boss animations
+    LavaSnakeHeightBoost = 0,   -- additional height for Lava Snake special animation
+    LavaSnakeAnimConnection = nil, -- connection to monitor Lava Snake animations
     HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
     HakuSafeSpot = false,   -- whether to teleport to safe spot
     HakuSafeSpotEndTime = 0, -- when to end safe spot (tick())
@@ -3074,6 +3076,49 @@ local function MonitorHyugaBossAnimations(bossModel)
     end)
 end
 
+-- Monitor Lava Snake animations
+local function MonitorLavaSnakeAnimations(bossModel)
+    -- Disconnect previous connection if any
+    if BossFarm.LavaSnakeAnimConnection then
+        BossFarm.LavaSnakeAnimConnection:Disconnect()
+        BossFarm.LavaSnakeAnimConnection = nil
+    end
+    
+    if not bossModel then return end
+    
+    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    
+    BossFarm.LavaSnakeAnimConnection = animator.AnimationPlayed:Connect(function(track)
+        if not BossFarm.Enabled then return end
+        
+        local animId = track.Animation.AnimationId
+        local assetId = animId:match("rbxassetid://(%d+)") or animId
+        
+        -- Lava Snake special animation: makes player go 10 studs up
+        if assetId == "9954909571" then
+            -- Increase height by 10 studs
+            BossFarm.LavaSnakeHeightBoost = 10
+            Library:Notify("Lava Snake Attack! Height +10", 1)
+            
+            -- Monitor the track to reset height when animation stops
+            local resetThread
+            resetThread = task.spawn(function()
+                while track and track.IsPlaying and BossFarm.Enabled do
+                    task.wait(0.1)
+                end
+                -- Animation ended, reset boost
+                task.wait(0.5) -- Small grace period
+                BossFarm.LavaSnakeHeightBoost = 0
+            end)
+            
+            return
+        end
+    end)
+end
+
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
@@ -3139,6 +3184,11 @@ local function StartBossFarm()
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
     end
     
+    -- If farming Lava Snake, monitor for special animation
+    if BossFarm.TargetName == "Lava Snake" then
+        MonitorLavaSnakeAnimations(BossFarm.Target.Parent)
+    end
+    
     -- If farming Haku Boss, monitor for IceDragonHead spawning
     if BossFarm.TargetName == "Haku Boss" then
         MonitorHakuBossIceDragon()
@@ -3187,8 +3237,8 @@ local function StartBossFarm()
                 root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
             else
                 -- Position above the boss, facing down at it
-                -- For Hyuga Boss, add extra height boost during special animations
-                local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
+                -- Add extra height boost during special animations (Hyuga Boss, Lava Snake)
+                local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost + BossFarm.LavaSnakeHeightBoost
                 local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
                 root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
             end
