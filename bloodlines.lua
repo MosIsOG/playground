@@ -26,8 +26,9 @@ local Camera = Workspace.CurrentCamera
 -- Create window
 local Window = Library:CreateWindow({
     Title = "Universal Hub v1.1.0",
-    Center = true,
-    AutoShow = true
+    Center = false,
+    AutoShow = true,
+    Position = UDim2.new(0.65, 0, 0.5, 0)
 })
 
 -- Create tabs
@@ -2824,7 +2825,6 @@ local BossFarm = {
     HyugaAnimConnection = nil,
     HyugaHeightBoost = 0,
     PauseAttack = false,
-    WoodenDragonActive = false,
     SafeSpotActive = false,
     TeleportCycle = 0,
 }
@@ -2834,11 +2834,6 @@ local BossConfigs = {
     ["Wooden Golem"] = {
         height = 16,
         initialTeleport = Vector3.new(-4709, 336, -2987),
-        safespots = {
-            Vector3.new(-4728.6, 344.1, -3007.4),
-            Vector3.new(-4495.4, 344.2, -3000.4),
-            Vector3.new(-4722.7, 344.1, -2856.5),
-        },
         lootPath = "WoodenGolemRewards.Model",
         trinketCount = 14,
     },
@@ -2936,36 +2931,11 @@ local function MonitorWoodenGolem(bossModel)
         local animId = track.Animation.AnimationId
         local assetId = animId:match("rbxassetid://(%d+)") or animId
         
-        -- Animation 116907126244057: Stop attacking for 1 second
-        if assetId == "116907126244057" then
+        -- Both animations: Stop attacking for 1 second
+        if assetId == "116907126244057" or assetId == "120758909308511" then
             BossFarm.PauseAttack = true
-            Library:Notify("Wooden Golem special attack! Pausing...", 1)
             task.delay(1, function()
                 BossFarm.PauseAttack = false
-            end)
-        end
-        
-        -- Animation 120758909308511: Teleport to safespots
-        if assetId == "120758909308511" then
-            BossFarm.WoodenDragonActive = true
-            Library:Notify("WoodenDragon incoming! Safespots active", 2)
-            
-            -- Monitor for WoodenDragonHead
-            task.spawn(function()
-                local debris = workspace:FindFirstChild("Debris")
-                if debris then
-                    local checkThread = task.spawn(function()
-                        while BossFarm.WoodenDragonActive and BossFarm.Enabled do
-                            local dragonHead = debris:FindFirstChild("WoodenDragonHead")
-                            if not dragonHead then
-                                BossFarm.WoodenDragonActive = false
-                                Library:Notify("WoodenDragon gone! Resuming farm", 1)
-                                break
-                            end
-                            task.wait(0.1)
-                        end
-                    end)
-                end
             end)
         end
     end)
@@ -2985,7 +2955,6 @@ local function MonitorHakuBoss()
         
         if child.Name == "IceDragonHead" or (child:IsA("Beam") and child.Name == "Beam121") then
             BossFarm.SafeSpotActive = true
-            Library:Notify("Haku attack detected! Safe spot active", 1)
             
             -- Monitor until the attack model is removed
             task.spawn(function()
@@ -2995,7 +2964,6 @@ local function MonitorHakuBoss()
                 end
                 -- Attack ended
                 BossFarm.SafeSpotActive = false
-                Library:Notify("Haku attack ended, resuming", 1)
             end)
         end
     end)
@@ -3020,7 +2988,6 @@ local function MonitorHeightBoostBoss(bossModel)
         if assetId == "9954909571" then
             local originalHeight = BossFarm.HeightOffset
             BossFarm.HeightOffset = originalHeight + 10
-            Library:Notify("Boss attack! Height +10", 1)
             
             task.delay(0.5, function()
                 BossFarm.HeightOffset = originalHeight
@@ -3059,11 +3026,9 @@ local function MonitorHyugaBossAnimations(bossModel)
             if assetId == dangerAnimID then
                 -- Increase height by 20 studs
                 BossFarm.HyugaHeightBoost = 20
-                Library:Notify("Hyuga Attack! Height +20", 1)
                 
                 -- Monitor the track to reset height when animation stops
-                local resetThread
-                resetThread = task.spawn(function()
+                task.spawn(function()
                     while track and track.IsPlaying and BossFarm.Enabled do
                         task.wait(0.1)
                     end
@@ -3166,14 +3131,6 @@ local function StartBossFarm()
             if not char or not char:FindFirstChild("HumanoidRootPart") then return end
             local root = char.HumanoidRootPart
 
-            -- Wooden Golem WoodenDragon safespots
-            if BossFarm.WoodenDragonActive and config and config.safespots then
-                local spots = config.safespots
-                local index = (math.floor(tick()) % #spots) + 1
-                root.CFrame = CFrame.new(spots[index])
-                return
-            end
-
             -- Haku safe spot
             if BossFarm.SafeSpotActive then
                 root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
@@ -3206,7 +3163,6 @@ end
 local function StopBossFarm()
     BossFarm.Enabled = false
     BossFarm.PauseAttack = false
-    BossFarm.WoodenDragonActive = false
     BossFarm.SafeSpotActive = false
     BossFarm.HyugaHeightBoost = 0
     
@@ -4839,11 +4795,9 @@ local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle (0 collected)")
 
 local function IsTrinket(obj)
     if not obj then return false end
-    -- Check any object type, not just Models
     for _, name in ipairs(trinketNames) do
-        if obj.Name == name then 
-            print("[TRINKET] Found:", obj.Name, "Type:", obj.ClassName)
-            return true 
+        if obj.Name == name then
+            return true
         end
     end
     return false
@@ -4858,37 +4812,29 @@ local function CollectTrinket(trinket)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
     
-    -- Check distance first - only collect if already close (NO TELEPORTING)
+    -- Check distance first - only collect if already close
     local distance = (root.Position - trinket.Position).Magnitude
     if distance > TrinketCollector.PickupRadius then
-        return false -- Too far, don't attempt
+        return false
     end
-    
-    print("[TRINKET] Attempting collection:", trinket.Name, "Distance:", math.floor(distance))
     
     -- METHOD 1: Fire the remote with the trinket's ID
     if DataEvent then
         local idValue = trinket:FindFirstChild("ID")
         if idValue and idValue:IsA("NumberValue") then
-            print("[TRINKET] Firing remote with ID:", idValue.Value)
-            local success, err = pcall(function()
+            local success = pcall(function()
                 DataEvent:FireServer("PickUp", idValue.Value)
             end)
             if success then
-                print("[TRINKET] Remote fired successfully")
                 task.wait(0.1)
                 if not trinket.Parent then
-                    print("[TRINKET] Remote method worked!")
                     return true
                 end
-            else
-                print("[TRINKET] Remote error:", err)
             end
         end
     end
     
-    -- METHOD 2: Mouse click at trinket's screen position (no teleporting needed)
-    print("[TRINKET] Trying mouse click...")
+    -- METHOD 2: Mouse click at trinket's screen position
     local part = trinket:IsA("BasePart") and trinket or trinket:FindFirstChildWhichIsA("BasePart")
     if part then
         local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
@@ -4900,13 +4846,11 @@ local function CollectTrinket(trinket)
             end)
             task.wait(0.1)
             if not trinket.Parent then
-                print("[TRINKET] Mouse click worked!")
                 return true
             end
         end
     end
     
-    print("[TRINKET] All methods failed for", trinket.Name)
     return false
 end
 
@@ -4916,12 +4860,11 @@ local TrackedTrinkets = {} -- Cache of known trinkets
 
 local function OnTrinketSpawned(obj)
     if not TrinketCollector.Enabled then return end
-    if not obj:IsA("MeshPart") then return end
+    if not obj:IsA("BasePart") then return end -- Accepts Part, MeshPart, etc.
     if not IsTrinket(obj) then return end
-    if TrackedTrinkets[obj] then return end -- Already tracking
+    if TrackedTrinkets[obj] then return end
     
     TrackedTrinkets[obj] = true
-    print("[TRINKET] New trinket detected:", obj.Name)
     
     -- Try to collect it immediately if in range
     task.spawn(function()
@@ -4952,9 +4895,9 @@ local function ScanAndCollectTrinkets()
     )
     region = region:ExpandToGrid(4)
     
-    -- Scan only MeshParts in workspace children (faster than GetDescendants)
+    -- Scan only BaseParts (Part, MeshPart, etc.) in workspace children (faster than GetDescendants)
     for _, obj in ipairs(workspace:GetChildren()) do
-        if TrinketCollector.Enabled and obj:IsA("MeshPart") and IsTrinket(obj) and not TrackedTrinkets[obj] then
+        if TrinketCollector.Enabled and obj:IsA("BasePart") and IsTrinket(obj) and not TrackedTrinkets[obj] then
             local distance = (playerPos - obj.Position).Magnitude
             
             if distance <= TrinketCollector.PickupRadius then
@@ -4983,7 +4926,6 @@ StartTrinketCollector = function()
         TrinketSpawnConnection:Disconnect()
     end
     TrinketSpawnConnection = workspace.DescendantAdded:Connect(OnTrinketSpawned)
-    print("[TRINKET] Event detection enabled (optimized)")
     
     -- Periodic scan as backup (slower interval to reduce lag)
     TrinketCollector.Thread = task.spawn(function()
@@ -5022,7 +4964,94 @@ CollectBossLoot = function(bossName)
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local root = char.HumanoidRootPart
     
-    -- Navigate to loot rewards folder
+    Library:Notify("✓ Collecting loot from " .. bossName .. "...", 2)
+    
+    -- Special handling for Wooden Golem (split across two folders)
+    if bossName == "Wooden Golem" then
+        local rewardsBase = workspace:FindFirstChild("WoodenGolemRewards")
+        if not rewardsBase then
+            Library:Notify("⚠️ WoodenGolemRewards not found", 2)
+            return
+        end
+        
+        local folder1 = rewardsBase:FindFirstChild("Model")
+        local folder2 = rewardsBase:GetChildren()[2]
+        
+        -- First pass: Quick teleport to all trinket spawns (no delay)
+        -- TrinketSpawn1-7 in Model
+        if folder1 then
+            for i = 1, 7 do
+                local trinketSpawn = folder1:FindFirstChild("TrinketSpawn" .. i)
+                if trinketSpawn then
+                    pcall(function()
+                        root.CFrame = trinketSpawn.CFrame
+                    end)
+                end
+            end
+        end
+        
+        -- TrinketSpawn8-14 in second folder
+        if folder2 then
+            for i = 8, 14 do
+                local trinketSpawn = folder2:FindFirstChild("TrinketSpawn" .. i)
+                if trinketSpawn then
+                    pcall(function()
+                        root.CFrame = trinketSpawn.CFrame
+                    end)
+                end
+            end
+        end
+        
+        -- Enable trinket autopickup if not already enabled
+        local wasEnabled = TrinketCollector.Enabled
+        if not wasEnabled then
+            TrinketCollector.Enabled = true
+            StartTrinketCollector()
+        end
+        
+        -- Wait 8 seconds for loot pile to appear
+        Library:Notify("⏳ Waiting 8 seconds for loot pile...", 2)
+        task.wait(8)
+        
+        -- Second pass: Teleport with small delays for pickup
+        -- TrinketSpawn1-7 in Model
+        if folder1 then
+            for i = 1, 7 do
+                local trinketSpawn = folder1:FindFirstChild("TrinketSpawn" .. i)
+                if trinketSpawn then
+                    pcall(function()
+                        root.CFrame = trinketSpawn.CFrame
+                    end)
+                    task.wait(0.2)
+                end
+            end
+        end
+        
+        -- TrinketSpawn8-14 in second folder
+        if folder2 then
+            for i = 8, 14 do
+                local trinketSpawn = folder2:FindFirstChild("TrinketSpawn" .. i)
+                if trinketSpawn then
+                    pcall(function()
+                        root.CFrame = trinketSpawn.CFrame
+                    end)
+                    task.wait(0.2)
+                end
+            end
+        end
+        
+        -- Restore original autopickup state
+        if not wasEnabled then
+            task.wait(0.5)
+            StopTrinketCollector()
+            TrinketCollector.Enabled = false
+        end
+        
+        Library:Notify("✓ Loot collection complete!", 2)
+        return
+    end
+    
+    -- Standard handling for other bosses
     local pathParts = {}
     for part in config.lootPath:gmatch("[^%.]+") do
         table.insert(pathParts, part)
@@ -5036,8 +5065,6 @@ CollectBossLoot = function(bossName)
             return
         end
     end
-    
-    Library:Notify("✓ Collecting loot from " .. bossName .. "...", 2)
     
     -- First pass: Quick teleport to all trinket spawns (no delay)
     for i = 1, config.trinketCount do
@@ -5055,6 +5082,10 @@ CollectBossLoot = function(bossName)
         TrinketCollector.Enabled = true
         StartTrinketCollector()
     end
+    
+    -- Wait 8 seconds for loot pile to appear
+    Library:Notify("⏳ Waiting 8 seconds for loot pile...", 2)
+    task.wait(8)
     
     -- Second pass: Teleport with small delays for pickup
     for i = 1, config.trinketCount do
@@ -5126,8 +5157,6 @@ SaveManager:SetFolder("UniversalHub")
 SaveManager:BuildConfigSection(Tabs.Settings)
 
 -- Initialize
-Library:SetWatermark("Universal Hub")
-Library:SetWatermarkVisibility(true)
 SaveManager:LoadAutoloadConfig()
 
 print("=== Universal Hub Loaded ===")
