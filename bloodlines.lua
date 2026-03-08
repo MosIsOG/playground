@@ -2473,7 +2473,7 @@ local DEFAULT_MAX_DISTANCE = 500
 
 -- Predefined boss list - scans folders and workspace by name
 local PredefinedBosses = {
-    { name = "Wodden Golem", maxDistance = 500 },
+    { name = "Wooden Golem", maxDistance = 500 },
     { name = "Manda", maxDistance = 500, allowDuplicates = true },
     { name = "Chakra Knight", maxDistance = 500 },
     { name = "The Barbarian", maxDistance = 500, allowDuplicates = true },
@@ -2799,7 +2799,7 @@ BossGroup:AddSlider("BossScanInterval", {
 })
 BossGroup:AddLabel("Scans for predefined bosses every 30s.")
 BossGroup:AddLabel("Checks NPCs/Mobs/Enemies folders + workspace.")
-BossGroup:AddLabel("Bosses: Wodden Golem, Manda, Chakra Knight,")
+BossGroup:AddLabel("Bosses: Wooden Golem, Manda, Chakra Knight,")
 BossGroup:AddLabel("The Barbarian, Barbarit The Rose, Lava Snake")
 BossGroup:AddLabel("Boss bars update at 15 FPS (optimized).")
 BossGroup:AddLabel("Auto-detects bosses by name anywhere in game.")
@@ -2814,7 +2814,7 @@ local BossFarm = {
     Enabled = false,
     Target = nil,
     TargetName = "",
-    SelectedBoss = "Wodden Golem",
+    SelectedBoss = "Wooden Golem",
     HeightOffset = 50,
     AttackDelay = 0.12,
     Thread = nil,
@@ -2826,7 +2826,6 @@ local BossFarm = {
     PauseAttack = false,
     WoodenDragonActive = false,
     SafeSpotActive = false,
-    SafeSpotEndTime = 0,
     TeleportCycle = 0,
 }
 
@@ -2849,7 +2848,7 @@ local BossConfigs = {
         lootPath = "Hyuga BossRewards",
         trinketCount = 3,
     },
-    ["Lava Snake Boss"] = {
+    ["Lava Snake"] = {
         height = 38,
         initialTeleport = Vector3.new(-548, -542, -1282),
         lootPath = "LavaSnakeRewards",
@@ -2921,8 +2920,8 @@ local function FindBoss(bossName)
     return nil, nil
 end
 
--- Monitor Wodden Golem animations
-local function MonitorWoddenGolem(bossModel)
+-- Monitor Wooden Golem animations
+local function MonitorWoodenGolem(bossModel)
     if BossFarm.AnimConnection then
         BossFarm.AnimConnection:Disconnect()
     end
@@ -2940,7 +2939,7 @@ local function MonitorWoddenGolem(bossModel)
         -- Animation 116907126244057: Stop attacking for 1 second
         if assetId == "116907126244057" then
             BossFarm.PauseAttack = true
-            Library:Notify("Wodden Golem special attack! Pausing...", 1)
+            Library:Notify("Wooden Golem special attack! Pausing...", 1)
             task.delay(1, function()
                 BossFarm.PauseAttack = false
             end)
@@ -2986,8 +2985,18 @@ local function MonitorHakuBoss()
         
         if child.Name == "IceDragonHead" or (child:IsA("Beam") and child.Name == "Beam121") then
             BossFarm.SafeSpotActive = true
-            BossFarm.SafeSpotEndTime = tick() + 2 -- Changed from 3s to 2s
-            Library:Notify("Haku attack detected! Safe spot (2s)", 1)
+            Library:Notify("Haku attack detected! Safe spot active", 1)
+            
+            -- Monitor until the attack model is removed
+            task.spawn(function()
+                -- Wait until the child is destroyed or removed
+                while child and child.Parent and BossFarm.Enabled do
+                    task.wait(0.1)
+                end
+                -- Attack ended
+                BossFarm.SafeSpotActive = false
+                Library:Notify("Haku attack ended, resuming", 1)
+            end)
         end
     end)
 end
@@ -3083,8 +3092,8 @@ local function StartBossFarm()
     
     -- For bosses that need teleport-first-then-scan
     local needsTeleportScan = {
-        ["Wodden Golem"] = true,
-        ["Lava Snake Boss"] = true,
+        ["Wooden Golem"] = true,
+        ["Lava Snake"] = true,
         ["Haku Boss"] = true,
         ["Hyuga Boss"] = true,
     }
@@ -3116,13 +3125,13 @@ local function StartBossFarm()
     end
     
     -- Setup boss-specific monitoring
-    if bossName == "Wodden Golem" then
-        MonitorWoddenGolem(model)
+    if bossName == "Wooden Golem" then
+        MonitorWoodenGolem(model)
     elseif bossName == "Hyuga Boss" then
         MonitorHyugaBossAnimations(model)
     elseif bossName == "Haku Boss" then
         MonitorHakuBoss()
-    elseif bossName == "Lava Snake Boss" or bossName == "Manda" then
+    elseif bossName == "Lava Snake" or bossName == "Manda" then
         MonitorHeightBoostBoss(model)
     end
     
@@ -3157,7 +3166,7 @@ local function StartBossFarm()
             if not char or not char:FindFirstChild("HumanoidRootPart") then return end
             local root = char.HumanoidRootPart
 
-            -- Wodden Golem WoodenDragon safespots
+            -- Wooden Golem WoodenDragon safespots
             if BossFarm.WoodenDragonActive and config and config.safespots then
                 local spots = config.safespots
                 local index = (math.floor(tick()) % #spots) + 1
@@ -3167,12 +3176,8 @@ local function StartBossFarm()
 
             -- Haku safe spot
             if BossFarm.SafeSpotActive then
-                if tick() >= BossFarm.SafeSpotEndTime then
-                    BossFarm.SafeSpotActive = false
-                else
-                    root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
-                    return
-                end
+                root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
+                return
             end
 
             -- Normal position above boss
@@ -3232,7 +3237,7 @@ local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
 BossFarmGroup:AddDropdown("BossSelector", {
     Text = "Select Boss",
     Default = 1,
-    Values = {"Wodden Golem", "Hyuga Boss", "Lava Snake Boss", "Haku Boss", "Barbarit The Rose", "Manda"},
+    Values = {"Wooden Golem", "Hyuga Boss", "Lava Snake", "Haku Boss", "Barbarit The Rose", "Manda"},
     Callback = function(value)
         BossFarm.SelectedBoss = value
         Library:Notify("Selected: " .. value, 1)
@@ -4167,7 +4172,7 @@ local TeleportLocations = {
     -- Example entries (uncomment and modify as needed)
      { Name = "Wood Boss", Pos = Vector3.new(-4708.4, 336.9, -2986.2)},
      { Name = "Sorythia Village", Pos = Vector3.new(-113.2, 50.9, -283.8)},
-     { Name = "Lava Snake Boss", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
+     { Name = "Lava Snake", Pos = Vector3.new(-547.6, -541.7, -1281.8)},
      { Name = "Biyo Bay", Pos = Vector3.new(-598.9, -178.6, -464.3)},
      { Name = "Snow Village", Pos = Vector3.new(-2916.3, -46.0, -4907.3)},
      { Name = "Snap Trainer", Pos = Vector3.new(337.2, 131.4, -1967.2)},
@@ -4824,6 +4829,8 @@ local trinketNames = {
     "Progression Soul",
     "Memory Soul",
     "Summoning Scroll",
+    "Life Up Fruit",
+    "Mastery Scroll",
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
@@ -5056,7 +5063,7 @@ CollectBossLoot = function(bossName)
             pcall(function()
                 root.CFrame = trinketSpawn.CFrame
             end)
-            task.wait(0.3) -- Give time for autopickup to work
+            task.wait(0.2) -- Give time for autopickup to work
         end
     end
     
