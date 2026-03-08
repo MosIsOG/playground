@@ -3048,9 +3048,9 @@ end
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
-    ["Hyuga Boss"] = { height = 10.75, },
+    ["Hyuga Boss"] = { height = 9.5, },
     ["Lava Snake"] = { height = 38 },
-    ["Haku Boss"] = { height = 10.75, },
+    ["Haku Boss"] = { height = 9.5, },
     ["Barbarit The Rose"] = { height = 12 },
     ["Manda"] = { height = 38 },
 }
@@ -4950,6 +4950,13 @@ local function EnqueueTrinket(obj)
     if not obj or not obj.Parent then return end
     if TrinketQueued[obj] then return end
     if not IsTrinket(obj) then return end
+    -- Radius check at enqueue: skip trinkets that are already too far away
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+        if part and (root.Position - part.Position).Magnitude > TRINKET_PICKUP_RADIUS then return end
+    end
     TrinketQueued[obj] = true
     table.insert(TrinketQueue, obj)
 end
@@ -5074,9 +5081,15 @@ CollectBossLoot = function(bossName)
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     root = char.HumanoidRootPart
 
+    -- Re-anchor at loot spot after the wait (boss farm may have moved us)
+    if lootSpot then
+        root.CFrame = CFrame.new(lootSpot)
+        task.wait(0.3)
+    end
+
     local scanOrigin = lootSpot or root.Position
 
-    -- Scan ALL workspace descendants for trinkets within 300 studs of loot spot
+    -- Scan ALL workspace descendants for trinkets within 200 studs of loot spot
     local nearbyTrinkets = {}
     local seen = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -5089,7 +5102,7 @@ CollectBossLoot = function(bossName)
                 local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                 if part then pos = part.Position end
             end
-            if pos and (scanOrigin - pos).Magnitude <= 300 then
+            if pos and (scanOrigin - pos).Magnitude <= 200 then
                 table.insert(nearbyTrinkets, {obj = obj, pos = pos})
             end
         end
@@ -5110,17 +5123,24 @@ CollectBossLoot = function(bossName)
     local collected = 0
     for _, data in ipairs(nearbyTrinkets) do
         local obj = data.obj
-        -- Skip if already gone
         if not obj or not obj.Parent then continue end
 
-        -- Teleport onto it
-        root.CFrame = CFrame.new(data.pos + Vector3.new(0, 2, 0))
-        task.wait(0.3)
+        -- Re-fetch root in case of respawn
+        char = LocalPlayer.Character
+        if not char then continue end
+        root = char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
 
-        -- Attempt pickup once, don't retry
-        CollectTrinket(obj)
-        collected = collected + 1
-        task.wait(0.8)
+        -- Teleport onto it
+        root.CFrame = CFrame.new(data.pos + Vector3.new(0, 3, 0))
+        task.wait(0.4)
+
+        -- Attempt pickup once
+        if obj.Parent then
+            CollectTrinket(obj)
+            collected = collected + 1
+        end
+        task.wait(1.0)
     end
 
     Library:Notify("Loot done! (" .. collected .. " attempted)", 2)
