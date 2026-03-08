@@ -4939,57 +4939,104 @@ local function CollectTrinket(trinket)
     return false
 end
 
--- Event-based trinket detection (optimized, no lag)
+-- Queue-based trinket collector: one at a time, steady pace, safe to keep on always
 local TrinketSpawnConnection = nil
-local TrackedTrinkets = {} -- Cache of known trinkets
+local TrinketQueue   = {}   -- ordered list of objects waiting to be picked up
+local TrinketQueued  = {}   -- set to prevent duplicates in the queue
+local TrinketWorkerThread = nil
 
-local function OnTrinketSpawned(obj)
+local function EnqueueTrinket(obj)
     if not TrinketCollector.Enabled then return end
-    if not obj:IsA("BasePart") then return end
+    if not obj or not obj.Parent then return end
+    if TrinketQueued[obj] then return end
     if not IsTrinket(obj) then return end
-    if TrackedTrinkets[obj] then return end
-    
-    TrackedTrinkets[obj] = true
-    
-    -- Try to collect it immediately
-    task.spawn(function()
-        task.wait(0.1) -- Let it fully load
-        if obj.Parent and TrinketCollector.Enabled then
-            if CollectTrinket(obj) then
-                TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-                TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+    TrinketQueued[obj] = true
+    table.insert(TrinketQueue, obj)
+end
+
+local function TrinketWorker()
+    while TrinketCollector.Enabled do
+        if #TrinketQueue > 0 then
+            local obj = table.remove(TrinketQueue, 1)
+            TrinketQueued[obj] = nil
+
+            if obj and obj.Parent then
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    -- Find a world part to teleport to
+                    local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+                    if part and part.Parent then
+                        -- Teleport on top of the trinket
+                        root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+                        task.wait(0.4)  -- let the server register our position
+                        -- Attempt pickup if still there
+                        if obj.Parent then
+                            if CollectTrinket(obj) then
+                                TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
+                                TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+                            end
+                        end
+                    end
+                end
             end
+            task.wait(1.2)  -- pace between each trinket pickup
+        else
+            task.wait(0.5)  -- idle poll while queue is empty
         end
-        TrackedTrinkets[obj] = nil
-    end)
+    end
 end
 
 StartTrinketCollector = function()
-    -- Setup event-based detection for instant pickup
-    if TrinketSpawnConnection then
-        TrinketSpawnConnection:Disconnect()
-    end
-    TrinketSpawnConnection = workspace.DescendantAdded:Connect(OnTrinketSpawned)
-    
-    -- Scan existing trinkets once on startup
-    task.spawn(function()
-        for _, obj in ipairs(workspace:GetChildren()) do
-            if TrinketCollector.Enabled and obj:IsA("BasePart") and IsTrinket(obj) then
-                OnTrinketSpawned(obj)
-            end
-        end
-    end)
-end
-
-StopTrinketCollector = function()
-    TrinketCollector.Enabled = false
-    
     if TrinketSpawnConnection then
         TrinketSpawnConnection:Disconnect()
         TrinketSpawnConnection = nil
     end
-    
-    TrackedTrinkets = {}
+    if TrinketWorkerThread then
+        pcall(task.cancel, TrinketWorkerThread)
+        TrinketWorkerThread = nil
+    end
+
+    TrinketQueue  = {}
+    TrinketQueued = {}
+
+    -- Watch for any new trinket that spawns anywhere in workspace
+    TrinketSpawnConnection = workspace.DescendantAdded:Connect(function(obj)
+        if TrinketCollector.Enabled and IsTrinket(obj) then
+            task.delay(0.2, function()
+                EnqueueTrinket(obj)
+            end)
+        end
+    end)
+
+    -- Scan all existing workspace descendants for trinkets already on the ground
+    task.spawn(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if TrinketCollector.Enabled and IsTrinket(obj) then
+                EnqueueTrinket(obj)
+            end
+        end
+    end)
+
+    -- Start the single serialized worker
+    TrinketWorkerThread = task.spawn(TrinketWorker)
+    TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
+end
+
+StopTrinketCollector = function()
+    TrinketCollector.Enabled = false
+
+    if TrinketSpawnConnection then
+        TrinketSpawnConnection:Disconnect()
+        TrinketSpawnConnection = nil
+    end
+    if TrinketWorkerThread then
+        pcall(task.cancel, TrinketWorkerThread)
+        TrinketWorkerThread = nil
+    end
+
+    TrinketQueue  = {}
+    TrinketQueued = {}
     TrinketStatusLabel:SetText("Status: Stopped (" .. TrinketCollector.CollectedCount .. " total)")
 end
 
