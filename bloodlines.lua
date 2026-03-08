@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.2c",
+    Title = "Universal Hub v1.1.2d",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3122,9 +3122,9 @@ end
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
-    ["Hyuga Boss"] = { height = 8 },
+    ["Hyuga Boss"] = { height = 9 },
     ["Lava Snake"] = { height = 38 },
-    ["Haku Boss"] = { height = 8 },
+    ["Haku Boss"] = { height = 9 },
     ["Barbarit The Rose"] = { height = 12 },
     ["Manda"] = { height = 38 },
 }
@@ -4840,9 +4840,6 @@ RiftGroup:AddLabel("Presses E at each location.")
 -- ==================== TRINKET COLLECTOR ====================
 TrinketCollector = {
     Enabled = false,
-    ScanInterval = 1.5,  -- Slower to reduce lag
-    PickupRadius = 100,
-    Thread = nil,
     CollectedCount = 0,
 }
 
@@ -4911,12 +4908,6 @@ local function CollectTrinket(trinket)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
     
-    -- Check distance first - only collect if already close
-    local distance = (root.Position - trinket.Position).Magnitude
-    if distance > TrinketCollector.PickupRadius then
-        return false
-    end
-    
     -- METHOD 1: Fire the remote with the trinket's ID
     if DataEvent then
         local idValue = trinket:FindFirstChild("ID")
@@ -4959,13 +4950,13 @@ local TrackedTrinkets = {} -- Cache of known trinkets
 
 local function OnTrinketSpawned(obj)
     if not TrinketCollector.Enabled then return end
-    if not obj:IsA("BasePart") then return end -- Accepts Part, MeshPart, etc.
+    if not obj:IsA("BasePart") then return end
     if not IsTrinket(obj) then return end
     if TrackedTrinkets[obj] then return end
     
     TrackedTrinkets[obj] = true
     
-    -- Try to collect it immediately if in range
+    -- Try to collect it immediately
     task.spawn(function()
         task.wait(0.1) -- Let it fully load
         if obj.Parent and TrinketCollector.Enabled then
@@ -4978,70 +4969,25 @@ local function OnTrinketSpawned(obj)
     end)
 end
 
-local function ScanAndCollectTrinkets()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    local playerPos = root.Position
-    local collected = 0
-    
-    -- Only scan nearby region, not entire workspace
-    local region = Region3.new(
-        playerPos - Vector3.new(TrinketCollector.PickupRadius, TrinketCollector.PickupRadius, TrinketCollector.PickupRadius),
-        playerPos + Vector3.new(TrinketCollector.PickupRadius, TrinketCollector.PickupRadius, TrinketCollector.PickupRadius)
-    )
-    region = region:ExpandToGrid(4)
-    
-    -- Scan only BaseParts (Part, MeshPart, etc.) in workspace children (faster than GetDescendants)
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if TrinketCollector.Enabled and obj:IsA("BasePart") and IsTrinket(obj) and not TrackedTrinkets[obj] then
-            local distance = (playerPos - obj.Position).Magnitude
-            
-            if distance <= TrinketCollector.PickupRadius then
-                TrackedTrinkets[obj] = true
-                if CollectTrinket(obj) then
-                    collected = collected + 1
-                    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-                end
-                TrackedTrinkets[obj] = nil
-            end
-        end
-    end
-    
-    if collected > 0 then
-        TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
-    end
-end
-
 StartTrinketCollector = function()
-    if TrinketCollector.Thread then
-        pcall(task.cancel, TrinketCollector.Thread)
-    end
-    
-    -- Setup event-based detection for instant pickup (optimized)
+    -- Setup event-based detection for instant pickup
     if TrinketSpawnConnection then
         TrinketSpawnConnection:Disconnect()
     end
     TrinketSpawnConnection = workspace.DescendantAdded:Connect(OnTrinketSpawned)
     
-    -- Periodic scan as backup (slower interval to reduce lag)
-    TrinketCollector.Thread = task.spawn(function()
-        while TrinketCollector.Enabled do
-            ScanAndCollectTrinkets()
-            task.wait(TrinketCollector.ScanInterval)
+    -- Scan existing trinkets once on startup
+    task.spawn(function()
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if TrinketCollector.Enabled and obj:IsA("BasePart") and IsTrinket(obj) then
+                OnTrinketSpawned(obj)
+            end
         end
     end)
 end
 
 StopTrinketCollector = function()
     TrinketCollector.Enabled = false
-    
-    if TrinketCollector.Thread then
-        pcall(task.cancel, TrinketCollector.Thread)
-        TrinketCollector.Thread = nil
-    end
     
     if TrinketSpawnConnection then
         TrinketSpawnConnection:Disconnect()
@@ -5076,31 +5022,6 @@ CollectBossLoot = function(bossName)
         local folder1 = rewardsBase:FindFirstChild("Model")
         local folder2 = rewardsBase:GetChildren()[2]
         
-        -- First pass: Quick teleport to all trinket spawns (no delay)
-        -- TrinketSpawn1-7 in Model
-        if folder1 then
-            for i = 1, 7 do
-                local trinketSpawn = folder1:FindFirstChild("TrinketSpawn" .. i)
-                if trinketSpawn then
-                    pcall(function()
-                        root.CFrame = trinketSpawn.CFrame
-                    end)
-                end
-            end
-        end
-        
-        -- TrinketSpawn8-14 in second folder
-        if folder2 then
-            for i = 8, 14 do
-                local trinketSpawn = folder2:FindFirstChild("TrinketSpawn" .. i)
-                if trinketSpawn then
-                    pcall(function()
-                        root.CFrame = trinketSpawn.CFrame
-                    end)
-                end
-            end
-        end
-        
         -- Enable trinket autopickup if not already enabled
         local wasEnabled = TrinketCollector.Enabled
         if not wasEnabled then
@@ -5108,11 +5029,11 @@ CollectBossLoot = function(bossName)
             StartTrinketCollector()
         end
         
-        -- Wait 8 seconds for loot pile to appear
-        Library:Notify("⏳ Waiting 8 seconds for loot pile...", 2)
-        task.wait(8)
+        -- Wait 7 seconds for loot pile to appear
+        Library:Notify("⏳ Waiting 7 seconds for loot pile...", 2)
+        task.wait(7)
         
-        -- Second pass: Teleport with small delays for pickup
+        -- Teleport to each trinket spawn with 1 second delay
         -- TrinketSpawn1-7 in Model
         if folder1 then
             for i = 1, 7 do
@@ -5121,7 +5042,7 @@ CollectBossLoot = function(bossName)
                     pcall(function()
                         root.CFrame = trinketSpawn.CFrame
                     end)
-                    task.wait(0.2)
+                    task.wait(1)
                 end
             end
         end
@@ -5134,7 +5055,7 @@ CollectBossLoot = function(bossName)
                     pcall(function()
                         root.CFrame = trinketSpawn.CFrame
                     end)
-                    task.wait(0.2)
+                    task.wait(1)
                 end
             end
         end
@@ -5165,16 +5086,6 @@ CollectBossLoot = function(bossName)
         end
     end
     
-    -- First pass: Quick teleport to all trinket spawns (no delay)
-    for i = 1, config.trinketCount do
-        local trinketSpawn = rewardsFolder:FindFirstChild("TrinketSpawn" .. i)
-        if trinketSpawn then
-            pcall(function()
-                root.CFrame = trinketSpawn.CFrame
-            end)
-        end
-    end
-    
     -- Enable trinket autopickup if not already enabled
     local wasEnabled = TrinketCollector.Enabled
     if not wasEnabled then
@@ -5182,18 +5093,18 @@ CollectBossLoot = function(bossName)
         StartTrinketCollector()
     end
     
-    -- Wait 8 seconds for loot pile to appear
-    Library:Notify("⏳ Waiting 8 seconds for loot pile...", 2)
-    task.wait(8)
+    -- Wait 7 seconds for loot pile to appear
+    Library:Notify("⏳ Waiting 7 seconds for loot pile...", 2)
+    task.wait(7)
     
-    -- Second pass: Teleport with small delays for pickup
+    -- Teleport to each trinket spawn with 1 second delay
     for i = 1, config.trinketCount do
         local trinketSpawn = rewardsFolder:FindFirstChild("TrinketSpawn" .. i)
         if trinketSpawn then
             pcall(function()
                 root.CFrame = trinketSpawn.CFrame
             end)
-            task.wait(0.2) -- Give time for autopickup to work
+            task.wait(1) -- 1 second per teleport for reliable pickup
         end
     end
     
@@ -5220,30 +5131,17 @@ TrinketGroup:AddToggle("TrinketCollectorToggle", {
     end
 })
 
-TrinketGroup:AddSlider("TrinketScanInterval", {
-    Text = "Scan Interval",
-    Default = 1.5,
-    Min = 0.5,
-    Max = 5,
-    Rounding = 1,
-    Suffix = "s",
-    Callback = function(v) TrinketCollector.ScanInterval = v end,
-    Tooltip = "How often to scan (slower = less lag)"
+TrinketGroup:AddButton({
+    Text = "Reset Counter",
+    Func = function()
+        TrinketCollector.CollectedCount = 0
+        TrinketStatusLabel:SetText("Status: " .. (TrinketCollector.Enabled and "Active" or "Idle") .. " (0 collected)")
+        Library:Notify("Trinket counter reset", 2)
+    end
 })
 
-TrinketGroup:AddSlider("TrinketPickupRadius", {
-    Text = "Pickup Radius",
-    Default = 100,
-    Min = 10,
-    Max = 500,
-    Rounding = 0,
-    Suffix = "studs",
-    Callback = function(v) TrinketCollector.PickupRadius = v end,
-    Tooltip = "Maximum distance to collect trinkets"
-})
-
-TrinketGroup:AddLabel("Proximity-based auto-pickup (no teleporting).")
-TrinketGroup:AddLabel("Event-based detection for instant collection.")
+TrinketGroup:AddLabel("Event-based instant collection (optimized).")
+TrinketGroup:AddLabel("Collects any trinket that spawns near you.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
