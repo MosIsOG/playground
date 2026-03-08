@@ -2954,10 +2954,22 @@ local function MonitorHakuBoss()
         if not BossFarm.Enabled then return end
         
         if child.Name == "IceDragonHead" or (child:IsA("Beam") and child.Name == "Beam121") then
-            BossFarm.SafeSpotActive = true
-            
-            -- 1 second delay
-            task.delay(1, function()
+            -- Start repeating 1-second cycle until object disappears
+            task.spawn(function()
+                while child and child.Parent and BossFarm.Enabled do
+                    BossFarm.SafeSpotActive = true
+                    task.wait(1)
+                    
+                    -- Check again if object still exists before deactivating
+                    if not child or not child.Parent or not BossFarm.Enabled then
+                        BossFarm.SafeSpotActive = false
+                        break
+                    end
+                    
+                    BossFarm.SafeSpotActive = false
+                    task.wait(1)
+                end
+                -- Ensure it's deactivated when loop ends
                 BossFarm.SafeSpotActive = false
             end)
         end
