@@ -3122,9 +3122,9 @@ end
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
-    ["Hyuga Boss"] = { height = 9 },
+    ["Hyuga Boss"] = { height = 10 },
     ["Lava Snake"] = { height = 38 },
-    ["Haku Boss"] = { height = 9 },
+    ["Haku Boss"] = { height = 10 },
     ["Barbarit The Rose"] = { height = 12 },
     ["Manda"] = { height = 38 },
 }
