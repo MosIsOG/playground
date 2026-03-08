@@ -2289,75 +2289,107 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- ==================== FLY SCRIPT ====================
+-- ==================== FLY SCRIPT (FIXED) ====================
 local FlySystem = {
     Enabled = false,
     Speed = 50,
-    BodyVelocity = nil,
-    BodyGyro = nil,
     Connection = nil,
+    Keys = {W = false, A = false, S = false, D = false, Space = false, Shift = false}
 }
+
+-- Track key presses
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.W then FlySystem.Keys.W = true end
+    if input.KeyCode == Enum.KeyCode.A then FlySystem.Keys.A = true end
+    if input.KeyCode == Enum.KeyCode.S then FlySystem.Keys.S = true end
+    if input.KeyCode == Enum.KeyCode.D then FlySystem.Keys.D = true end
+    if input.KeyCode == Enum.KeyCode.Space then FlySystem.Keys.Space = true end
+    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+        FlySystem.Keys.Shift = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then FlySystem.Keys.W = false end
+    if input.KeyCode == Enum.KeyCode.A then FlySystem.Keys.A = false end
+    if input.KeyCode == Enum.KeyCode.S then FlySystem.Keys.S = false end
+    if input.KeyCode == Enum.KeyCode.D then FlySystem.Keys.D = false end
+    if input.KeyCode == Enum.KeyCode.Space then FlySystem.Keys.Space = false end
+    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+        FlySystem.Keys.Shift = false
+    end
+end)
 
 local function StartFlying()
     local char = LocalPlayer.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
     
-    -- Create BodyVelocity
-    if FlySystem.BodyVelocity then
-        FlySystem.BodyVelocity:Destroy()
-    end
-    FlySystem.BodyVelocity = Instance.new("BodyVelocity")
-    FlySystem.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    FlySystem.BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    FlySystem.BodyVelocity.Parent = root
+    -- Set humanoid to Physics state for smooth flying
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Running, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+    humanoid:ChangeState(Enum.HumanoidStateType.Physics)
     
-    -- Create BodyGyro
-    if FlySystem.BodyGyro then
-        FlySystem.BodyGyro:Destroy()
-    end
-    FlySystem.BodyGyro = Instance.new("BodyGyro")
-    FlySystem.BodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    FlySystem.BodyGyro.CFrame = root.CFrame
-    FlySystem.BodyGyro.Parent = root
-    
-    -- Update loop
+    -- Update loop using CFrame manipulation
     if FlySystem.Connection then
         FlySystem.Connection:Disconnect()
     end
     
-    FlySystem.Connection = RunService.RenderStepped:Connect(function()
+    FlySystem.Connection = RunService.Heartbeat:Connect(function(deltaTime)
         if not FlySystem.Enabled then return end
         
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         local root = char.HumanoidRootPart
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
         
-        if not FlySystem.BodyVelocity or not FlySystem.BodyGyro then return end
+        -- Keep humanoid in Physics state
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+            humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+        end
         
         local camera = workspace.CurrentCamera
-        local direction = Vector3.new(0, 0, 0)
+        local speed = FlySystem.Speed * deltaTime
+        local moveVector = Vector3.new(0, 0, 0)
         
-        -- Movement based on key input
-        local moveDirection = LocalPlayer:GetMoveVector()
-        
-        if moveDirection.Magnitude > 0 then
-            direction = direction + (camera.CFrame.LookVector * moveDirection.Z)
-            direction = direction + (camera.CFrame.RightVector * moveDirection.X)
+        -- Calculate movement direction based on camera
+        if FlySystem.Keys.W then
+            moveVector = moveVector + (camera.CFrame.LookVector * speed)
+        end
+        if FlySystem.Keys.S then
+            moveVector = moveVector - (camera.CFrame.LookVector * speed)
+        end
+        if FlySystem.Keys.A then
+            moveVector = moveVector - (camera.CFrame.RightVector * speed)
+        end
+        if FlySystem.Keys.D then
+            moveVector = moveVector + (camera.CFrame.RightVector * speed)
+        end
+        if FlySystem.Keys.Space then
+            moveVector = moveVector + Vector3.new(0, speed, 0)
+        end
+        if FlySystem.Keys.Shift then
+            moveVector = moveVector - Vector3.new(0, speed, 0)
         end
         
-        -- Up/Down with Space and Shift
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            direction = direction + Vector3.new(0, 1, 0)
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
-            direction = direction + Vector3.new(0, -1, 0)
-        end
-        
-        -- Apply velocity
-        FlySystem.BodyVelocity.Velocity = direction * FlySystem.Speed
-        FlySystem.BodyGyro.CFrame = camera.CFrame
+        -- Apply movement
+        root.CFrame = root.CFrame + moveVector
+        root.Velocity = Vector3.new(0, 0, 0)
+        root.RotVelocity = Vector3.new(0, 0, 0)
     end)
     
     Library:Notify("Flying enabled! Use WASD + Space/Shift", 2)
@@ -2369,18 +2401,36 @@ local function StopFlying()
         FlySystem.Connection = nil
     end
     
-    if FlySystem.BodyVelocity then
-        FlySystem.BodyVelocity:Destroy()
-        FlySystem.BodyVelocity = nil
-    end
-    
-    if FlySystem.BodyGyro then
-        FlySystem.BodyGyro:Destroy()
-        FlySystem.BodyGyro = nil
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            -- Re-enable normal states
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Running, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+        end
     end
     
     Library:Notify("Flying disabled", 2)
 end
+
+-- Handle character respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    if FlySystem.Enabled then
+        task.wait(0.5)
+        StartFlying()
+    end
+end)
 
 MovementGroup:AddToggle("FlyToggle", {
     Text = "Fly",
@@ -2782,7 +2832,7 @@ local BossFarm = {
 
 -- Boss configurations
 local BossConfigs = {
-    ["Wodden Golem"] = {
+    ["Wooden Golem"] = {
         height = 16,
         initialTeleport = Vector3.new(-4709, 336, -2987),
         safespots = {
@@ -2790,18 +2840,26 @@ local BossConfigs = {
             Vector3.new(-4495.4, 344.2, -3000.4),
             Vector3.new(-4722.7, 344.1, -2856.5),
         },
+        lootPath = "WoodenGolemRewards.Model",
+        trinketCount = 14,
     },
     ["Hyuga Boss"] = {
         height = 8,
         initialTeleport = Vector3.new(-694, -360, -766),
+        lootPath = "Hyuga BossRewards",
+        trinketCount = 3,
     },
     ["Lava Snake Boss"] = {
         height = 38,
         initialTeleport = Vector3.new(-548, -542, -1282),
+        lootPath = "LavaSnakeRewards",
+        trinketCount = 4,
     },
     ["Haku Boss"] = {
         height = 8,
         initialTeleport = Vector3.new(-3839, -232, -9657),
+        lootPath = "Haku BossRewards",
+        trinketCount = 14,
     },
     ["Barbarit The Rose"] = {
         height = 12,
@@ -2813,6 +2871,12 @@ local BossConfigs = {
 
 local BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
     game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+
+-- Forward declarations (defined later in file)
+local CollectBossLoot
+local TrinketCollector
+local StartTrinketCollector
+local StopTrinketCollector
 
 local function BossFarmAttack()
     if BossFarm.PauseAttack then return end
@@ -3017,12 +3081,19 @@ local function StartBossFarm()
     local bossName = BossFarm.SelectedBoss
     local config = BossConfigs[bossName]
     
-    -- For Wodden Golem: teleport first, then scan
-    if bossName == "Wodden Golem" and config and config.initialTeleport then
+    -- For bosses that need teleport-first-then-scan
+    local needsTeleportScan = {
+        ["Wodden Golem"] = true,
+        ["Lava Snake Boss"] = true,
+        ["Haku Boss"] = true,
+        ["Hyuga Boss"] = true,
+    }
+    
+    if needsTeleportScan[bossName] and config and config.initialTeleport then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             char.HumanoidRootPart.CFrame = CFrame.new(config.initialTeleport)
-            Library:Notify("Teleported to Wodden Golem area, scanning...", 2)
+            Library:Notify("Teleported to " .. bossName .. " area, scanning...", 2)
             task.wait(1) -- Wait for boss to load
         end
     end
@@ -3042,15 +3113,6 @@ local function StartBossFarm()
     -- Set boss config
     if config then
         BossFarm.HeightOffset = config.height
-        
-        -- Initial teleport for other bosses (not Wodden Golem, already done)
-        if bossName ~= "Wodden Golem" and config.initialTeleport then
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                char.HumanoidRootPart.CFrame = CFrame.new(config.initialTeleport)
-                task.wait(0.5)
-            end
-        end
     end
     
     -- Setup boss-specific monitoring
@@ -3073,9 +3135,16 @@ local function StartBossFarm()
             local hum = BossFarm.Target
             if not hum or not hum.Parent or hum.Health <= 0 then
                 Library:Notify(BossFarm.TargetName .. " defeated!", 2)
+                local defeatedBoss = BossFarm.SelectedBoss
                 BossFarm.Enabled = false
                 if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect() end
                 if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread) end
+                
+                -- Collect loot after boss dies
+                task.spawn(function()
+                    task.wait(0.5)
+                    CollectBossLoot(defeatedBoss)
+                end)
                 return
             end
 
@@ -4709,7 +4778,7 @@ RiftGroup:AddLabel("Teleports to each Unstable Rift in workspace.Rifts.")
 RiftGroup:AddLabel("Presses E at each location.")
 
 -- ==================== TRINKET COLLECTOR ====================
-local TrinketCollector = {
+TrinketCollector = {
     Enabled = false,
     ScanInterval = 1.5,  -- Slower to reduce lag
     PickupRadius = 100,
@@ -4732,6 +4801,13 @@ local trinketNames = {
     "Ring Of Nourishment",
     "Ring Of Favor",
     "Ring Of Remedy",
+    "Ring Of Vitality",
+    "Ring Of Infusion",
+    "Bloodbite Ring",
+    "Ring Of Beauty",
+    "Ring Of Dexterity",
+    "Ring Of A Helping Hand",
+    "Ring Schematics",
     "Aqua Gem",
     "Flame Gem",
     "Spark Gem",
@@ -4743,6 +4819,11 @@ local trinketNames = {
     "Extraction Spoon",
     "Scalpel",
     "Chakra Heart",
+    "Scalpel",
+    "Fruit Of Forgetfulness",
+    "Progression Soul",
+    "Memory Soul",
+    "Summoning Scroll",
 }
 
 local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
@@ -4885,7 +4966,7 @@ local function ScanAndCollectTrinkets()
     end
 end
 
-local function StartTrinketCollector()
+StartTrinketCollector = function()
     if TrinketCollector.Thread then
         pcall(task.cancel, TrinketCollector.Thread)
     end
@@ -4906,7 +4987,7 @@ local function StartTrinketCollector()
     end)
 end
 
-local function StopTrinketCollector()
+StopTrinketCollector = function()
     TrinketCollector.Enabled = false
     
     if TrinketCollector.Thread then
@@ -4921,6 +5002,72 @@ local function StopTrinketCollector()
     
     TrackedTrinkets = {}
     TrinketStatusLabel:SetText("Status: Stopped (" .. TrinketCollector.CollectedCount .. " total)")
+end
+
+-- Collect boss loot after kill (defined here after trinket collector functions)
+CollectBossLoot = function(bossName)
+    local config = BossConfigs[bossName]
+    if not config or not config.lootPath or not config.trinketCount then
+        return
+    end
+    
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+    
+    -- Navigate to loot rewards folder
+    local pathParts = {}
+    for part in config.lootPath:gmatch("[^%.]+") do
+        table.insert(pathParts, part)
+    end
+    
+    local rewardsFolder = workspace
+    for _, part in ipairs(pathParts) do
+        rewardsFolder = rewardsFolder:FindFirstChild(part)
+        if not rewardsFolder then
+            Library:Notify("⚠️ Loot folder not found: " .. part, 2)
+            return
+        end
+    end
+    
+    Library:Notify("✓ Collecting loot from " .. bossName .. "...", 2)
+    
+    -- First pass: Quick teleport to all trinket spawns (no delay)
+    for i = 1, config.trinketCount do
+        local trinketSpawn = rewardsFolder:FindFirstChild("TrinketSpawn" .. i)
+        if trinketSpawn then
+            pcall(function()
+                root.CFrame = trinketSpawn.CFrame
+            end)
+        end
+    end
+    
+    -- Enable trinket autopickup if not already enabled
+    local wasEnabled = TrinketCollector.Enabled
+    if not wasEnabled then
+        TrinketCollector.Enabled = true
+        StartTrinketCollector()
+    end
+    
+    -- Second pass: Teleport with small delays for pickup
+    for i = 1, config.trinketCount do
+        local trinketSpawn = rewardsFolder:FindFirstChild("TrinketSpawn" .. i)
+        if trinketSpawn then
+            pcall(function()
+                root.CFrame = trinketSpawn.CFrame
+            end)
+            task.wait(0.3) -- Give time for autopickup to work
+        end
+    end
+    
+    -- Restore original autopickup state
+    if not wasEnabled then
+        task.wait(0.5)
+        StopTrinketCollector()
+        TrinketCollector.Enabled = false
+    end
+    
+    Library:Notify("✓ Loot collection complete!", 2)
 end
 
 TrinketGroup:AddToggle("TrinketCollectorToggle", {
