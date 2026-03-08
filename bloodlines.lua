@@ -4229,8 +4229,8 @@ local function CollectChakraPoints()
         end
 
         if targetPos then
-            -- Teleport to the point
-            root.CFrame = CFrame.new(targetPos)
+            -- Teleport to the point (-4 studs on Y axis)
+            root.CFrame = CFrame.new(targetPos + Vector3.new(0, -4, 0))
             if M1Spam and M1Spam.Debug then
                 print(string.format("[Chakra] Teleported to point %d at (%.1f, %.1f, %.1f)", i, targetPos.X, targetPos.Y, targetPos.Z))
             end
