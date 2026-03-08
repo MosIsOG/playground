@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.2",
+    Title = "Universal Hub v1.1.2a",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2813,67 +2813,96 @@ end
 -- ==================== BOSS FARM (ANCHOR + M1 SPAM) ====================
 local BossFarm = {
     Enabled = false,
-    Target = nil,
-    TargetName = "",
-    SelectedBoss = "Wooden Golem",
-    HeightOffset = 50,
-    AttackDelay = 0.12,
+    Target = nil,           -- the Humanoid we're farming
+    TargetName = "",        -- display name of the boss model
+    SelectedBoss = "Wooden Golem", -- currently selected boss name
+    HeightOffset = 50,      -- studs above the boss root
+    AttackDelay = 0.12,     -- seconds between remote fire calls
     Thread = nil,
     AnchorConn = nil,
-    AnimConnection = nil,
-    DebrisConnection = nil,
-    HyugaAnimConnection = nil,
-    HyugaHeightBoost = 0,
-    PauseAttack = false,
-    SafeSpotActive = false,
-    TeleportCycle = 0,
+    HyugaHeightBoost = 0,   -- additional height for Hyuga Boss special animations
+    HyugaAnimConnection = nil, -- connection to monitor Hyuga Boss animations
+    HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
+    HakuSafeSpot = false,   -- whether to teleport to safe spot
+    HakuSafeSpotEndTime = 0, -- when to end safe spot (tick())
 }
 
--- Boss configurations
-local BossConfigs = {
-    ["Wooden Golem"] = {
-        height = 16,
-        initialTeleport = Vector3.new(-4709, 336, -2987),
-        lootPath = "WoodenGolemRewards.Model",
-        trinketCount = 14,
-    },
-    ["Hyuga Boss"] = {
-        height = 8,
-        initialTeleport = Vector3.new(-694, -360, -766),
-        lootPath = "Hyuga BossRewards",
-        trinketCount = 3,
-    },
-    ["Lava Snake"] = {
-        height = 38,
-        initialTeleport = Vector3.new(-548, -542, -1282),
-        lootPath = "LavaSnakeRewards",
-        trinketCount = 4,
-    },
-    ["Haku Boss"] = {
-        height = 8,
-        initialTeleport = Vector3.new(-3839, -232, -9657),
-        lootPath = "Haku BossRewards",
-        trinketCount = 14,
-    },
-    ["Barbarit The Rose"] = {
-        height = 12,
-    },
-    ["Manda"] = {
-        height = 38,
-    },
-}
+local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
 
+-- Scan for nearby bosses and return a list (OPTIMIZED)
+local function ScanBossFarmTargets()
+    local results = {}
+    local localChar = LocalPlayer.Character
+    if not localChar then return results end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart") or localChar:FindFirstChild("Head")
+    if not localRoot then return results end
+    local playerPos = localRoot.Position
+
+    -- Check specific folders AND workspace itself
+    local foldersToCheck = {"NPCs", "Mobs", "Enemies"}
+    
+    for _, folderName in ipairs(foldersToCheck) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if model:IsA("Model") then
+                    local hum = model:FindFirstChildWhichIsA("Humanoid")
+                    if hum and hum.Health > 0 and hum.MaxHealth >= BossFarm.MinHealth then
+                        local root = model:FindFirstChild("HumanoidRootPart") 
+                                  or model:FindFirstChild("Head")
+                                  or model:FindFirstChild("Torso")
+                                  or model:FindFirstChild("UpperTorso")
+                                  or model:FindFirstChildWhichIsA("BasePart")
+                        if root then
+                            local dist = (playerPos - root.Position).Magnitude
+                            if dist <= BossFarm.ScanRange then
+                                table.insert(results, {
+                                    humanoid = hum,
+                                    name = model.Name,
+                                    distance = math.floor(dist)
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- ALSO check workspace directly (for bosses not in folders)
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") then
+            local hum = model:FindFirstChildWhichIsA("Humanoid")
+            if hum and hum.Health > 0 and hum.MaxHealth >= BossFarm.MinHealth then
+                local root = model:FindFirstChild("HumanoidRootPart") 
+                          or model:FindFirstChild("Head")
+                          or model:FindFirstChild("Torso")
+                          or model:FindFirstChild("UpperTorso")
+                          or model:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    local dist = (playerPos - root.Position).Magnitude
+                    if dist <= BossFarm.ScanRange then
+                        table.insert(results, {
+                            humanoid = hum,
+                            name = model.Name,
+                            distance = math.floor(dist)
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    -- Sort by distance
+    table.sort(results, function(a, b) return a.distance < b.distance end)
+    return results
+end
+
+-- Fire the melee hit remote
 local BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and
     game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
 
--- Forward declarations (defined later in file)
-local CollectBossLoot
-local TrinketCollector
-local StartTrinketCollector
-local StopTrinketCollector
-
 local function BossFarmAttack()
-    if BossFarm.PauseAttack then return end
     if not BossFarmDataEvent then return end
     pcall(function()
         BossFarmDataEvent:FireServer("CheckMeleeHit", nil, "NormalAttack", false)
@@ -2895,110 +2924,92 @@ local function BossFarmDash()
     end)
 end
 
--- Find boss in workspace
-local function FindBoss(bossName)
-    local foldersToCheck = {"NPCs", "Mobs", "Enemies", workspace}
+-- Check if Haku Boss is near any mirror (within 2 studs average distance)
+local function CheckHakuMirrorProximity(bossPosition)
+    local mirrorRealm = workspace:FindFirstChild("Mirror Realm")
+    if not mirrorRealm then return false end
     
-    for _, folder in ipairs(foldersToCheck) do
-        local searchFolder = folder == workspace and folder or workspace:FindFirstChild(folder)
-        if searchFolder then
-            for _, model in ipairs(searchFolder:GetChildren()) do
-                if model:IsA("Model") and model.Name == bossName then
-                    local hum = model:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-                        return hum, model
-                    end
-                end
+    local mirrorsFolder = mirrorRealm:FindFirstChild("Mirrors")
+    if not mirrorsFolder then return false end
+    
+    local mirrors = mirrorsFolder:GetChildren()
+    
+    for _, mirror in ipairs(mirrors) do
+        -- Get mirror position (handle Models or BaseParts)
+        local mirrorPos
+        if mirror:IsA("BasePart") then
+            mirrorPos = mirror.Position
+        elseif mirror:IsA("Model") then
+            local primaryPart = mirror.PrimaryPart or mirror:FindFirstChildWhichIsA("BasePart")
+            if primaryPart then
+                mirrorPos = primaryPart.Position
+            end
+        end
+        
+        if mirrorPos then
+            -- Calculate average absolute difference
+            local avgDiff = (math.abs(bossPosition.X - mirrorPos.X) + 
+                             math.abs(bossPosition.Y - mirrorPos.Y) + 
+                             math.abs(bossPosition.Z - mirrorPos.Z)) / 3
+            
+            -- If within 2 studs, boss is in/near this mirror
+            if avgDiff <= 2 then
+                return true
             end
         end
     end
-    return nil, nil
+    
+    return false
 end
 
--- Monitor Wooden Golem animations
-local function MonitorWoodenGolem(bossModel)
-    if BossFarm.AnimConnection then
-        BossFarm.AnimConnection:Disconnect()
+-- Monitor Haku Boss for special animations that require height adjustment
+-- Monitor Haku Boss for IceDragonHead object spawning
+local function MonitorHakuBossIceDragon()
+    if BossFarm.HakuAnimConnection then
+        BossFarm.HakuAnimConnection:Disconnect()
+        BossFarm.HakuAnimConnection = nil
     end
     
-    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    BossFarm.AnimConnection = animator.AnimationPlayed:Connect(function(track)
-        if not BossFarm.Enabled then return end
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
-        
-        -- Both animations: Stop attacking for 1 second
-        if assetId == "116907126244057" or assetId == "120758909308511" then
-            BossFarm.PauseAttack = true
-            task.delay(1, function()
-                BossFarm.PauseAttack = false
-            end)
-        end
-    end)
-end
-
--- Monitor Haku Boss for IceDragonHead
-local function MonitorHakuBoss()
-    if BossFarm.DebrisConnection then
-        BossFarm.DebrisConnection:Disconnect()
-    end
-    
+    -- Get or create Debris folder reference
     local debris = workspace:FindFirstChild("Debris")
-    if not debris then return end
-    
-    BossFarm.DebrisConnection = debris.ChildAdded:Connect(function(child)
-        if not BossFarm.Enabled then return end
-        
-        if child.Name == "IceDragonHead" or (child:IsA("Beam") and child.Name == "Beam121") then
-            -- Start repeating 1-second cycle until object disappears
-            task.spawn(function()
-                while child and child.Parent and BossFarm.Enabled do
-                    BossFarm.SafeSpotActive = true
-                    task.wait(1)
-                    
-                    -- Check again if object still exists before deactivating
-                    if not child or not child.Parent or not BossFarm.Enabled then
-                        BossFarm.SafeSpotActive = false
-                        break
-                    end
-                    
-                    BossFarm.SafeSpotActive = false
-                    task.wait(1)
-                end
-                -- Ensure it's deactivated when loop ends
-                BossFarm.SafeSpotActive = false
-            end)
-        end
-    end)
-end
-
--- Monitor Lava Snake/Manda for height boost animation
-local function MonitorHeightBoostBoss(bossModel)
-    if BossFarm.AnimConnection then
-        BossFarm.AnimConnection:Disconnect()
+    if not debris then
+        -- Wait for Debris folder to be created
+        local debrisCreatedConn
+        debrisCreatedConn = workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Debris" then
+                debris = child
+                debrisCreatedConn:Disconnect()
+                -- Start monitoring after Debris is found
+                MonitorHakuBossIceDragon()
+            end
+        end)
+        return
     end
     
-    local humanoid = bossModel:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    
-    BossFarm.AnimConnection = animator.AnimationPlayed:Connect(function(track)
+    -- Monitor for IceDragonHead and Beam121 spawning
+    BossFarm.HakuAnimConnection = debris.ChildAdded:Connect(function(child)
         if not BossFarm.Enabled then return end
-        local animId = track.Animation.AnimationId
-        local assetId = animId:match("rbxassetid://(%d+)") or animId
         
-        if assetId == "9954909571" then
-            local originalHeight = BossFarm.HeightOffset
-            BossFarm.HeightOffset = originalHeight + 10
-            
-            task.delay(0.5, function()
-                BossFarm.HeightOffset = originalHeight
-            end)
+        local shouldTeleport = false
+        local detectionMsg = ""
+        
+        if child.Name == "IceDragonHead" then
+            shouldTeleport = true
+            detectionMsg = "Haku IceDragonHead detected! Teleported to safe spot (1s)"
+        elseif child:IsA("Beam") and child.Name == "Beam121" then
+            shouldTeleport = true
+            detectionMsg = "Haku Beam121 detected! Teleported to safe spot (1s)"
+        end
+        
+        if shouldTeleport then
+            -- Teleport to safe position
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
+                BossFarm.HakuSafeSpot = true
+                BossFarm.HakuSafeSpotEndTime = tick() + 1
+                Library:Notify(detectionMsg, 1)
+            end
         end
     end)
 end
@@ -3033,9 +3044,11 @@ local function MonitorHyugaBossAnimations(bossModel)
             if assetId == dangerAnimID then
                 -- Increase height by 20 studs
                 BossFarm.HyugaHeightBoost = 20
+                Library:Notify("Hyuga Attack! Height +20", 1)
                 
                 -- Monitor the track to reset height when animation stops
-                task.spawn(function()
+                local resetThread
+                resetThread = task.spawn(function()
                     while track and track.IsPlaying and BossFarm.Enabled do
                         task.wait(0.1)
                     end
@@ -3050,6 +3063,37 @@ local function MonitorHyugaBossAnimations(bossModel)
     end)
 end
 
+-- Boss configurations
+local BossConfigs = {
+    ["Wooden Golem"] = { height = 16 },
+    ["Hyuga Boss"] = { height = 8 },
+    ["Lava Snake"] = { height = 38 },
+    ["Haku Boss"] = { height = 8 },
+    ["Barbarit The Rose"] = { height = 12 },
+    ["Manda"] = { height = 38 },
+}
+
+-- Find boss in workspace
+local function FindBoss(bossName)
+    local foldersToCheck = {"NPCs", "Mobs", "Enemies", workspace}
+    
+    for _, folder in ipairs(foldersToCheck) do
+        local searchFolder = folder == workspace and folder or workspace:FindFirstChild(folder)
+        if searchFolder then
+            for _, model in ipairs(searchFolder:GetChildren()) do
+                if model:IsA("Model") and model.Name == bossName then
+                    local hum = model:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 then
+                        return hum, model
+                    end
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- Monitor Haku Boss for IceDragonHead and Beam
 -- Start boss farm
 local function StartBossFarm()
     if BossFarm.AnchorConn then
@@ -3061,23 +3105,6 @@ local function StartBossFarm()
     
     local bossName = BossFarm.SelectedBoss
     local config = BossConfigs[bossName]
-    
-    -- For bosses that need teleport-first-then-scan
-    local needsTeleportScan = {
-        ["Wooden Golem"] = true,
-        ["Lava Snake"] = true,
-        ["Haku Boss"] = true,
-        ["Hyuga Boss"] = true,
-    }
-    
-    if needsTeleportScan[bossName] and config and config.initialTeleport then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = CFrame.new(config.initialTeleport)
-            Library:Notify("Teleported to " .. bossName .. " area, scanning...", 2)
-            task.wait(1) -- Wait for boss to load
-        end
-    end
     
     -- Find selected boss
     local humanoid, model = FindBoss(bossName)
@@ -3096,69 +3123,75 @@ local function StartBossFarm()
         BossFarm.HeightOffset = config.height
     end
     
-    -- Setup boss-specific monitoring
-    if bossName == "Wooden Golem" then
-        MonitorWoodenGolem(model)
-    elseif bossName == "Hyuga Boss" then
-        MonitorHyugaBossAnimations(model)
-    elseif bossName == "Haku Boss" then
-        MonitorHakuBoss()
-    elseif bossName == "Lava Snake" or bossName == "Manda" then
-        MonitorHeightBoostBoss(model)
+    -- If farming Hyuga Boss, monitor for special animations
+    if BossFarm.TargetName == "Hyuga Boss" then
+        MonitorHyugaBossAnimations(BossFarm.Target.Parent)
     end
     
-    Library:Notify("✓ Farming " .. bossName, 2)
-    
-    -- Anchor loop
+    -- If farming Haku Boss, monitor for IceDragonHead spawning
+    if BossFarm.TargetName == "Haku Boss" then
+        MonitorHakuBossIceDragon()
+    end
+
+    Library:Notify("Farming: " .. BossFarm.TargetName, 3)
+
+    -- Anchor: every frame, teleport on top of boss
     BossFarm.AnchorConn = RunService.Heartbeat:Connect(function()
-        local success = pcall(function()
+        local success, err = pcall(function()
             if not BossFarm.Enabled then return end
             local hum = BossFarm.Target
             if not hum or not hum.Parent or hum.Health <= 0 then
-                Library:Notify(BossFarm.TargetName .. " defeated!", 2)
-                local defeatedBoss = BossFarm.SelectedBoss
+                -- Boss died or despawned
+                Library:Notify(BossFarm.TargetName .. " is dead or gone!", 3)
                 BossFarm.Enabled = false
-                if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect() end
-                if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread) end
-                
-                -- Collect loot after boss dies
-                task.spawn(function()
-                    task.wait(0.5)
-                    CollectBossLoot(defeatedBoss)
-                end)
+                if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
+                if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
                 return
             end
 
             local bossRoot = hum.Parent:FindFirstChild("HumanoidRootPart") 
                           or hum.Parent:FindFirstChild("Head")
+                          or hum.Parent:FindFirstChild("Torso")
+                          or hum.Parent:FindFirstChild("UpperTorso")
                           or hum.Parent:FindFirstChildWhichIsA("BasePart")
-            if not bossRoot then return end
-
-            local char = LocalPlayer.Character
-            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-            local root = char.HumanoidRootPart
-
-            -- Haku safe spot
-            if BossFarm.SafeSpotActive then
-                root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
-                return
+            
+            if not bossRoot then 
+                print("[BOSS FARM] No root part found for", BossFarm.TargetName)
+                return 
             end
 
-            -- Normal position above boss
-            local totalHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
-            local targetPos = bossRoot.Position + Vector3.new(0, totalHeight, 0)
-            root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            -- Check if safe spot timer expired
+            if BossFarm.HakuSafeSpot and tick() >= BossFarm.HakuSafeSpotEndTime then
+                BossFarm.HakuSafeSpot = false
+            end
+
+            -- Position based on safe spot status
+            if BossFarm.HakuSafeSpot then
+                -- Anchor at safe spot position
+                root.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
+            else
+                -- Position above the boss, facing down at it
+                -- For Hyuga Boss, add extra height boost during special animations
+                local effectiveHeight = BossFarm.HeightOffset + BossFarm.HyugaHeightBoost
+                local targetPos = bossRoot.Position + Vector3.new(0, effectiveHeight, 0)
+                root.CFrame = CFrame.lookAt(targetPos, bossRoot.Position)
+            end
         end)
         
         if not success then
-            warn("[BOSS FARM] Error in anchor loop")
+            warn("[BOSS FARM] Heartbeat error:", err)
         end
     end)
 
-    -- Attack spam loop
+    -- Attack spam loop (fires remote)
     BossFarm.Thread = task.spawn(function()
         while BossFarm.Enabled do
-            if BossFarm.Target and BossFarm.Target.Health > 0 then
+            if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
                 BossFarmDash()
                 BossFarmAttack()
             end
@@ -3169,22 +3202,22 @@ end
 
 local function StopBossFarm()
     BossFarm.Enabled = false
-    BossFarm.PauseAttack = false
-    BossFarm.SafeSpotActive = false
     BossFarm.HyugaHeightBoost = 0
+    BossFarm.HakuSafeSpot = false
+    BossFarm.HakuSafeSpotEndTime = 0
     
-    if BossFarm.AnimConnection then
-        BossFarm.AnimConnection:Disconnect()
-        BossFarm.AnimConnection = nil
-    end
+    -- Disconnect Hyuga animation monitoring
     if BossFarm.HyugaAnimConnection then
         BossFarm.HyugaAnimConnection:Disconnect()
         BossFarm.HyugaAnimConnection = nil
     end
-    if BossFarm.DebrisConnection then
-        BossFarm.DebrisConnection:Disconnect()
-        BossFarm.DebrisConnection = nil
+    
+    -- Disconnect Haku object monitoring
+    if BossFarm.HakuAnimConnection then
+        BossFarm.HakuAnimConnection:Disconnect()
+        BossFarm.HakuAnimConnection = nil
     end
+    
     if BossFarm.AnchorConn then
         BossFarm.AnchorConn:Disconnect()
         BossFarm.AnchorConn = nil
@@ -3194,8 +3227,6 @@ local function StopBossFarm()
         BossFarm.Thread = nil
     end
 end
-
-local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
 
 BossFarmGroup:AddDropdown("BossSelector", {
     Text = "Select Boss",
