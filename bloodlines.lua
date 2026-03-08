@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.0",
+    Title = "Universal Hub v1.1.1",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2956,13 +2956,8 @@ local function MonitorHakuBoss()
         if child.Name == "IceDragonHead" or (child:IsA("Beam") and child.Name == "Beam121") then
             BossFarm.SafeSpotActive = true
             
-            -- Monitor until the attack model is removed
-            task.spawn(function()
-                -- Wait until the child is destroyed or removed
-                while child and child.Parent and BossFarm.Enabled do
-                    task.wait(0.1)
-                end
-                -- Attack ended
+            -- 1 second delay
+            task.delay(1, function()
                 BossFarm.SafeSpotActive = false
             end)
         end
