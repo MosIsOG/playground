@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.2a",
+    Title = "Universal Hub v1.1.2b",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2992,13 +2992,20 @@ local function MonitorHakuBossIceDragon()
         
         local shouldTeleport = false
         local detectionMsg = ""
+        local safeSpotDuration = 1  -- default 1 second
         
-        if child.Name == "IceDragonHead" then
+        -- Check for IceDragonHead (could be Model or Part)
+        if child.Name == "IceDragonHead" or (child:IsA("Model") and child.Name == "IceDragonHead") then
             shouldTeleport = true
-            detectionMsg = "Haku IceDragonHead detected! Teleported to safe spot (1s)"
+            safeSpotDuration = 4  -- 4 seconds for IceDragonHead
+            detectionMsg = "Haku IceDragonHead detected! Teleported to safe spot (4s)"
+            print("[DEBUG] IceDragonHead detected! Type:", child.ClassName)
+        -- Check for Beam121
         elseif child:IsA("Beam") and child.Name == "Beam121" then
             shouldTeleport = true
+            safeSpotDuration = 1  -- 1 second for Beam
             detectionMsg = "Haku Beam121 detected! Teleported to safe spot (1s)"
+            print("[DEBUG] Beam121 detected!")
         end
         
         if shouldTeleport then
@@ -3007,9 +3014,13 @@ local function MonitorHakuBossIceDragon()
             if char and char:FindFirstChild("HumanoidRootPart") then
                 char.HumanoidRootPart.CFrame = CFrame.new(-2969.2, 1832.9, -9610.4)
                 BossFarm.HakuSafeSpot = true
-                BossFarm.HakuSafeSpotEndTime = tick() + 1
+                BossFarm.HakuSafeSpotEndTime = tick() + safeSpotDuration
                 Library:Notify(detectionMsg, 1)
+                print("[DEBUG] Teleported to safe spot, timer set to:", BossFarm.HakuSafeSpotEndTime, "Duration:", safeSpotDuration)
             end
+        else
+            -- Debug: print what objects are spawning in Debris
+            print("[DEBUG] Debris child added:", child.Name, "Type:", child.ClassName)
         end
     end)
 end
