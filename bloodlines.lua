@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.0.1b",
+    Title = "Universal Hub v1.0.2",
     Center = true,
     AutoShow = true
 })
@@ -2092,6 +2092,74 @@ UserInputService.JumpRequest:Connect(function()
         end
     end
 end)
+
+-- ==================== VOID PROTECTION ====================
+local VoidProtection = {
+    Enabled = false,
+    VoidPart = nil,
+    OriginalCanTouch = nil,
+}
+
+local function FindVoidPart()
+    local success, result = pcall(function()
+        local children = workspace:GetChildren()
+        if children[1432] then
+            local subChildren = children[1432]:GetChildren()
+            if subChildren[38] then
+                return subChildren[38]:FindFirstChild("Void")
+            end
+        end
+        return nil
+    end)
+    return success and result or nil
+end
+
+local function EnableVoidProtection()
+    VoidProtection.VoidPart = FindVoidPart()
+    
+    if VoidProtection.VoidPart then
+        -- Store original CanTouch value
+        VoidProtection.OriginalCanTouch = VoidProtection.VoidPart.CanTouch
+        
+        -- Disable touching
+        VoidProtection.VoidPart.CanTouch = false
+        
+        Library:Notify("Void Protection enabled", 2)
+    else
+        Library:Notify("Void part not found at specified path", 3)
+    end
+end
+
+local function DisableVoidProtection()
+    if VoidProtection.VoidPart and VoidProtection.OriginalCanTouch ~= nil then
+        -- Restore original CanTouch value
+        VoidProtection.VoidPart.CanTouch = VoidProtection.OriginalCanTouch
+        Library:Notify("Void Protection disabled", 2)
+    end
+    
+    VoidProtection.VoidPart = nil
+    VoidProtection.OriginalCanTouch = nil
+end
+
+MovementGroup:AddToggle("VoidProtectionToggle", {
+    Text = "Void Protection",
+    Default = false,
+    Callback = function(v)
+        VoidProtection.Enabled = v
+        if v then
+            EnableVoidProtection()
+        else
+            DisableVoidProtection()
+        end
+    end
+}):AddKeyPicker("VoidProtectionKey", {
+    Default = "V",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Void Protection",
+})
+
+MovementGroup:AddLabel("Prevents death from Void part (CanTouch = false).")
 
 -- Misc Tab
 local MiscGroup = Tabs.Misc:AddLeftGroupbox("Misc")
