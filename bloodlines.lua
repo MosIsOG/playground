@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.4e",
+    Title = "Universal Hub v1.1.5",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2973,7 +2973,7 @@ local function MonitorHyugaBossAnimations(bossModel)
         local animId = track.Animation.AnimationId
         local assetId = animId:match("rbxassetid://(%d+)") or animId
         
-        -- Hyuga Boss special animations: 64 Palms and Rotation
+        -- Hyuga Boss special animations: 64 Palms and Rotation (+20 height)
         local hyugaDangerousAnims = {
             "8699113073", -- 64 palms
             "8580099842"  -- Rotation
@@ -2981,23 +2981,36 @@ local function MonitorHyugaBossAnimations(bossModel)
         
         for _, dangerAnimID in ipairs(hyugaDangerousAnims) do
             if assetId == dangerAnimID then
-                -- Increase height by 20 studs
                 BossFarm.HyugaHeightBoost = 20
                 Library:Notify("Hyuga Attack! Height +20", 1)
                 
-                -- Monitor the track to reset height when animation stops
                 local resetThread
                 resetThread = task.spawn(function()
                     while track and track.IsPlaying and BossFarm.Enabled do
                         task.wait(0.1)
                     end
-                    -- Animation ended, reset boost
-                    task.wait(0.5) -- Small grace period
+                    task.wait(0.5)
                     BossFarm.HyugaHeightBoost = 0
                 end)
                 
                 return
             end
+        end
+
+        -- Hyuga Boss elevated attack animation (+8 height)
+        if assetId == "122919972398961" then
+            BossFarm.HyugaHeightBoost = 8
+            Library:Notify("Hyuga Elevated Attack! Height +8", 1)
+
+            task.spawn(function()
+                while track and track.IsPlaying and BossFarm.Enabled do
+                    task.wait(0.1)
+                end
+                task.wait(0.5)
+                BossFarm.HyugaHeightBoost = 0
+            end)
+
+            return
         end
     end)
 end
@@ -3048,9 +3061,9 @@ end
 -- Boss configurations
 local BossConfigs = {
     ["Wooden Golem"] = { height = 16 },
-    ["Hyuga Boss"] = { height = 9.5, },
+    ["Hyuga Boss"] = { height = 10.75, },
     ["Lava Snake"] = { height = 38 },
-    ["Haku Boss"] = { height = 9.5, },
+    ["Haku Boss"] = { height = 10.75, },
     ["Barbarit The Rose"] = { height = 12 },
     ["Manda"] = { height = 38 },
 }
@@ -3075,7 +3088,94 @@ local function FindBoss(bossName)
     return nil, nil
 end
 
--- Monitor Haku Boss for IceDragonHead and Beam
+-- Boss loot collection spots
+local BossLootSpots = {
+    ["Hyuga Boss"]   = Vector3.new(-663.8,  -359.9,  -728.9),
+    ["Wooden Golem"] = Vector3.new(-4716.2,  344.1, -2932.0),
+    ["Haku Boss"]    = Vector3.new(-3788.1, -238.5, -9723.9),
+    ["Lava Snake"]   = Vector3.new(-546.7,  -546.9, -1461.6),
+}
+
+local BossLootTrinketNames = {
+    "Gold Bracelet", "Gold Ring", "Silver Ring", "Silver Bracelet",
+    "Silver Necklace", "Gold Necklace", "Gold Enclosed Ring", "Silver Enclosed Ring",
+    "Ring Schematics", "Ring Of The Neoncat", "Ring Of Resistance", "Ring Of Nourishment",
+    "Ring Of Favor", "Ring Of Remedy", "Ring Of Vitality", "Ring Of Infusion",
+    "Bloodbite Ring", "Ring Of Beauty", "Ring Of Dexterity", "Ring Of A Helping Hand",
+    "Aqua Gem", "Flame Gem", "Spark Gem", "Black Flame Gem", "Ground Gem",
+    "Ice Gem", "Wind Gem", "Poison Gem", "Extraction Spoon", "Scalpel",
+    "Chakra Heart", "Fruit Of Forgetfulness", "Progression Soul", "Memory Soul",
+    "Summoning Scroll", "Life Up Fruit", "Mastery Scroll",
+}
+local BossLootTrinketSet = {}
+for _, n in ipairs(BossLootTrinketNames) do BossLootTrinketSet[n] = true end
+
+local function CollectBossLoot(bossName)
+    local lootSpot = BossLootSpots[bossName]
+    if not lootSpot then return end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    -- Teleport to loot spot and wait for items to spawn
+    root.CFrame = CFrame.new(lootSpot)
+    task.wait(8)
+
+    -- Re-teleport after wait (player may have drifted)
+    char = LocalPlayer.Character
+    if not char then return end
+    root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    root.CFrame = CFrame.new(lootSpot)
+
+    -- Scan workspace for trinkets within 200 studs of loot spot
+    local lootItems = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and BossLootTrinketSet[obj.Name] then
+            local pos
+            if obj:IsA("BasePart") then
+                pos = obj.Position
+            else
+                local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if pp then pos = pp.Position end
+            end
+            if pos and (lootSpot - pos).Magnitude <= 200 then
+                local idVal = obj:FindFirstChild("ID")
+                if not idVal then
+                    for _, d in ipairs(obj:GetDescendants()) do
+                        if d.Name == "ID" and d:IsA("NumberValue") then idVal = d break end
+                    end
+                end
+                if idVal then
+                    table.insert(lootItems, {obj = obj, pos = pos, id = idVal.Value, dist = (lootSpot - pos).Magnitude})
+                end
+            end
+        end
+    end
+
+    table.sort(lootItems, function(a, b) return a.dist < b.dist end)
+
+    for _, entry in ipairs(lootItems) do
+        if not entry.obj.Parent then continue end
+        char = LocalPlayer.Character
+        if not char then break end
+        root = char:FindFirstChild("HumanoidRootPart")
+        if not root then break end
+        root.CFrame = CFrame.new(entry.pos + Vector3.new(0, 3, 0))
+        task.wait(0.4)
+        if BossFarmDataEvent then
+            pcall(function()
+                BossFarmDataEvent:FireServer("PickUp", entry.id)
+            end)
+        end
+        task.wait(1.0)
+    end
+
+    Library:Notify("Boss loot collection complete!", 2)
+end
+
 -- Start boss farm
 local function StartBossFarm()
     if BossFarm.AnchorConn then
@@ -3196,11 +3296,12 @@ local function StartBossFarm()
         while BossFarm.Enabled do
             -- Pause all attacks while Hyuga is in the void
             if BossFarm.HyugaInVoid then
-                task.wait(0.5)
+                task.wait(BossFarm.AttackDelay)
                 continue
             end
             if BossFarm.Target and BossFarm.Target.Parent and BossFarm.Target.Health > 0 then
                 BossFarmDash()
+                task.wait(0.05)
                 BossFarmAttack()
             end
             task.wait(BossFarm.AttackDelay)
@@ -4832,344 +4933,184 @@ RiftGroup:AddSlider("RiftDelay", {
 RiftGroup:AddLabel("Teleports to each Unstable Rift in workspace.Rifts.")
 RiftGroup:AddLabel("Presses E at each location.")
 
--- ==================== TRINKET COLLECTOR ====================
-TrinketCollector = {
-    Enabled = false,
-    CollectedCount = 0,
-}
-
+-- ==================== AUTO TRINKET PICKUP ====================
 local trinketNames = {
-    "Gold Bracelet",
-    "Gold Ring",
-    "Silver Ring",
-    "Silver Bracelet",
-    "Silver Necklace",
-    "Gold Necklace",
-    "Gold Enclosed Ring",
-    "Silver Enclosed Ring",
-    "Ring Schematics",
-    "Ring Of The Neoncat",
-    "Ring Of Resistance",
-    "Ring Of Nourishment",
-    "Ring Of Favor",
-    "Ring Of Remedy",
-    "Ring Of Vitality",
-    "Ring Of Infusion",
-    "Bloodbite Ring",
-    "Ring Of Beauty",
-    "Ring Of Dexterity",
-    "Ring Of A Helping Hand",
-    "Ring Schematics",
-    "Aqua Gem",
-    "Flame Gem",
-    "Spark Gem",
-    "Black Flame Gem",
-    "Ground Gem",
-    "Ice Gem",
-    "Wind Gem",
-    "Poison Gem",
-    "Extraction Spoon",
-    "Scalpel",
-    "Chakra Heart",
-    "Scalpel",
-    "Fruit Of Forgetfulness",
-    "Progression Soul",
-    "Memory Soul",
-    "Summoning Scroll",
-    "Life Up Fruit",
-    "Mastery Scroll",
+    "Gold Bracelet", "Gold Ring", "Silver Ring", "Silver Bracelet",
+    "Silver Necklace", "Gold Necklace", "Gold Enclosed Ring", "Silver Enclosed Ring",
+    "Ring Schematics", "Ring Of The Neoncat", "Ring Of Resistance", "Ring Of Nourishment",
+    "Ring Of Favor", "Ring Of Remedy", "Ring Of Vitality", "Ring Of Infusion",
+    "Bloodbite Ring", "Ring Of Beauty", "Ring Of Dexterity", "Ring Of A Helping Hand",
+    "Ring Schematics", "Aqua Gem", "Flame Gem", "Spark Gem", "Black Flame Gem",
+    "Ground Gem", "Ice Gem", "Wind Gem", "Poison Gem", "Extraction Spoon",
+    "Scalpel", "Chakra Heart", "Scalpel", "Fruit Of Forgetfulness", "Progression Soul",
+    "Memory Soul", "Summoning Scroll", "Life Up Fruit", "Mastery Scroll",
 }
 
-local TrinketGroup = TeleportTab:AddRightGroupbox("Trinket Collector")
+local AutoTrinket = {
+    Enabled = false,
+    ScanInterval = 2,          -- seconds between full scans
+    ScanRadius = 100,          -- only pick up trinkets within this distance
+    TeleportToTrinket = true,   -- move to the item before picking up
+    PickupOffset = 3,           -- studs above the trinket when teleporting
+    LastScan = 0,
+    Processed = {},             -- track trinkets already picked up (by ID or instance)
+    Thread = nil,
+}
 
-local TrinketStatusLabel = TrinketGroup:AddLabel("Status: Idle (0 collected)")
+local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+               and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
 
 local function IsTrinket(obj)
-    if not obj then return false end
+    if not obj:IsA("Model") and not obj:IsA("BasePart") then return false end
     for _, name in ipairs(trinketNames) do
-        if obj.Name == name then
-            return true
-        end
+        if obj.Name == name then return true end
     end
     return false
 end
 
-local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events") and 
-                  game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+local function GetTrinketId(trinket)
+    local idVal = trinket:FindFirstChild("ID")
+    if idVal and idVal:IsA("NumberValue") then
+        return idVal.Value
+    end
+    -- sometimes ID is inside a child
+    for _, child in ipairs(trinket:GetDescendants()) do
+        if child.Name == "ID" and child:IsA("NumberValue") then
+            return child.Value
+        end
+    end
+    return nil
+end
 
-local function CollectTrinket(trinket)
-    local char = LocalPlayer.Character
-    if not char then return false end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return false end
-    
-    -- METHOD 1: Fire the remote with the trinket's ID
+local function GetTrinketPosition(trinket)
+    if trinket:IsA("BasePart") then
+        return trinket.Position
+    elseif trinket:IsA("Model") then
+        -- try primary part, then first part
+        local primary = trinket.PrimaryPart
+        if primary then return primary.Position end
+        for _, part in ipairs(trinket:GetChildren()) do
+            if part:IsA("BasePart") then
+                return part.Position
+            end
+        end
+        -- fallback to model pivot
+        return trinket:GetPivot().Position
+    end
+    return nil
+end
+
+local function PickupTrinket(trinket, id)
+    if not AutoTrinket.Enabled then return end
+
+    local pos = GetTrinketPosition(trinket)
+    if not pos then return end
+
+    -- check distance before teleport
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
+    local dist = (localRoot.Position - pos).Magnitude
+    if dist > AutoTrinket.ScanRadius then return end
+
+    if AutoTrinket.TeleportToTrinket then
+        localRoot.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
+        task.wait(0.1)  -- let the server register position
+    end
+
     if DataEvent then
-        local idValue = trinket:FindFirstChild("ID")
-        if idValue and idValue:IsA("NumberValue") then
-            local success = pcall(function()
-                DataEvent:FireServer("PickUp", idValue.Value)
-            end)
-            if success then
-                task.wait(0.1)
-                if not trinket.Parent then
-                    return true
-                end
-            end
-        end
+        pcall(function()
+            DataEvent:FireServer("PickUp", id)
+        end)
+        -- mark as processed so we don't attempt again
+        AutoTrinket.Processed[id] = true
+        Library:Notify("Picked up: " .. trinket.Name, 1)
     end
-    
-    -- METHOD 2: Mouse click at trinket's screen position
-    local part = trinket:IsA("BasePart") and trinket or trinket:FindFirstChildWhichIsA("BasePart")
-    if part then
-        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-        if onScreen then
-            pcall(function()
-                VirtualInput:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 0)
-                task.wait(0.05)
-                VirtualInput:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 0)
-            end)
-            task.wait(0.1)
-            if not trinket.Parent then
-                return true
-            end
-        end
-    end
-    
-    return false
 end
 
--- Queue-based trinket collector: one at a time, steady pace, safe to keep on always
-local TrinketSpawnConnection = nil
-local TrinketQueue   = {}   -- ordered list of objects waiting to be picked up
-local TrinketQueued  = {}   -- set to prevent duplicates in the queue
-local TrinketWorkerThread = nil
+local function ScanForTrinkets()
+    if not AutoTrinket.Enabled then return end
 
-local function EnqueueTrinket(obj)
-    if not TrinketCollector.Enabled then return end
-    if not obj or not obj.Parent then return end
-    if TrinketQueued[obj] then return end
-    if not IsTrinket(obj) then return end
-    -- Radius check at enqueue: skip trinkets that are already too far away
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if root then
-        local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
-        if part and (root.Position - part.Position).Magnitude > TRINKET_PICKUP_RADIUS then return end
-    end
-    TrinketQueued[obj] = true
-    table.insert(TrinketQueue, obj)
-end
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
 
-local TRINKET_PICKUP_RADIUS = 200 -- studs
+    local playerPos = localRoot.Position
 
-local function TrinketWorker()
-    while TrinketCollector.Enabled do
-        if #TrinketQueue > 0 then
-            local obj = table.remove(TrinketQueue, 1)
-            TrinketQueued[obj] = nil
-
-            if obj and obj.Parent then
-                local char = LocalPlayer.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
-                    if part and part.Parent then
-                        -- Only collect if within 200 studs of current position
-                        local dist = (root.Position - part.Position).Magnitude
-                        if dist <= TRINKET_PICKUP_RADIUS then
-                            -- Teleport on top of the trinket
-                            root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-                            task.wait(0.4)  -- let the server register our position
-                            -- Attempt pickup if still there
-                            if obj.Parent then
-                                if CollectTrinket(obj) then
-                                    TrinketCollector.CollectedCount = TrinketCollector.CollectedCount + 1
-                                    TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
-                                end
-                            end
-                        end
-                        -- If too far away, just skip it (don't re-queue)
+    -- Quick scan through workspace descendants (optimize by checking folders first if known)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if not AutoTrinket.Enabled then break end
+        if IsTrinket(obj) then
+            local id = GetTrinketId(obj)
+            if id and not AutoTrinket.Processed[id] then
+                local pos = GetTrinketPosition(obj)
+                if pos then
+                    local dist = (playerPos - pos).Magnitude
+                    if dist <= AutoTrinket.ScanRadius then
+                        PickupTrinket(obj, id)
                     end
                 end
             end
-            task.wait(1.2)  -- pace between each trinket pickup
-        else
-            task.wait(0.5)  -- idle poll while queue is empty
         end
     end
 end
 
-StartTrinketCollector = function()
-    if TrinketSpawnConnection then
-        TrinketSpawnConnection:Disconnect()
-        TrinketSpawnConnection = nil
+local function AutoTrinketLoop()
+    while AutoTrinket.Enabled do
+        ScanForTrinkets()
+        task.wait(AutoTrinket.ScanInterval)
     end
-    if TrinketWorkerThread then
-        pcall(task.cancel, TrinketWorkerThread)
-        TrinketWorkerThread = nil
-    end
-
-    TrinketQueue  = {}
-    TrinketQueued = {}
-
-    -- Watch for any new trinket that spawns anywhere in workspace
-    TrinketSpawnConnection = workspace.DescendantAdded:Connect(function(obj)
-        if TrinketCollector.Enabled and IsTrinket(obj) then
-            task.delay(0.2, function()
-                EnqueueTrinket(obj)
-            end)
-        end
-    end)
-
-    -- Scan all existing workspace descendants for trinkets already on the ground
-    task.spawn(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if TrinketCollector.Enabled and IsTrinket(obj) then
-                EnqueueTrinket(obj)
-            end
-        end
-    end)
-
-    -- Start the single serialized worker
-    TrinketWorkerThread = task.spawn(TrinketWorker)
-    TrinketStatusLabel:SetText("Status: Active (" .. TrinketCollector.CollectedCount .. " collected)")
 end
 
-StopTrinketCollector = function()
-    TrinketCollector.Enabled = false
+-- UI in AutoFarm tab
+local TrinketGroup = AutoFarmTab:AddRightGroupbox("Auto Trinket Pickup")
 
-    if TrinketSpawnConnection then
-        TrinketSpawnConnection:Disconnect()
-        TrinketSpawnConnection = nil
-    end
-    if TrinketWorkerThread then
-        pcall(task.cancel, TrinketWorkerThread)
-        TrinketWorkerThread = nil
-    end
-
-    TrinketQueue  = {}
-    TrinketQueued = {}
-    TrinketStatusLabel:SetText("Status: Stopped (" .. TrinketCollector.CollectedCount .. " total)")
-end
-
--- Collect boss loot after kill (defined here after trinket collector functions)
-local BossLootSpots = {
-    ["Hyuga Boss"]    = Vector3.new(-663.8,  -359.9,  -728.9),
-    ["Wooden Golem"]  = Vector3.new(-4716.2,  344.1, -2932.0),
-    ["Haku Boss"]     = Vector3.new(-3788.1, -238.5, -9723.9),
-    ["Lava Snake"]    = Vector3.new(-546.7,  -546.9, -1461.6),
-}
-
-CollectBossLoot = function(bossName)
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local root = char.HumanoidRootPart
-
-    -- Teleport to the known loot spawn position for this boss
-    local lootSpot = BossLootSpots[bossName]
-    if lootSpot then
-        root.CFrame = CFrame.new(lootSpot)
-        Library:Notify("Moved to " .. bossName .. " loot spot", 2)
-    end
-
-    Library:Notify("Waiting 8s for loot to spawn...", 2)
-    task.wait(8)
-
-    -- Re-check character after wait
-    char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    root = char.HumanoidRootPart
-
-    -- Re-anchor at loot spot after the wait (boss farm may have moved us)
-    if lootSpot then
-        root.CFrame = CFrame.new(lootSpot)
-        task.wait(0.3)
-    end
-
-    local scanOrigin = lootSpot or root.Position
-
-    -- Scan ALL workspace descendants for trinkets within 200 studs of loot spot
-    local nearbyTrinkets = {}
-    local seen = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if not seen[obj] and IsTrinket(obj) then
-            seen[obj] = true
-            local pos = nil
-            if obj:IsA("BasePart") then
-                pos = obj.Position
-            else
-                local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                if part then pos = part.Position end
-            end
-            if pos and (scanOrigin - pos).Magnitude <= 200 then
-                table.insert(nearbyTrinkets, {obj = obj, pos = pos})
-            end
-        end
-    end
-
-    if #nearbyTrinkets == 0 then
-        Library:Notify("No trinkets found at " .. bossName .. " loot spot", 2)
-        return
-    end
-
-    -- Sort closest first
-    table.sort(nearbyTrinkets, function(a, b)
-        return (scanOrigin - a.pos).Magnitude < (scanOrigin - b.pos).Magnitude
-    end)
-
-    Library:Notify("Looting " .. #nearbyTrinkets .. " trinkets...", 2)
-
-    local collected = 0
-    for _, data in ipairs(nearbyTrinkets) do
-        local obj = data.obj
-        if not obj or not obj.Parent then continue end
-
-        -- Re-fetch root in case of respawn
-        char = LocalPlayer.Character
-        if not char then continue end
-        root = char:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
-
-        -- Teleport onto it
-        root.CFrame = CFrame.new(data.pos + Vector3.new(0, 3, 0))
-        task.wait(0.4)
-
-        -- Attempt pickup once
-        if obj.Parent then
-            CollectTrinket(obj)
-            collected = collected + 1
-        end
-        task.wait(1.0)
-    end
-
-    Library:Notify("Loot done! (" .. collected .. " attempted)", 2)
-end
-
-TrinketGroup:AddToggle("TrinketCollectorToggle", {
-    Text = "Auto Collect Trinkets",
+TrinketGroup:AddToggle("AutoTrinketToggle", {
+    Text = "Enable Auto Trinket",
     Default = false,
     Callback = function(v)
-        TrinketCollector.Enabled = v
+        AutoTrinket.Enabled = v
         if v then
-            StartTrinketCollector()
+            if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread) end
+            AutoTrinket.Thread = task.spawn(AutoTrinketLoop)
         else
-            StopTrinketCollector()
+            if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread); AutoTrinket.Thread = nil end
+            AutoTrinket.Processed = {}  -- clear memory when disabled
         end
     end
 })
 
-TrinketGroup:AddButton({
-    Text = "Reset Counter",
-    Func = function()
-        TrinketCollector.CollectedCount = 0
-        TrinketStatusLabel:SetText("Status: " .. (TrinketCollector.Enabled and "Active" or "Idle") .. " (0 collected)")
-        Library:Notify("Trinket counter reset", 2)
-    end
+TrinketGroup:AddSlider("TrinketScanInterval", {
+    Text = "Scan Interval",
+    Default = 2,
+    Min = 1,
+    Max = 10,
+    Rounding = 0,
+    Suffix = "s",
+    Callback = function(v) AutoTrinket.ScanInterval = v end
 })
 
-TrinketGroup:AddLabel("Event-based instant collection (optimized).")
-TrinketGroup:AddLabel("Collects any trinket that spawns near you.")
+TrinketGroup:AddSlider("TrinketScanRadius", {
+    Text = "Scan Radius",
+    Default = 100,
+    Min = 20,
+    Max = 500,
+    Rounding = 0,
+    Suffix = " studs",
+    Callback = function(v) AutoTrinket.ScanRadius = v end
+})
+
+TrinketGroup:AddToggle("TrinketTeleport", {
+    Text = "Teleport to Trinket",
+    Default = true,
+    Callback = function(v) AutoTrinket.TeleportToTrinket = v end
+})
+
+TrinketGroup:AddLabel("Scans for items in the trinket list.")
+TrinketGroup:AddLabel("Requires ID NumberValue child.")
+TrinketGroup:AddLabel("Picks up using DataEvent:PickUp.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
@@ -5186,9 +5127,10 @@ SaveManager:LoadAutoloadConfig()
 
 -- Re-apply toggles that require active start functions (SaveManager only restores values, not side-effects)
 pcall(function()
-    if Toggles and Toggles.TrinketCollectorToggle and Toggles.TrinketCollectorToggle.Value then
-        TrinketCollector.Enabled = true
-        StartTrinketCollector()
+    if Toggles and Toggles.AutoTrinketToggle and Toggles.AutoTrinketToggle.Value then
+        AutoTrinket.Enabled = true
+        if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread) end
+        AutoTrinket.Thread = task.spawn(AutoTrinketLoop)
     end
 end)
 
