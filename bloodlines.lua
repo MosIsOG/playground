@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Jitler Hub v1.1.5e",
+    Title = "Jitler Hub v1.1.5f",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -5079,128 +5079,225 @@ local trinketNames = {
     "Ring Schematics", "Ring Of The Neoncat", "Ring Of Resistance", "Ring Of Nourishment",
     "Ring Of Favor", "Ring Of Remedy", "Ring Of Vitality", "Ring Of Infusion",
     "Bloodbite Ring", "Ring Of Beauty", "Ring Of Dexterity", "Ring Of A Helping Hand",
-    "Ring Schematics", "Aqua Gem", "Flame Gem", "Spark Gem", "Black Flame Gem",
+    "Aqua Gem", "Flame Gem", "Spark Gem", "Black Flame Gem",
     "Ground Gem", "Ice Gem", "Wind Gem", "Poison Gem", "Extraction Spoon",
-    "Scalpel", "Chakra Heart", "Scalpel", "Fruit Of Forgetfulness", "Progression Soul",
+    "Scalpel", "Chakra Heart", "Fruit Of Forgetfulness", "Progression Soul",
     "Memory Soul", "Summoning Scroll", "Life Up Fruit", "Mastery Scroll",
 }
 
+-- O(1) name lookup
+local TrinketSet = {}
+for _, n in ipairs(trinketNames) do TrinketSet[n] = true end
+
+-- Folders where the game typically drops loot
+local LOOT_FOLDER_NAMES = {"Drops", "Debris", "Loot", "Items", "DroppedItems", "Effects"}
+
 local AutoTrinket = {
     Enabled = false,
-    ScanInterval = 2,          -- seconds between full scans
-    ScanRadius = 100,          -- only pick up trinkets within this distance
-    TeleportToTrinket = true,   -- move to the item before picking up
-    PickupOffset = 3,           -- studs above the trinket when teleporting
-    LastScan = 0,
-    Processed = {},             -- track trinkets already picked up (by ID or instance)
-    Thread = nil,
+    ScanInterval = 5,           -- fallback scan every N seconds
+    ScanRadius = 100,
+    TeleportToTrinket = true,
+    PickupOffset = 3,
+    Processed = {},             -- ids already picked up
+    Queue = {},                 -- ordered list of {obj, id}
+    Queued = {},                -- set of ids currently in queue
+    WorkerThread = nil,
+    ScanThread = nil,
+    FolderConns = {},           -- ChildAdded connections on loot folders
+    WorkspaceConn = nil,        -- ChildAdded on workspace direct children
 }
 
-local DataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+local TrinketDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
                and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
 
-local function IsTrinket(obj)
-    if not obj:IsA("Model") and not obj:IsA("BasePart") then return false end
-    for _, name in ipairs(trinketNames) do
-        if obj.Name == name then return true end
-    end
-    return false
-end
-
-local function GetTrinketId(trinket)
-    local idVal = trinket:FindFirstChild("ID")
-    if idVal and idVal:IsA("NumberValue") then
-        return idVal.Value
-    end
-    -- sometimes ID is inside a child
-    for _, child in ipairs(trinket:GetDescendants()) do
-        if child.Name == "ID" and child:IsA("NumberValue") then
-            return child.Value
-        end
+local function GetTrinketId(obj)
+    local idVal = obj:FindFirstChild("ID")
+    if idVal and idVal:IsA("NumberValue") then return idVal.Value end
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d.Name == "ID" and d:IsA("NumberValue") then return d.Value end
     end
     return nil
 end
 
-local function GetTrinketPosition(trinket)
-    if trinket:IsA("BasePart") then
-        return trinket.Position
-    elseif trinket:IsA("Model") then
-        -- try primary part, then first part
-        local primary = trinket.PrimaryPart
-        if primary then return primary.Position end
-        for _, part in ipairs(trinket:GetChildren()) do
-            if part:IsA("BasePart") then
-                return part.Position
-            end
+local function GetTrinketPosition(obj)
+    if obj:IsA("BasePart") then return obj.Position end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart.Position end
+        for _, p in ipairs(obj:GetChildren()) do
+            if p:IsA("BasePart") then return p.Position end
         end
-        -- fallback to model pivot
-        return trinket:GetPivot().Position
+        return obj:GetPivot().Position
     end
     return nil
 end
 
-local function PickupTrinket(trinket, id)
+local function EnqueueTrinket(obj)
     if not AutoTrinket.Enabled then return end
-
-    local pos = GetTrinketPosition(trinket)
-    if not pos then return end
-
-    -- check distance before teleport
-    local localChar = LocalPlayer.Character
-    if not localChar then return end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
-    if not localRoot then return end
-    local dist = (localRoot.Position - pos).Magnitude
-    if dist > AutoTrinket.ScanRadius then return end
-
-    if AutoTrinket.TeleportToTrinket then
-        localRoot.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
-        task.wait(0.1)  -- let the server register position
-    end
-
-    if DataEvent then
-        pcall(function()
-            DataEvent:FireServer("PickUp", id)
-        end)
-        -- mark as processed so we don't attempt again
-        AutoTrinket.Processed[id] = true
-        Library:Notify("Picked up: " .. trinket.Name, 1)
-    end
+    if not obj or not obj.Parent then return end
+    if not (obj:IsA("Model") or obj:IsA("BasePart")) then return end
+    if not TrinketSet[obj.Name] then return end
+    local id = GetTrinketId(obj)
+    if not id then return end
+    if AutoTrinket.Processed[id] then return end
+    if AutoTrinket.Queued[id] then return end
+    AutoTrinket.Queued[id] = true
+    table.insert(AutoTrinket.Queue, {obj = obj, id = id})
 end
 
-local function ScanForTrinkets()
-    if not AutoTrinket.Enabled then return end
-
-    local localChar = LocalPlayer.Character
-    if not localChar then return end
-    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
-    if not localRoot then return end
-
-    local playerPos = localRoot.Position
-
-    -- Quick scan through workspace descendants (optimize by checking folders first if known)
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if not AutoTrinket.Enabled then break end
-        if IsTrinket(obj) then
-            local id = GetTrinketId(obj)
-            if id and not AutoTrinket.Processed[id] then
-                local pos = GetTrinketPosition(obj)
-                if pos then
-                    local dist = (playerPos - pos).Magnitude
-                    if dist <= AutoTrinket.ScanRadius then
-                        PickupTrinket(obj, id)
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function AutoTrinketLoop()
+-- Worker: processes the queue one trinket at a time
+local function TrinketWorker()
     while AutoTrinket.Enabled do
-        ScanForTrinkets()
-        task.wait(AutoTrinket.ScanInterval)
+        if #AutoTrinket.Queue == 0 then
+            task.wait(0.3)
+            continue
+        end
+
+        local entry = table.remove(AutoTrinket.Queue, 1)
+        local obj, id = entry.obj, entry.id
+
+        if not obj.Parent or AutoTrinket.Processed[id] then
+            AutoTrinket.Queued[id] = nil
+            continue
+        end
+
+        local pos = GetTrinketPosition(obj)
+        if not pos then
+            AutoTrinket.Queued[id] = nil
+            continue
+        end
+
+        local char = LocalPlayer.Character
+        if not char then task.wait(0.5); continue end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then task.wait(0.5); continue end
+
+        if (root.Position - pos).Magnitude > AutoTrinket.ScanRadius then
+            AutoTrinket.Queued[id] = nil
+            continue
+        end
+
+        if AutoTrinket.TeleportToTrinket then
+            root.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
+            task.wait(0.25)
+        end
+
+        if obj.Parent and TrinketDataEvent then
+            pcall(function()
+                TrinketDataEvent:FireServer("PickUp", id)
+            end)
+            AutoTrinket.Processed[id] = true
+            Library:Notify("Picked up: " .. obj.Name, 1)
+        end
+
+        AutoTrinket.Queued[id] = nil
+        task.wait(0.5)
     end
+end
+
+-- Scan known loot folders + workspace direct children, yielding every 50 items
+local function ScanFolders()
+    if not AutoTrinket.Enabled then return end
+
+    local toScan = {}
+    -- workspace direct children (preloaded: workspace["Silver Ring"], etc.)
+    for _, obj in ipairs(workspace:GetChildren()) do
+        table.insert(toScan, obj)
+    end
+    -- known loot folder descendants
+    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetDescendants()) do
+                table.insert(toScan, obj)
+            end
+        end
+    end
+
+    local count = 0
+    for _, obj in ipairs(toScan) do
+        if not AutoTrinket.Enabled then break end
+        if TrinketSet[obj.Name] then
+            EnqueueTrinket(obj)
+        end
+        count = count + 1
+        if count % 50 == 0 then
+            task.wait()  -- yield to prevent frame freeze
+        end
+    end
+end
+
+local function SetupFolderListeners()
+    -- Clean up old connections
+    for _, conn in ipairs(AutoTrinket.FolderConns) do conn:Disconnect() end
+    AutoTrinket.FolderConns = {}
+    if AutoTrinket.WorkspaceConn then
+        AutoTrinket.WorkspaceConn:Disconnect()
+        AutoTrinket.WorkspaceConn = nil
+    end
+
+    -- Watch workspace direct children (catches e.g. workspace["Silver Ring"])
+    AutoTrinket.WorkspaceConn = workspace.ChildAdded:Connect(function(child)
+        if TrinketSet[child.Name] then
+            task.delay(0.05, function() EnqueueTrinket(child) end)
+        end
+        -- Also hook if a new loot folder appears
+        for _, name in ipairs(LOOT_FOLDER_NAMES) do
+            if child.Name == name then
+                local conn = child.ChildAdded:Connect(function(obj)
+                    task.delay(0.05, function() EnqueueTrinket(obj) end)
+                end)
+                table.insert(AutoTrinket.FolderConns, conn)
+                break
+            end
+        end
+    end)
+
+    -- Watch existing loot folders
+    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            local conn = folder.ChildAdded:Connect(function(child)
+                task.delay(0.05, function() EnqueueTrinket(child) end)
+            end)
+            table.insert(AutoTrinket.FolderConns, conn)
+        end
+    end
+end
+
+local function StartAutoTrinket()
+    AutoTrinket.Queue = {}
+    AutoTrinket.Queued = {}
+    AutoTrinket.Processed = {}
+
+    SetupFolderListeners()
+
+    -- Preload: scan what's already in workspace / loot folders
+    task.spawn(ScanFolders)
+
+    -- Worker thread
+    if AutoTrinket.WorkerThread then task.cancel(AutoTrinket.WorkerThread) end
+    AutoTrinket.WorkerThread = task.spawn(TrinketWorker)
+
+    -- Periodic fallback scan
+    if AutoTrinket.ScanThread then task.cancel(AutoTrinket.ScanThread) end
+    AutoTrinket.ScanThread = task.spawn(function()
+        while AutoTrinket.Enabled do
+            task.wait(AutoTrinket.ScanInterval)
+            if AutoTrinket.Enabled then task.spawn(ScanFolders) end
+        end
+    end)
+end
+
+local function StopAutoTrinket()
+    AutoTrinket.Enabled = false
+    if AutoTrinket.WorkerThread then task.cancel(AutoTrinket.WorkerThread); AutoTrinket.WorkerThread = nil end
+    if AutoTrinket.ScanThread then task.cancel(AutoTrinket.ScanThread); AutoTrinket.ScanThread = nil end
+    for _, conn in ipairs(AutoTrinket.FolderConns) do conn:Disconnect() end
+    AutoTrinket.FolderConns = {}
+    if AutoTrinket.WorkspaceConn then AutoTrinket.WorkspaceConn:Disconnect(); AutoTrinket.WorkspaceConn = nil end
+    AutoTrinket.Queue = {}
+    AutoTrinket.Queued = {}
+    AutoTrinket.Processed = {}
 end
 
 -- UI in AutoFarm tab
@@ -5212,20 +5309,18 @@ TrinketGroup:AddToggle("AutoTrinketToggle", {
     Callback = function(v)
         AutoTrinket.Enabled = v
         if v then
-            if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread) end
-            AutoTrinket.Thread = task.spawn(AutoTrinketLoop)
+            StartAutoTrinket()
         else
-            if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread); AutoTrinket.Thread = nil end
-            AutoTrinket.Processed = {}  -- clear memory when disabled
+            StopAutoTrinket()
         end
     end
 })
 
 TrinketGroup:AddSlider("TrinketScanInterval", {
     Text = "Scan Interval",
-    Default = 2,
+    Default = 5,
     Min = 1,
-    Max = 10,
+    Max = 30,
     Rounding = 0,
     Suffix = "s",
     Callback = function(v) AutoTrinket.ScanInterval = v end
@@ -5247,9 +5342,9 @@ TrinketGroup:AddToggle("TrinketTeleport", {
     Callback = function(v) AutoTrinket.TeleportToTrinket = v end
 })
 
-TrinketGroup:AddLabel("Scans for items in the trinket list.")
-TrinketGroup:AddLabel("Requires ID NumberValue child.")
-TrinketGroup:AddLabel("Picks up using DataEvent:PickUp.")
+TrinketGroup:AddLabel("Event-driven: hooks ChildAdded on loot folders.")
+TrinketGroup:AddLabel("Preloads trinkets already in workspace on enable.")
+TrinketGroup:AddLabel("Fallback scan every N seconds (configurable).")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
@@ -5268,8 +5363,7 @@ SaveManager:LoadAutoloadConfig()
 pcall(function()
     if Toggles and Toggles.AutoTrinketToggle and Toggles.AutoTrinketToggle.Value then
         AutoTrinket.Enabled = true
-        if AutoTrinket.Thread then task.cancel(AutoTrinket.Thread) end
-        AutoTrinket.Thread = task.spawn(AutoTrinketLoop)
+        StartAutoTrinket()
     end
 end)
 
