@@ -1,4 +1,4 @@
--- Universal Hub - LinoriaLib + Unnamed ESP Core (No duplicate UI)
+-- Jitler Hub - LinoriaLib + Unnamed ESP Core (No duplicate UI)
 
 -- Load LinoriaLib
 local success, Library = pcall(function()
@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.5c",
+    Title = "Jitler Hub v1.1.5e",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3340,10 +3340,10 @@ local function StartBossFarm()
     if BossFarm.TargetName == "Hyuga Boss" then
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
         MonitorHyugaVoid(BossFarm.Target.Parent)
-        -- Farm 2 studs lower for the first 3 seconds, then return to normal
+        -- Farm 2 studs lower for the first 5 seconds, then return to normal
         task.spawn(function()
             BossFarm.HyugaHeightBoost = -2
-            task.wait(3)
+            task.wait(5)
             if BossFarm.HyugaHeightBoost == -2 then
                 BossFarm.HyugaHeightBoost = 0
             end
@@ -5273,4 +5273,4 @@ pcall(function()
     end
 end)
 
-print("=== Universal Hub Loaded ===")
+print("=== Jitler Hub Loaded ===")
