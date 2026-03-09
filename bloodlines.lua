@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.5",
+    Title = "Universal Hub v1.1.5a",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2997,10 +2997,10 @@ local function MonitorHyugaBossAnimations(bossModel)
             end
         end
 
-        -- Hyuga Boss elevated attack animation (+8 height)
+        -- Hyuga Boss elevated attack animation (height -2)
         if assetId == "122919972398961" then
-            BossFarm.HyugaHeightBoost = 8
-            Library:Notify("Hyuga Elevated Attack! Height +8", 1)
+            BossFarm.HyugaHeightBoost = -2
+            Library:Notify("Hyuga Elevated Attack! Height -2", 1)
 
             task.spawn(function()
                 while track and track.IsPlaying and BossFarm.Enabled do
