@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.5c",
+    Title = "Universal Hub v1.1.5d",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3336,15 +3336,14 @@ local function StartBossFarm()
         BossFarm.HeightOffset = config.height
     end
     
-    -- If farming Hyuga Boss, monitor for special animations and void proximity
+    -- If farming Hyuga Boss, monitor void proximity and lower height for first 2 seconds
     if BossFarm.TargetName == "Hyuga Boss" then
-        MonitorHyugaBossAnimations(BossFarm.Target.Parent)
         MonitorHyugaVoid(BossFarm.Target.Parent)
         -- Start 2 studs lower for the first 2 seconds, then return to normal
         task.spawn(function()
             BossFarm.HyugaHeightBoost = -2
-            task.wait(2)
-            if BossFarm.HyugaHeightBoost == -2 then  -- only reset if nothing else changed it
+            task.wait(5)
+            if BossFarm.HyugaHeightBoost == -2 then
                 BossFarm.HyugaHeightBoost = 0
             end
         end)
