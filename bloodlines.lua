@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Universal Hub v1.1.5a",
+    Title = "Universal Hub v1.1.5c",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -1986,6 +1986,141 @@ KillPartGroup:AddToggle("KillBrickToggle", {
 KillPartGroup:AddLabel("Sets CanTouch=false on all Parts named Void/Lava.")
 KillPartGroup:AddLabel("Hyuga void avoidance handled separately in boss farm.")
 
+-- ==================== BACK ATTACH ====================
+local BackAttach = {
+    Enabled = false,
+    Weld = nil,
+    Target = nil,
+    HeartbeatConn = nil,
+    MaxDistance = 200,
+}
+
+local function GetNearestPlayer()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local nearest = nil
+    local nearestDist = BackAttach.MaxDistance
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local tc = player.Character
+        if not tc then continue end
+        local tr = tc:FindFirstChild("HumanoidRootPart")
+        if not tr then continue end
+        local hum = tc:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        local dist = (root.Position - tr.Position).Magnitude
+        if dist < nearestDist then
+            nearestDist = dist
+            nearest = player
+        end
+    end
+
+    return nearest
+end
+
+local function StartBackAttach()
+    local char = LocalPlayer.Character
+    if not char then
+        Library:Notify("No character found!", 2)
+        BackAttach.Enabled = false
+        return
+    end
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    if not myRoot then
+        Library:Notify("No HumanoidRootPart!", 2)
+        BackAttach.Enabled = false
+        return
+    end
+
+    local target = GetNearestPlayer()
+    if not target or not target.Character then
+        Library:Notify("No player within " .. BackAttach.MaxDistance .. " studs!", 3)
+        BackAttach.Enabled = false
+        return
+    end
+
+    local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then
+        Library:Notify("Target has no HumanoidRootPart!", 2)
+        BackAttach.Enabled = false
+        return
+    end
+
+    BackAttach.Target = target
+
+    -- Weld local root to target root, offset behind the target
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = myRoot
+    weld.Part1 = targetRoot
+    weld.Parent = myRoot
+
+    -- Snap to back of target before welding so offset is correct
+    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 2.5)
+
+    BackAttach.Weld = weld
+    Library:Notify("Back attached to " .. target.Name, 2)
+
+    -- Disconnect if target dies, leaves, or character resets
+    BackAttach.HeartbeatConn = RunService.Heartbeat:Connect(function()
+        if not BackAttach.Enabled then return end
+        local tc = target.Character
+        if not tc or not tc:FindFirstChild("HumanoidRootPart") then
+            StopBackAttach()
+            Library:Notify("Back attach target lost!", 2)
+        end
+    end)
+end
+
+function StopBackAttach()
+    BackAttach.Enabled = false
+    if BackAttach.Weld then
+        BackAttach.Weld:Destroy()
+        BackAttach.Weld = nil
+    end
+    if BackAttach.HeartbeatConn then
+        BackAttach.HeartbeatConn:Disconnect()
+        BackAttach.HeartbeatConn = nil
+    end
+    BackAttach.Target = nil
+end
+
+-- Re-attach on respawn if toggle is still on
+LocalPlayer.CharacterAdded:Connect(function()
+    if BackAttach.Enabled then
+        task.wait(1)
+        StartBackAttach()
+    end
+end)
+
+local BackAttachGroup = Tabs.Player:AddRightGroupbox("Back Attach")
+
+BackAttachGroup:AddToggle("BackAttachToggle", {
+    Text = "Enable Back Attach",
+    Default = false,
+    Callback = function(v)
+        BackAttach.Enabled = v
+        if v then
+            StartBackAttach()
+        else
+            StopBackAttach()
+            Library:Notify("Back attach disabled", 2)
+        end
+    end
+}):AddKeyPicker("BackAttachKey", {
+    Default = "B",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Back Attach",
+})
+
+BackAttachGroup:AddLabel("Welds you to the nearest player's back.")
+BackAttachGroup:AddLabel("Max distance: 200 studs.")
+BackAttachGroup:AddLabel("Auto-detaches if target dies or resets.")
+
 -- Movement Tab
 local MovementGroup = Tabs.Movement:AddLeftGroupbox("Movement")
 
@@ -2696,7 +2831,7 @@ local BossFarm = {
     HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
     HakuSafeSpot = false,   -- whether to teleport to safe spot
     HakuSafeSpotEndTime = 0, -- when to end safe spot (tick())
-    AutoLootOnKill = false,  -- teleport to boss loot spot and collect trinkets when boss dies
+    AutoLootOnKill = true,  -- teleport to boss loot spot and collect trinkets when boss dies
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -2997,21 +3132,7 @@ local function MonitorHyugaBossAnimations(bossModel)
             end
         end
 
-        -- Hyuga Boss elevated attack animation (height -2)
-        if assetId == "122919972398961" then
-            BossFarm.HyugaHeightBoost = -2
-            Library:Notify("Hyuga Elevated Attack! Height -2", 1)
 
-            task.spawn(function()
-                while track and track.IsPlaying and BossFarm.Enabled do
-                    task.wait(0.1)
-                end
-                task.wait(0.5)
-                BossFarm.HyugaHeightBoost = 0
-            end)
-
-            return
-        end
     end)
 end
 
@@ -3163,14 +3284,24 @@ local function CollectBossLoot(bossName)
         if not char then break end
         root = char:FindFirstChild("HumanoidRootPart")
         if not root then break end
+
+        -- Teleport on top of trinket
         root.CFrame = CFrame.new(entry.pos + Vector3.new(0, 3, 0))
-        task.wait(0.4)
+        task.wait(0.3)
+
+        -- Spam the PickUp remote for 1.5s to make sure it registers
         if BossFarmDataEvent then
-            pcall(function()
-                BossFarmDataEvent:FireServer("PickUp", entry.id)
-            end)
+            local spamEnd = tick() + 1.5
+            while tick() < spamEnd do
+                if not entry.obj.Parent then break end  -- item was picked up, stop early
+                pcall(function()
+                    BossFarmDataEvent:FireServer("PickUp", entry.id)
+                end)
+                task.wait(0.05)
+            end
         end
-        task.wait(1.0)
+
+        task.wait(0.2)
     end
 
     Library:Notify("Boss loot collection complete!", 2)
@@ -3209,6 +3340,14 @@ local function StartBossFarm()
     if BossFarm.TargetName == "Hyuga Boss" then
         MonitorHyugaBossAnimations(BossFarm.Target.Parent)
         MonitorHyugaVoid(BossFarm.Target.Parent)
+        -- Start 2 studs lower for the first 2 seconds, then return to normal
+        task.spawn(function()
+            BossFarm.HyugaHeightBoost = -2
+            task.wait(2)
+            if BossFarm.HyugaHeightBoost == -2 then  -- only reset if nothing else changed it
+                BossFarm.HyugaHeightBoost = 0
+            end
+        end)
     end
     
     -- If farming Lava Snake, monitor for special animation
