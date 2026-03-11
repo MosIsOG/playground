@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Jitler Hub v1.1.5f",
+    Title = "Jitler Hub v1.1.6",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -3235,28 +3235,52 @@ local BossLootTrinketSet = {}
 for _, n in ipairs(BossLootTrinketNames) do BossLootTrinketSet[n] = true end
 
 local function CollectBossLoot(bossName)
+    print("[AUTO LOOT] === Starting loot collection for: " .. bossName .. " ===")
     local lootSpot = BossLootSpots[bossName]
-    if not lootSpot then return end
+    if not lootSpot then
+        print("[AUTO LOOT] ERROR: No loot spot configured for '" .. bossName .. "'")
+        Library:Notify("[Auto Loot] No loot spot for: " .. bossName, 4)
+        return
+    end
+    print("[AUTO LOOT] Loot spot: " .. tostring(lootSpot))
 
     local char = LocalPlayer.Character
-    if not char then return end
+    if not char then print("[AUTO LOOT] ERROR: No character") return end
     local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    if not root then print("[AUTO LOOT] ERROR: No HumanoidRootPart") return end
 
-    -- Teleport to loot spot and wait for items to spawn
+    -- Teleport to loot spot
+    print("[AUTO LOOT] Teleporting to loot spot...")
     root.CFrame = CFrame.new(lootSpot)
+    Library:Notify("[Auto Loot] At loot spot, waiting 5s...", 5)
+    print("[AUTO LOOT] Waiting 5s for items to spawn...")
     task.wait(5)
 
     -- Re-teleport after wait (player may have drifted)
     char = LocalPlayer.Character
-    if not char then return end
+    if not char then print("[AUTO LOOT] ERROR: Character lost during wait") return end
     root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    if not root then print("[AUTO LOOT] ERROR: Root lost during wait") return end
+    print("[AUTO LOOT] Re-teleporting to loot spot...")
     root.CFrame = CFrame.new(lootSpot)
 
+    -- Re-fetch DataEvent if nil
+    if not BossFarmDataEvent then
+        BossFarmDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                            and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+        if BossFarmDataEvent then
+            print("[AUTO LOOT] DataEvent fetched on demand")
+        else
+            print("[AUTO LOOT] WARNING: DataEvent still nil, pickups will fail")
+        end
+    end
+
     -- Scan workspace for trinkets within 200 studs of loot spot
+    print("[AUTO LOOT] Scanning workspace descendants...")
     local lootItems = {}
+    local totalScanned = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
+        totalScanned = totalScanned + 1
         if (obj:IsA("Model") or obj:IsA("BasePart")) and BossLootTrinketSet[obj.Name] then
             local pos
             if obj:IsA("BasePart") then
@@ -3265,48 +3289,75 @@ local function CollectBossLoot(bossName)
                 local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                 if pp then pos = pp.Position end
             end
-            if pos and (lootSpot - pos).Magnitude <= 200 then
-                local idVal = obj:FindFirstChild("ID")
-                if not idVal then
-                    for _, d in ipairs(obj:GetDescendants()) do
-                        if d.Name == "ID" and d:IsA("NumberValue") then idVal = d break end
+            if pos then
+                local dist = (lootSpot - pos).Magnitude
+                print("[AUTO LOOT] Found: " .. obj.Name .. " dist=" .. math.floor(dist))
+                if dist <= 200 then
+                    local idVal = obj:FindFirstChild("ID")
+                    if not idVal then
+                        for _, d in ipairs(obj:GetDescendants()) do
+                            if d.Name == "ID" and d:IsA("NumberValue") then idVal = d break end
+                        end
                     end
-                end
-                if idVal then
-                    table.insert(lootItems, {obj = obj, pos = pos, id = idVal.Value, dist = (lootSpot - pos).Magnitude})
+                    if idVal then
+                        print("[AUTO LOOT] Queuing: " .. obj.Name .. " id=" .. idVal.Value)
+                        table.insert(lootItems, {obj = obj, pos = pos, id = idVal.Value, dist = dist})
+                    else
+                        print("[AUTO LOOT] WARNING: " .. obj.Name .. " has no ID, skipped")
+                    end
                 end
             end
         end
     end
+    print("[AUTO LOOT] Scanned " .. totalScanned .. " objects | Found " .. #lootItems .. " trinkets")
+
+    if #lootItems == 0 then
+        print("[AUTO LOOT] No trinkets found near loot spot")
+        Library:Notify("[Auto Loot] No trinkets found.", 4)
+        return
+    end
 
     table.sort(lootItems, function(a, b) return a.dist < b.dist end)
 
-    for _, entry in ipairs(lootItems) do
-        if not entry.obj.Parent then continue end
+    for i, entry in ipairs(lootItems) do
+        if not entry.obj.Parent then
+            print("[AUTO LOOT] " .. entry.obj.Name .. " already gone, skip")
+            continue
+        end
         char = LocalPlayer.Character
         if not char then break end
         root = char:FindFirstChild("HumanoidRootPart")
         if not root then break end
 
+        print("[AUTO LOOT] Collecting " .. i .. "/" .. #lootItems .. ": " .. entry.obj.Name .. " id=" .. entry.id)
         -- Teleport on top of trinket
         root.CFrame = CFrame.new(entry.pos + Vector3.new(0, 3, 0))
         task.wait(0.3)
 
-        -- Spam the PickUp remote for 1.5s to make sure it registers
+        -- Spam the PickUp remote for 1.5s
         if BossFarmDataEvent then
             local spamEnd = tick() + 1.5
+            local fireCount = 0
             while tick() < spamEnd do
-                if not entry.obj.Parent then break end  -- item was picked up, stop early
+                if not entry.obj.Parent then
+                    print("[AUTO LOOT] Picked up (gone) after " .. fireCount .. " fires")
+                    break
+                end
                 pcall(function()
                     BossFarmDataEvent:FireServer("PickUp", entry.id)
                 end)
+                fireCount = fireCount + 1
                 task.wait(0.05)
             end
+            print("[AUTO LOOT] Fired " .. fireCount .. " times for: " .. entry.obj.Name)
+        else
+            print("[AUTO LOOT] ERROR: DataEvent nil, can't pick up " .. entry.obj.Name)
         end
 
         task.wait(0.2)
     end
 
+    print("[AUTO LOOT] === Collection complete for: " .. bossName .. " ===")
     Library:Notify("Boss loot collection complete!", 2)
 end
 
@@ -3383,8 +3434,14 @@ local function StartBossFarm()
                 if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
                 -- Auto-loot: teleport to loot spot, wait 5s, collect trinkets
                 if BossFarm.AutoLootOnKill then
+                    print("[AUTO LOOT] Boss killed: " .. deadBossName .. " - starting loot collection")
+                    Library:Notify("[Auto Loot] Boss dead! Collecting...", 3)
                     task.spawn(function()
-                        pcall(function() CollectBossLoot(deadBossName) end)
+                        local ok, err = pcall(function() CollectBossLoot(deadBossName) end)
+                        if not ok then
+                            warn("[AUTO LOOT] ERROR in CollectBossLoot: " .. tostring(err))
+                            Library:Notify("[Auto Loot] Error: " .. tostring(err), 6)
+                        end
                     end)
                 end
                 return
@@ -5214,15 +5271,20 @@ local function EnqueueTrinket(obj)
     if not (obj:IsA("Model") or obj:IsA("BasePart")) then return end
     if not TrinketSet[obj.Name] then return end
     local id = GetTrinketId(obj)
-    if not id then return end
+    if not id then
+        print("[AUTO TRINKET] No ID on: " .. obj.Name .. " - cannot queue")
+        return
+    end
     if AutoTrinket.Processed[id] then return end
     if AutoTrinket.Queued[id] then return end
     AutoTrinket.Queued[id] = true
     table.insert(AutoTrinket.Queue, {obj = obj, id = id})
+    print("[AUTO TRINKET] Enqueued: " .. obj.Name .. " (id=" .. id .. ") | Queue size: " .. #AutoTrinket.Queue)
 end
 
 -- Worker: processes the queue one trinket at a time
 local function TrinketWorker()
+    print("[AUTO TRINKET] Worker started")
     while AutoTrinket.Enabled do
         if #AutoTrinket.Queue == 0 then
             task.wait(0.2)
@@ -5231,14 +5293,17 @@ local function TrinketWorker()
 
         local entry = table.remove(AutoTrinket.Queue, 1)
         local obj, id = entry.obj, entry.id
+        print("[AUTO TRINKET] Dequeued: " .. obj.Name .. " (id=" .. id .. ") | Remaining: " .. #AutoTrinket.Queue)
 
         if not obj.Parent or AutoTrinket.Processed[id] then
+            print("[AUTO TRINKET] Skip (gone or already processed): " .. obj.Name)
             AutoTrinket.Queued[id] = nil
             continue
         end
 
         local pos = GetTrinketPosition(obj)
         if not pos then
+            print("[AUTO TRINKET] Skip (no position): " .. obj.Name)
             AutoTrinket.Queued[id] = nil
             continue
         end
@@ -5248,33 +5313,56 @@ local function TrinketWorker()
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then task.wait(0.3); continue end
 
-        if (root.Position - pos).Magnitude > AutoTrinket.ScanRadius then
+        local dist = (root.Position - pos).Magnitude
+        -- Only enforce distance when NOT teleporting; with teleport we go regardless
+        if not AutoTrinket.TeleportToTrinket and dist > AutoTrinket.ScanRadius then
+            print("[AUTO TRINKET] Skip (too far, tp off): " .. obj.Name .. " dist=" .. math.floor(dist))
             AutoTrinket.Queued[id] = nil
             continue
         end
 
         if AutoTrinket.TeleportToTrinket then
+            print("[AUTO TRINKET] Teleporting to: " .. obj.Name .. " dist=" .. math.floor(dist))
             root.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
             task.wait(0.15)
         end
 
+        -- Re-fetch DataEvent if it was nil at load time
+        if not TrinketDataEvent then
+            TrinketDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                               and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+            if TrinketDataEvent then
+                print("[AUTO TRINKET] DataEvent fetched on demand")
+            end
+        end
+
         if obj.Parent and TrinketDataEvent then
+            print("[AUTO TRINKET] Firing PickUp for: " .. obj.Name .. " (id=" .. id .. ")")
             -- Spam pickup for reliability
             local spamEnd = tick() + 0.8
+            local fireCount = 0
             while tick() < spamEnd do
-                if not obj.Parent then break end
+                if not obj.Parent then
+                    print("[AUTO TRINKET] Item gone after " .. fireCount .. " fires")
+                    break
+                end
                 pcall(function()
                     TrinketDataEvent:FireServer("PickUp", id)
                 end)
+                fireCount = fireCount + 1
                 task.wait(0.05)
             end
             AutoTrinket.Processed[id] = true
+            print("[AUTO TRINKET] Pickup done: " .. obj.Name .. " (" .. fireCount .. " fires)")
             Library:Notify("Picked up: " .. obj.Name, 1)
+        elseif not TrinketDataEvent then
+            print("[AUTO TRINKET] ERROR: DataEvent is nil, cannot pick up " .. obj.Name)
         end
 
         AutoTrinket.Queued[id] = nil
         task.wait(0.3)
     end
+    print("[AUTO TRINKET] Worker stopped")
 end
 
 -- Lightweight scan: only checks direct children of known folders + workspace (no GetDescendants)

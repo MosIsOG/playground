@@ -1,0 +1,184 @@
+[33mdcba1ab[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to origin
+[33mad0b0d4[m HEAD@{1}: commit (merge): will we commit
+[33mf4f7f46[m HEAD@{2}: commit: commited
+[33m4aa2f37[m HEAD@{3}: commit: minter
+[33mbbca0b1[m HEAD@{4}: commit: minter
+[33mef9ecaa[m HEAD@{5}: commit: minter
+[33m95bd2da[m HEAD@{6}: commit: minter
+[33me8899dd[m HEAD@{7}: commit: minter
+[33m4c477c6[m HEAD@{8}: commit: minter
+[33m6af162f[m HEAD@{9}: commit: minter
+[33mf72cfc0[m HEAD@{10}: commit: minter
+[33mec88f7a[m HEAD@{11}: commit: minter
+[33m4e30ba6[m HEAD@{12}: commit: minter
+[33m0cba7d7[m HEAD@{13}: commit: minter
+[33m597ab59[m HEAD@{14}: commit: minter
+[33mf267314[m HEAD@{15}: commit: minter
+[33m7476d3e[m HEAD@{16}: commit: minter
+[33m06d13bc[m HEAD@{17}: commit: minter
+[33me31bfad[m HEAD@{18}: commit: minter
+[33m810c4b6[m HEAD@{19}: commit: minter
+[33mcf6c7ce[m HEAD@{20}: commit: minter
+[33mea9e6ae[m HEAD@{21}: commit: minter
+[33mb2d1686[m HEAD@{22}: commit: minter
+[33m68822b2[m HEAD@{23}: commit: minter
+[33m433f2f4[m HEAD@{24}: commit: minter
+[33m5e05171[m HEAD@{25}: commit: minter
+[33m4ef4391[m HEAD@{26}: commit: minter
+[33m9905eaa[m HEAD@{27}: commit: minter
+[33m441f35f[m HEAD@{28}: commit: minter
+[33m64a5c69[m HEAD@{29}: commit: minter
+[33m3a97417[m HEAD@{30}: commit: minter
+[33madde9ac[m HEAD@{31}: commit: minter
+[33m435432f[m HEAD@{32}: commit: minter
+[33m19a47d6[m HEAD@{33}: commit: minter
+[33m56e8da1[m HEAD@{34}: commit: minter
+[33me31b590[m HEAD@{35}: commit: minter
+[33m7db544f[m HEAD@{36}: commit: minter
+[33m70a355b[m HEAD@{37}: commit: minter
+[33m9c3f520[m HEAD@{38}: commit: minter
+[33m1be3049[m HEAD@{39}: commit: minter
+[33m89065ec[m HEAD@{40}: commit: minter
+[33m7e846ea[m HEAD@{41}: commit: minter
+[33m3484d5d[m HEAD@{42}: commit: minter
+[33m6ffa4a9[m HEAD@{43}: commit: minter
+[33m0bb6851[m HEAD@{44}: commit: minter
+[33mf2512dd[m HEAD@{45}: commit: minter
+[33m35478cd[m HEAD@{46}: commit: minter
+[33mac18599[m HEAD@{47}: commit: minter
+[33m4ed5ace[m HEAD@{48}: commit: minter
+[33m7b87dbf[m HEAD@{49}: commit: minter
+[33mf1fcbf5[m HEAD@{50}: commit: minter
+[33mf8de357[m HEAD@{51}: commit: minter
+[33m2f6cad5[m HEAD@{52}: commit: minter
+[33m7c35f17[m HEAD@{53}: commit: minter
+[33m6736565[m HEAD@{54}: commit: minter
+[33m7375d5c[m HEAD@{55}: commit: minter
+[33md452dd1[m HEAD@{56}: commit: minter
+[33mc4f8853[m HEAD@{57}: commit: minter
+[33m2117078[m HEAD@{58}: commit: minter
+[33ma83d4f6[m HEAD@{59}: commit: minter
+[33ma609af5[m HEAD@{60}: commit: minter
+[33m21621e8[m HEAD@{61}: commit: minter
+[33m0299150[m HEAD@{62}: commit: minter
+[33mdb8255c[m HEAD@{63}: commit: minter
+[33m2beeaf3[m HEAD@{64}: commit: minter
+[33ma62f462[m HEAD@{65}: commit: minter
+[33m3f24a40[m HEAD@{66}: commit: minter
+[33mc743721[m HEAD@{67}: commit: minter
+[33mc56b9d8[m HEAD@{68}: commit: minter
+[33m0a4132e[m HEAD@{69}: commit: minter
+[33m062a4ae[m HEAD@{70}: commit: minter
+[33mc817f23[m HEAD@{71}: commit: minter
+[33m63fb7af[m HEAD@{72}: commit: minter
+[33m46701b6[m HEAD@{73}: commit: minter
+[33m047fd5b[m HEAD@{74}: merge refs/remotes/origin/main: Merge made by the 'ort' strategy.
+[33mba1578b[m HEAD@{75}: commit: minter
+[33m11bb933[m HEAD@{76}: commit: minter
+[33m2e00d04[m HEAD@{77}: commit: minter
+[33m9659abb[m HEAD@{78}: commit: minter
+[33mbb98f6c[m HEAD@{79}: commit: minter
+[33m8ea56e2[m HEAD@{80}: commit: minter
+[33me6c44c0[m HEAD@{81}: commit: minter
+[33m5b341d6[m HEAD@{82}: commit: minter
+[33me3d24c3[m HEAD@{83}: commit: minter
+[33m66c6e1d[m HEAD@{84}: commit: minter
+[33mae9fd16[m HEAD@{85}: commit: minter
+[33ma546de0[m HEAD@{86}: commit: minter
+[33m5974978[m HEAD@{87}: commit: minter
+[33m2eeca34[m HEAD@{88}: commit: minter
+[33m582db78[m HEAD@{89}: commit: minter
+[33mfd8ad8d[m HEAD@{90}: commit: minter
+[33m83e744e[m HEAD@{91}: commit: minter
+[33m18dfd0f[m HEAD@{92}: commit: minter
+[33mee8a7a2[m HEAD@{93}: commit: minter
+[33mee6a56e[m HEAD@{94}: commit: minter
+[33m97cfc19[m HEAD@{95}: commit: minter
+[33m6607131[m HEAD@{96}: commit: minter
+[33mdfe0ba1[m HEAD@{97}: commit: minter
+[33m4617924[m HEAD@{98}: commit: minter
+[33md9edcdb[m HEAD@{99}: commit: minter
+[33m06c3626[m HEAD@{100}: commit: minter
+[33m9517bfa[m HEAD@{101}: commit: minter
+[33m610bf58[m HEAD@{102}: commit: minter
+[33mc7d0702[m HEAD@{103}: commit: minter
+[33m4657e4a[m HEAD@{104}: commit: minter
+[33m7619438[m HEAD@{105}: commit: minter
+[33m0d5d24b[m HEAD@{106}: commit: minter
+[33m2f12cd5[m HEAD@{107}: commit: minter
+[33m8fe57a8[m HEAD@{108}: commit: minter
+[33m4bb1246[m HEAD@{109}: commit: minter
+[33me4256a6[m HEAD@{110}: commit: minter
+[33ma2ccce3[m HEAD@{111}: commit: minter
+[33m96f0265[m HEAD@{112}: commit: minter
+[33me73da58[m HEAD@{113}: commit: minter
+[33m2baea1a[m HEAD@{114}: commit: minter
+[33m299af89[m HEAD@{115}: commit: minter
+[33ma5a00b3[m HEAD@{116}: commit: minter
+[33m76460c2[m HEAD@{117}: commit: minter
+[33m308c807[m HEAD@{118}: commit: minter
+[33mc5d58ce[m HEAD@{119}: commit: minter
+[33mee3e29f[m HEAD@{120}: commit: minter
+[33mdabd5e3[m HEAD@{121}: commit: minter
+[33m15bd4f0[m HEAD@{122}: commit: minter
+[33mc09dc38[m HEAD@{123}: commit: minter
+[33m7048e12[m HEAD@{124}: commit: minter
+[33md7715dc[m HEAD@{125}: commit: minter
+[33mb6e399b[m HEAD@{126}: commit: minter
+[33m3c287c7[m HEAD@{127}: commit: minter
+[33m21e1f73[m HEAD@{128}: commit: minter
+[33m9ec9b16[m HEAD@{129}: commit: minter
+[33mfd03ff7[m HEAD@{130}: commit: minter
+[33m291e6cd[m HEAD@{131}: commit: Hello
+[33m42dcc41[m HEAD@{132}: commit: Hello
+[33m317aaa3[m HEAD@{133}: commit: Hello
+[33m3a91e37[m HEAD@{134}: commit: Hello
+[33m6eeb561[m HEAD@{135}: commit: Hello
+[33md4273c2[m HEAD@{136}: commit: Hello
+[33m7cf7eed[m HEAD@{137}: commit: Hello
+[33m11e03f0[m HEAD@{138}: commit: minter
+[33mac7c2e5[m HEAD@{139}: commit: minter
+[33mb5a14ad[m HEAD@{140}: commit: minter
+[33m947675b[m HEAD@{141}: commit: minter
+[33mc4a62e8[m HEAD@{142}: commit: minter
+[33m3cccef9[m HEAD@{143}: commit: minter
+[33mdd8f45d[m HEAD@{144}: commit: Your mom
+[33mb9c693f[m HEAD@{145}: pull: Fast-forward
+[33m31b1896[m HEAD@{146}: commit: Pushed your mother out of the womb!
+[33m4b4ea25[m HEAD@{147}: commit: Pushed your mother out of the womb!
+[33mf663af3[m HEAD@{148}: commit: Pushed your mother out of the womb!
+[33m2085e40[m HEAD@{149}: pull: Fast-forward
+[33mab2a14a[m HEAD@{150}: commit: added jujutsu lineage script
+[33m8685b87[m HEAD@{151}: commit: fixed name
+[33mac5d563[m HEAD@{152}: commit: run this
+[33mea2fb2b[m HEAD@{153}: commit: run this
+[33m8bbbcb2[m HEAD@{154}: commit: do it
+[33mc398cb3[m HEAD@{155}: commit: Revert "Implement walkspeed bar display for players"
+[33me56cdb3[m HEAD@{156}: commit: do it
+[33mbc26f55[m HEAD@{157}: commit: Revert "Implement walkspeed bar display for players"
+[33m76b1650[m HEAD@{158}: commit: mod detection
+[33m9940bde[m HEAD@{159}: pull: Fast-forward
+[33mc93566c[m HEAD@{160}: revert: Reapply "Update noah_script.txt"
+[33m974bf3c[m HEAD@{161}: commit (amend): Revert "Update noah_script.txt"
+[33m4b9fa0f[m HEAD@{162}: commit: Revert "Update noah_script.txt"
+[33m7fb4c47[m HEAD@{163}: revert: Revert "push this"
+[33mfa74ea0[m HEAD@{164}: commit: merge this
+[33ma89a299[m HEAD@{165}: revert: Revert "push this"
+[33m5a6d3ee[m HEAD@{166}: revert: Revert "push this"
+[33mb6b9a18[m HEAD@{167}: commit: merge this
+[33m527679b[m HEAD@{168}: revert: Revert "push this"
+[33m453fb62[m HEAD@{169}: revert: Revert "push this"
+[33m26bf700[m HEAD@{170}: commit: merge this
+[33m816a60c[m HEAD@{171}: commit: merge this
+[33m6c95770[m HEAD@{172}: commit: push this
+[33m17a6464[m HEAD@{173}: commit: push this
+[33m4a6a822[m HEAD@{174}: commit: push this
+[33mcb14937[m HEAD@{175}: commit: push this
+[33m1495c8c[m HEAD@{176}: commit: push this
+[33m105b3d6[m HEAD@{177}: commit: push this
+[33mdf969d1[m HEAD@{178}: commit: push this
+[33m4a4bca9[m HEAD@{179}: commit: push this
+[33m766f449[m HEAD@{180}: commit: fixed menu toggle
+[33me11a481[m HEAD@{181}: commit: fixed menu toggle
+[33m7e6fee5[m HEAD@{182}: commit: pushed
+[33mafda131[m HEAD@{183}: clone: from github.com:MosIsOG/playground.git
