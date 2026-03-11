@@ -25,7 +25,7 @@ local Camera = Workspace.CurrentCamera
 
 -- Create window
 local Window = Library:CreateWindow({
-    Title = "Jitler Hub v1.1.6",
+    Title = "Jitler Hub v1.1.6a",
     Center = false,
     AutoShow = true,
     Position = UDim2.new(0.65, 0, 0.5, 0)
@@ -2799,12 +2799,7 @@ BossGroup:AddSlider("BossScanInterval", {
     Callback = function(v) BossDetect.ScanInterval = v end,
     Tooltip = "How often to check for predefined bosses."
 })
-BossGroup:AddLabel("Scans for predefined bosses every 30s.")
-BossGroup:AddLabel("Checks NPCs/Mobs/Enemies folders + workspace.")
-BossGroup:AddLabel("Bosses: Wooden Golem, Manda, Chakra Knight,")
-BossGroup:AddLabel("The Barbarian, Barbarit The Rose, Lava Snake")
-BossGroup:AddLabel("Boss bars update at 15 FPS (optimized).")
-BossGroup:AddLabel("Auto-detects bosses by name anywhere in game.")
+
 
 -- Start scanning on load
 if BossDetect.Enabled then
@@ -5284,7 +5279,7 @@ end
 
 -- Worker: processes the queue one trinket at a time
 local function TrinketWorker()
-    print("[AUTO TRINKET] Worker started")
+    print("[AUTO TRINKET] Worker started | TeleportToTrinket=" .. tostring(AutoTrinket.TeleportToTrinket) .. " | ScanRadius=" .. AutoTrinket.ScanRadius)
     while AutoTrinket.Enabled do
         if #AutoTrinket.Queue == 0 then
             task.wait(0.2)
@@ -5292,74 +5287,101 @@ local function TrinketWorker()
         end
 
         local entry = table.remove(AutoTrinket.Queue, 1)
-        local obj, id = entry.obj, entry.id
-        print("[AUTO TRINKET] Dequeued: " .. obj.Name .. " (id=" .. id .. ") | Remaining: " .. #AutoTrinket.Queue)
+        local ok, err = pcall(function()
+            local obj, id = entry.obj, entry.id
+            print("[AUTO TRINKET] Dequeued: " .. tostring(obj) .. " (id=" .. tostring(id) .. ") | Remaining: " .. #AutoTrinket.Queue)
 
-        if not obj.Parent or AutoTrinket.Processed[id] then
-            print("[AUTO TRINKET] Skip (gone or already processed): " .. obj.Name)
-            AutoTrinket.Queued[id] = nil
-            continue
-        end
-
-        local pos = GetTrinketPosition(obj)
-        if not pos then
-            print("[AUTO TRINKET] Skip (no position): " .. obj.Name)
-            AutoTrinket.Queued[id] = nil
-            continue
-        end
-
-        local char = LocalPlayer.Character
-        if not char then task.wait(0.3); continue end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then task.wait(0.3); continue end
-
-        local dist = (root.Position - pos).Magnitude
-        -- Only enforce distance when NOT teleporting; with teleport we go regardless
-        if not AutoTrinket.TeleportToTrinket and dist > AutoTrinket.ScanRadius then
-            print("[AUTO TRINKET] Skip (too far, tp off): " .. obj.Name .. " dist=" .. math.floor(dist))
-            AutoTrinket.Queued[id] = nil
-            continue
-        end
-
-        if AutoTrinket.TeleportToTrinket then
-            print("[AUTO TRINKET] Teleporting to: " .. obj.Name .. " dist=" .. math.floor(dist))
-            root.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
-            task.wait(0.15)
-        end
-
-        -- Re-fetch DataEvent if it was nil at load time
-        if not TrinketDataEvent then
-            TrinketDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
-                               and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
-            if TrinketDataEvent then
-                print("[AUTO TRINKET] DataEvent fetched on demand")
+            if not obj or not obj.Parent or AutoTrinket.Processed[id] then
+                print("[AUTO TRINKET] Skip (gone or processed): " .. tostring(obj))
+                AutoTrinket.Queued[id] = nil
+                return
             end
-        end
 
-        if obj.Parent and TrinketDataEvent then
-            print("[AUTO TRINKET] Firing PickUp for: " .. obj.Name .. " (id=" .. id .. ")")
-            -- Spam pickup for reliability
-            local spamEnd = tick() + 0.8
-            local fireCount = 0
-            while tick() < spamEnd do
-                if not obj.Parent then
-                    print("[AUTO TRINKET] Item gone after " .. fireCount .. " fires")
-                    break
+            local pos = GetTrinketPosition(obj)
+            if not pos then
+                print("[AUTO TRINKET] Skip (no position): " .. obj.Name)
+                AutoTrinket.Queued[id] = nil
+                return
+            end
+
+            local char = LocalPlayer.Character
+            if not char then
+                print("[AUTO TRINKET] No character, re-queuing: " .. obj.Name)
+                table.insert(AutoTrinket.Queue, entry)
+                task.wait(0.5)
+                return
+            end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then
+                print("[AUTO TRINKET] No HumanoidRootPart, re-queuing: " .. obj.Name)
+                table.insert(AutoTrinket.Queue, entry)
+                task.wait(0.5)
+                return
+            end
+
+            local dist = (root.Position - pos).Magnitude
+            print("[AUTO TRINKET] Processing: " .. obj.Name .. " | dist=" .. math.floor(dist) .. " | tp=" .. tostring(AutoTrinket.TeleportToTrinket))
+
+            -- Only enforce distance when NOT teleporting; with teleport we go regardless
+            if not AutoTrinket.TeleportToTrinket and dist > AutoTrinket.ScanRadius then
+                print("[AUTO TRINKET] Skip (too far, tp off): " .. obj.Name)
+                AutoTrinket.Queued[id] = nil
+                return
+            end
+
+            if AutoTrinket.TeleportToTrinket then
+                print("[AUTO TRINKET] Teleporting to: " .. obj.Name .. " at " .. tostring(pos))
+                root.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
+                task.wait(0.15)
+                print("[AUTO TRINKET] Teleport done, now at: " .. tostring(root.Position))
+            end
+
+            -- Re-fetch DataEvent if it was nil at load time
+            if not TrinketDataEvent then
+                TrinketDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
+                                   and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
+                if TrinketDataEvent then
+                    print("[AUTO TRINKET] DataEvent fetched on demand")
+                else
+                    print("[AUTO TRINKET] ERROR: DataEvent still nil after refetch")
                 end
-                pcall(function()
-                    TrinketDataEvent:FireServer("PickUp", id)
-                end)
-                fireCount = fireCount + 1
-                task.wait(0.05)
             end
-            AutoTrinket.Processed[id] = true
-            print("[AUTO TRINKET] Pickup done: " .. obj.Name .. " (" .. fireCount .. " fires)")
-            Library:Notify("Picked up: " .. obj.Name, 1)
-        elseif not TrinketDataEvent then
-            print("[AUTO TRINKET] ERROR: DataEvent is nil, cannot pick up " .. obj.Name)
+
+            if obj.Parent and TrinketDataEvent then
+                print("[AUTO TRINKET] Firing PickUp for: " .. obj.Name .. " (id=" .. id .. ")")
+                local spamEnd = tick() + 0.8
+                local fireCount = 0
+                while tick() < spamEnd do
+                    if not obj.Parent then
+                        print("[AUTO TRINKET] Item gone after " .. fireCount .. " fires")
+                        break
+                    end
+                    pcall(function()
+                        TrinketDataEvent:FireServer("PickUp", id)
+                    end)
+                    fireCount = fireCount + 1
+                    task.wait(0.05)
+                end
+                AutoTrinket.Processed[id] = true
+                print("[AUTO TRINKET] Pickup done: " .. obj.Name .. " (" .. fireCount .. " fires)")
+                Library:Notify("Picked up: " .. obj.Name, 1)
+            elseif not TrinketDataEvent then
+                print("[AUTO TRINKET] ERROR: DataEvent is nil, cannot pick up " .. obj.Name)
+            else
+                print("[AUTO TRINKET] Item disappeared before pickup: " .. obj.Name)
+            end
+
+            AutoTrinket.Queued[id] = nil
+        end)
+
+        if not ok then
+            warn("[AUTO TRINKET] Worker error on item: " .. tostring(err))
+            -- Clean up queued state for this entry
+            if entry and entry.id then
+                AutoTrinket.Queued[entry.id] = nil
+            end
         end
 
-        AutoTrinket.Queued[id] = nil
         task.wait(0.3)
     end
     print("[AUTO TRINKET] Worker stopped")
