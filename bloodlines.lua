@@ -2831,7 +2831,7 @@ local BossFarm = {
     HakuAnimConnection = nil, -- connection to monitor Haku Boss IceDragonHead/Beam
     HakuSafeSpot = false,   -- whether to teleport to safe spot
     HakuSafeSpotEndTime = 0, -- when to end safe spot (tick())
-    AutoLootOnKill = true,  -- teleport to boss loot spot and collect trinkets when boss dies
+    AutoLootOnKill = false,  -- teleport to boss loot spot and collect trinkets when boss dies
 }
 
 local BossFarmGroup = AutoFarmTab:AddLeftGroupbox("Boss Farm")
@@ -3215,6 +3215,8 @@ local BossLootSpots = {
     ["Wooden Golem"] = Vector3.new(-4716.2,  344.1, -2932.0),
     ["Haku Boss"]    = Vector3.new(-3788.1, -238.5, -9723.9),
     ["Lava Snake"]   = Vector3.new(-546.7,  -546.9, -1461.6),
+    ["Barbarit The Rose"] = Vector3.new(0, 0, 0),
+    ["Manda"]        = Vector3.new(0, 0, 0),
 }
 
 local BossLootTrinketNames = {
@@ -3226,7 +3228,8 @@ local BossLootTrinketNames = {
     "Aqua Gem", "Flame Gem", "Spark Gem", "Black Flame Gem", "Ground Gem",
     "Ice Gem", "Wind Gem", "Poison Gem", "Extraction Spoon", "Scalpel",
     "Chakra Heart", "Fruit Of Forgetfulness", "Progression Soul", "Memory Soul",
-    "Summoning Scroll", "Life Up Fruit", "Mastery Scroll",
+    "Summoning Scroll", "Life Up Fruit", "Mastery Scroll", "Trait Scroll", "Kusanagi Schematics", "Raijin Schematics", "Staff Schematics",
+    "Samehada Schematics", "Gunbai Schematics"
 }
 local BossLootTrinketSet = {}
 for _, n in ipairs(BossLootTrinketNames) do BossLootTrinketSet[n] = true end
@@ -3242,7 +3245,7 @@ local function CollectBossLoot(bossName)
 
     -- Teleport to loot spot and wait for items to spawn
     root.CFrame = CFrame.new(lootSpot)
-    task.wait(8)
+    task.wait(5)
 
     -- Re-teleport after wait (player may have drifted)
     char = LocalPlayer.Character
@@ -3378,7 +3381,7 @@ local function StartBossFarm()
                 BossFarm.Enabled = false
                 if BossFarm.AnchorConn then BossFarm.AnchorConn:Disconnect(); BossFarm.AnchorConn = nil end
                 if BossFarm.Thread then pcall(task.cancel, BossFarm.Thread); BossFarm.Thread = nil end
-                -- Auto-loot: teleport to loot spot, wait 8s, collect trinkets
+                -- Auto-loot: teleport to loot spot, wait 5s, collect trinkets
                 if BossFarm.AutoLootOnKill then
                     task.spawn(function()
                         pcall(function() CollectBossLoot(deadBossName) end)
@@ -4172,6 +4175,7 @@ local function ScheduleBlock(entityName, delay)
         end
         Block()
         task.delay(0.5, function()
+            Unblock()
             AutoBlock.Triggered[entityName] = nil
         end)
     end
@@ -4428,6 +4432,11 @@ BlockGroup:AddToggle("AutoBlockToggle", {
             StopAutoBlock()
         end
     end
+}):AddKeyPicker("AutoBlockKey", {
+    Default = "U",
+    Mode = "Toggle",
+    Text = "Auto Block",
+    SyncToggleState = true,
 })
 
 BlockGroup:AddLabel("Blocks ANY entity (player or mob) that plays")
@@ -5072,7 +5081,7 @@ RiftGroup:AddSlider("RiftDelay", {
 RiftGroup:AddLabel("Teleports to each Unstable Rift in workspace.Rifts.")
 RiftGroup:AddLabel("Presses E at each location.")
 
--- ==================== AUTO TRINKET PICKUP ====================
+-- ==================== AUTO TRINKET PICKUP (OPTIMIZED) ====================
 local trinketNames = {
     "Gold Bracelet", "Gold Ring", "Silver Ring", "Silver Bracelet",
     "Silver Necklace", "Gold Necklace", "Gold Enclosed Ring", "Silver Enclosed Ring",
@@ -5083,11 +5092,68 @@ local trinketNames = {
     "Ground Gem", "Ice Gem", "Wind Gem", "Poison Gem", "Extraction Spoon",
     "Scalpel", "Chakra Heart", "Fruit Of Forgetfulness", "Progression Soul",
     "Memory Soul", "Summoning Scroll", "Life Up Fruit", "Mastery Scroll",
+    "Trait Scroll", "Kusanagi Schematics", "Raijin Schematics", "Staff Schematics",
+    "Samehada Schematics", "Gunbai Schematics",
 }
 
 -- O(1) name lookup
 local TrinketSet = {}
 for _, n in ipairs(trinketNames) do TrinketSet[n] = true end
+
+-- ESP color map per trinket category
+local TrinketColors = {
+    -- Gold items = Gold
+    ["Gold Bracelet"] = Color3.fromRGB(255, 215, 0),
+    ["Gold Ring"] = Color3.fromRGB(255, 215, 0),
+    ["Gold Necklace"] = Color3.fromRGB(255, 215, 0),
+    ["Gold Enclosed Ring"] = Color3.fromRGB(255, 215, 0),
+    -- Silver items = Silver
+    ["Silver Ring"] = Color3.fromRGB(192, 192, 192),
+    ["Silver Bracelet"] = Color3.fromRGB(192, 192, 192),
+    ["Silver Necklace"] = Color3.fromRGB(192, 192, 192),
+    ["Silver Enclosed Ring"] = Color3.fromRGB(192, 192, 192),
+    -- Schematics = Cyan
+    ["Ring Schematics"] = Color3.fromRGB(0, 255, 255),
+    ["Kusanagi Schematics"] = Color3.fromRGB(0, 255, 255),
+    ["Raijin Schematics"] = Color3.fromRGB(0, 255, 255),
+    ["Staff Schematics"] = Color3.fromRGB(0, 255, 255),
+    ["Samehada Schematics"] = Color3.fromRGB(0, 255, 255),
+    ["Gunbai Schematics"] = Color3.fromRGB(0, 255, 255),
+    -- Special rings = Purple
+    ["Ring Of The Neoncat"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Resistance"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Nourishment"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Favor"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Remedy"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Vitality"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of Infusion"] = Color3.fromRGB(170, 0, 255),
+    ["Bloodbite Ring"] = Color3.fromRGB(255, 50, 50),
+    ["Ring Of Beauty"] = Color3.fromRGB(255, 105, 180),
+    ["Ring Of Dexterity"] = Color3.fromRGB(170, 0, 255),
+    ["Ring Of A Helping Hand"] = Color3.fromRGB(170, 0, 255),
+    -- Gems = unique per element
+    ["Aqua Gem"] = Color3.fromRGB(0, 150, 255),
+    ["Flame Gem"] = Color3.fromRGB(255, 80, 0),
+    ["Spark Gem"] = Color3.fromRGB(255, 255, 0),
+    ["Black Flame Gem"] = Color3.fromRGB(80, 0, 80),
+    ["Ground Gem"] = Color3.fromRGB(139, 90, 43),
+    ["Ice Gem"] = Color3.fromRGB(135, 206, 250),
+    ["Wind Gem"] = Color3.fromRGB(144, 238, 144),
+    ["Poison Gem"] = Color3.fromRGB(0, 200, 0),
+    -- Tools = Orange
+    ["Extraction Spoon"] = Color3.fromRGB(255, 165, 0),
+    ["Scalpel"] = Color3.fromRGB(255, 165, 0),
+    -- Rare consumables = Bright colors
+    ["Chakra Heart"] = Color3.fromRGB(255, 0, 100),
+    ["Fruit Of Forgetfulness"] = Color3.fromRGB(255, 100, 255),
+    ["Progression Soul"] = Color3.fromRGB(0, 255, 150),
+    ["Memory Soul"] = Color3.fromRGB(100, 200, 255),
+    ["Summoning Scroll"] = Color3.fromRGB(255, 255, 100),
+    ["Life Up Fruit"] = Color3.fromRGB(50, 255, 50),
+    ["Mastery Scroll"] = Color3.fromRGB(255, 200, 50),
+    ["Trait Scroll"] = Color3.fromRGB(255, 150, 50),
+}
+local DEFAULT_TRINKET_COLOR = Color3.fromRGB(255, 255, 255)
 
 -- Folders where the game typically drops loot
 local LOOT_FOLDER_NAMES = {"Drops", "Debris", "Loot", "Items", "DroppedItems", "Effects"}
@@ -5095,7 +5161,7 @@ local LOOT_FOLDER_NAMES = {"Drops", "Debris", "Loot", "Items", "DroppedItems", "
 local AutoTrinket = {
     Enabled = false,
     ScanInterval = 5,           -- fallback scan every N seconds
-    ScanRadius = 100,
+    ScanRadius = 200,
     TeleportToTrinket = true,
     PickupOffset = 3,
     Processed = {},             -- ids already picked up
@@ -5107,13 +5173,24 @@ local AutoTrinket = {
     WorkspaceConn = nil,        -- ChildAdded on workspace direct children
 }
 
+-- Trinket ESP state
+local TrinketESP = {
+    Enabled = false,
+    Drawings = {},              -- key = obj, value = {circle, text}
+    ScanThread = nil,
+    FolderConns = {},
+    WorkspaceConn = nil,
+    TrackedObjects = {},        -- set of tracked objects
+}
+
 local TrinketDataEvent = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
                and game:GetService("ReplicatedStorage").Events:FindFirstChild("DataEvent")
 
 local function GetTrinketId(obj)
     local idVal = obj:FindFirstChild("ID")
     if idVal and idVal:IsA("NumberValue") then return idVal.Value end
-    for _, d in ipairs(obj:GetDescendants()) do
+    -- Only check direct children, not full descendants (optimization)
+    for _, d in ipairs(obj:GetChildren()) do
         if d.Name == "ID" and d:IsA("NumberValue") then return d.Value end
     end
     return nil
@@ -5123,10 +5200,10 @@ local function GetTrinketPosition(obj)
     if obj:IsA("BasePart") then return obj.Position end
     if obj:IsA("Model") then
         if obj.PrimaryPart then return obj.PrimaryPart.Position end
-        for _, p in ipairs(obj:GetChildren()) do
-            if p:IsA("BasePart") then return p.Position end
-        end
-        return obj:GetPivot().Position
+        local child = obj:FindFirstChildWhichIsA("BasePart")
+        if child then return child.Position end
+        local ok, pos = pcall(function() return obj:GetPivot().Position end)
+        if ok then return pos end
     end
     return nil
 end
@@ -5148,7 +5225,7 @@ end
 local function TrinketWorker()
     while AutoTrinket.Enabled do
         if #AutoTrinket.Queue == 0 then
-            task.wait(0.3)
+            task.wait(0.2)
             continue
         end
 
@@ -5167,9 +5244,9 @@ local function TrinketWorker()
         end
 
         local char = LocalPlayer.Character
-        if not char then task.wait(0.5); continue end
+        if not char then task.wait(0.3); continue end
         local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then task.wait(0.5); continue end
+        if not root then task.wait(0.3); continue end
 
         if (root.Position - pos).Magnitude > AutoTrinket.ScanRadius then
             AutoTrinket.Queued[id] = nil
@@ -5178,50 +5255,56 @@ local function TrinketWorker()
 
         if AutoTrinket.TeleportToTrinket then
             root.CFrame = CFrame.new(pos + Vector3.new(0, AutoTrinket.PickupOffset, 0))
-            task.wait(0.25)
+            task.wait(0.15)
         end
 
         if obj.Parent and TrinketDataEvent then
-            pcall(function()
-                TrinketDataEvent:FireServer("PickUp", id)
-            end)
+            -- Spam pickup for reliability
+            local spamEnd = tick() + 0.8
+            while tick() < spamEnd do
+                if not obj.Parent then break end
+                pcall(function()
+                    TrinketDataEvent:FireServer("PickUp", id)
+                end)
+                task.wait(0.05)
+            end
             AutoTrinket.Processed[id] = true
             Library:Notify("Picked up: " .. obj.Name, 1)
         end
 
         AutoTrinket.Queued[id] = nil
-        task.wait(0.5)
+        task.wait(0.3)
     end
 end
 
--- Scan known loot folders + workspace direct children, yielding every 50 items
+-- Lightweight scan: only checks direct children of known folders + workspace (no GetDescendants)
 local function ScanFolders()
     if not AutoTrinket.Enabled then return end
 
-    local toScan = {}
-    -- workspace direct children (preloaded: workspace["Silver Ring"], etc.)
-    for _, obj in ipairs(workspace:GetChildren()) do
-        table.insert(toScan, obj)
-    end
-    -- known loot folder descendants
-    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
-        local folder = workspace:FindFirstChild(folderName)
-        if folder then
-            for _, obj in ipairs(folder:GetDescendants()) do
-                table.insert(toScan, obj)
-            end
-        end
-    end
-
     local count = 0
-    for _, obj in ipairs(toScan) do
-        if not AutoTrinket.Enabled then break end
+
+    -- workspace direct children
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if not AutoTrinket.Enabled then return end
         if TrinketSet[obj.Name] then
             EnqueueTrinket(obj)
         end
         count = count + 1
-        if count % 50 == 0 then
-            task.wait()  -- yield to prevent frame freeze
+        if count % 100 == 0 then task.wait() end
+    end
+
+    -- known loot folder direct children only (not descendants)
+    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetChildren()) do
+                if not AutoTrinket.Enabled then return end
+                if TrinketSet[obj.Name] then
+                    EnqueueTrinket(obj)
+                end
+                count = count + 1
+                if count % 100 == 0 then task.wait() end
+            end
         end
     end
 end
@@ -5235,7 +5318,7 @@ local function SetupFolderListeners()
         AutoTrinket.WorkspaceConn = nil
     end
 
-    -- Watch workspace direct children (catches e.g. workspace["Silver Ring"])
+    -- Watch workspace direct children
     AutoTrinket.WorkspaceConn = workspace.ChildAdded:Connect(function(child)
         if TrinketSet[child.Name] then
             task.delay(0.05, function() EnqueueTrinket(child) end)
@@ -5244,7 +5327,9 @@ local function SetupFolderListeners()
         for _, name in ipairs(LOOT_FOLDER_NAMES) do
             if child.Name == name then
                 local conn = child.ChildAdded:Connect(function(obj)
-                    task.delay(0.05, function() EnqueueTrinket(obj) end)
+                    if TrinketSet[obj.Name] then
+                        task.delay(0.05, function() EnqueueTrinket(obj) end)
+                    end
                 end)
                 table.insert(AutoTrinket.FolderConns, conn)
                 break
@@ -5257,7 +5342,9 @@ local function SetupFolderListeners()
         local folder = workspace:FindFirstChild(folderName)
         if folder then
             local conn = folder.ChildAdded:Connect(function(child)
-                task.delay(0.05, function() EnqueueTrinket(child) end)
+                if TrinketSet[child.Name] then
+                    task.delay(0.05, function() EnqueueTrinket(child) end)
+                end
             end)
             table.insert(AutoTrinket.FolderConns, conn)
         end
@@ -5275,11 +5362,11 @@ local function StartAutoTrinket()
     task.spawn(ScanFolders)
 
     -- Worker thread
-    if AutoTrinket.WorkerThread then task.cancel(AutoTrinket.WorkerThread) end
+    if AutoTrinket.WorkerThread then pcall(task.cancel, AutoTrinket.WorkerThread) end
     AutoTrinket.WorkerThread = task.spawn(TrinketWorker)
 
     -- Periodic fallback scan
-    if AutoTrinket.ScanThread then task.cancel(AutoTrinket.ScanThread) end
+    if AutoTrinket.ScanThread then pcall(task.cancel, AutoTrinket.ScanThread) end
     AutoTrinket.ScanThread = task.spawn(function()
         while AutoTrinket.Enabled do
             task.wait(AutoTrinket.ScanInterval)
@@ -5290,14 +5377,183 @@ end
 
 local function StopAutoTrinket()
     AutoTrinket.Enabled = false
-    if AutoTrinket.WorkerThread then task.cancel(AutoTrinket.WorkerThread); AutoTrinket.WorkerThread = nil end
-    if AutoTrinket.ScanThread then task.cancel(AutoTrinket.ScanThread); AutoTrinket.ScanThread = nil end
+    if AutoTrinket.WorkerThread then pcall(task.cancel, AutoTrinket.WorkerThread); AutoTrinket.WorkerThread = nil end
+    if AutoTrinket.ScanThread then pcall(task.cancel, AutoTrinket.ScanThread); AutoTrinket.ScanThread = nil end
     for _, conn in ipairs(AutoTrinket.FolderConns) do conn:Disconnect() end
     AutoTrinket.FolderConns = {}
     if AutoTrinket.WorkspaceConn then AutoTrinket.WorkspaceConn:Disconnect(); AutoTrinket.WorkspaceConn = nil end
     AutoTrinket.Queue = {}
     AutoTrinket.Queued = {}
     AutoTrinket.Processed = {}
+end
+
+-- ==================== TRINKET ESP ====================
+local function CreateTrinketESP(obj)
+    if not TrinketESP.Enabled then return end
+    if not obj or not obj.Parent then return end
+    if not TrinketSet[obj.Name] then return end
+    if TrinketESP.TrackedObjects[obj] then return end
+
+    local color = TrinketColors[obj.Name] or DEFAULT_TRINKET_COLOR
+
+    -- Create BillboardGui ESP
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "TrinketESP"
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.LightInfluence = 0
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = obj.Name
+    textLabel.TextColor3 = color
+    textLabel.TextStrokeTransparency = 0
+    textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextScaled = true
+    textLabel.Parent = billboard
+
+    -- Create highlight
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "TrinketHighlight"
+    highlight.FillColor = color
+    highlight.OutlineColor = color
+    highlight.FillTransparency = 0.7
+    highlight.OutlineTransparency = 0
+
+    -- Attach to object
+    local targetPart = nil
+    if obj:IsA("BasePart") then
+        targetPart = obj
+    elseif obj:IsA("Model") then
+        targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+    end
+
+    if targetPart then
+        billboard.Adornee = targetPart
+        billboard.Parent = targetPart
+        highlight.Parent = obj
+    else
+        billboard:Destroy()
+        highlight:Destroy()
+        return
+    end
+
+    TrinketESP.TrackedObjects[obj] = {billboard = billboard, highlight = highlight}
+
+    -- Auto-cleanup when object is removed
+    local conn
+    conn = obj.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            if TrinketESP.TrackedObjects[obj] then
+                pcall(function() billboard:Destroy() end)
+                pcall(function() highlight:Destroy() end)
+                TrinketESP.TrackedObjects[obj] = nil
+            end
+            conn:Disconnect()
+        end
+    end)
+end
+
+local function RemoveAllTrinketESP()
+    for obj, data in pairs(TrinketESP.TrackedObjects) do
+        pcall(function() data.billboard:Destroy() end)
+        pcall(function() data.highlight:Destroy() end)
+    end
+    TrinketESP.TrackedObjects = {}
+end
+
+local function ScanForTrinketESP()
+    if not TrinketESP.Enabled then return end
+    local count = 0
+
+    -- Workspace direct children
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if not TrinketESP.Enabled then return end
+        if TrinketSet[obj.Name] then
+            CreateTrinketESP(obj)
+        end
+        count = count + 1
+        if count % 100 == 0 then task.wait() end
+    end
+
+    -- Loot folders
+    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetChildren()) do
+                if not TrinketESP.Enabled then return end
+                if TrinketSet[obj.Name] then
+                    CreateTrinketESP(obj)
+                end
+                count = count + 1
+                if count % 100 == 0 then task.wait() end
+            end
+        end
+    end
+end
+
+local function SetupESPListeners()
+    for _, conn in ipairs(TrinketESP.FolderConns) do conn:Disconnect() end
+    TrinketESP.FolderConns = {}
+    if TrinketESP.WorkspaceConn then
+        TrinketESP.WorkspaceConn:Disconnect()
+        TrinketESP.WorkspaceConn = nil
+    end
+
+    TrinketESP.WorkspaceConn = workspace.ChildAdded:Connect(function(child)
+        if TrinketSet[child.Name] then
+            task.delay(0.1, function() CreateTrinketESP(child) end)
+        end
+        for _, name in ipairs(LOOT_FOLDER_NAMES) do
+            if child.Name == name then
+                local conn = child.ChildAdded:Connect(function(obj)
+                    if TrinketSet[obj.Name] then
+                        task.delay(0.1, function() CreateTrinketESP(obj) end)
+                    end
+                end)
+                table.insert(TrinketESP.FolderConns, conn)
+                break
+            end
+        end
+    end)
+
+    for _, folderName in ipairs(LOOT_FOLDER_NAMES) do
+        local folder = workspace:FindFirstChild(folderName)
+        if folder then
+            local conn = folder.ChildAdded:Connect(function(child)
+                if TrinketSet[child.Name] then
+                    task.delay(0.1, function() CreateTrinketESP(child) end)
+                end
+            end)
+            table.insert(TrinketESP.FolderConns, conn)
+        end
+    end
+end
+
+local function StartTrinketESP()
+    SetupESPListeners()
+    task.spawn(ScanForTrinketESP)
+
+    -- Periodic rescan for ESP
+    if TrinketESP.ScanThread then pcall(task.cancel, TrinketESP.ScanThread) end
+    TrinketESP.ScanThread = task.spawn(function()
+        while TrinketESP.Enabled do
+            task.wait(10)
+            if TrinketESP.Enabled then task.spawn(ScanForTrinketESP) end
+        end
+    end)
+end
+
+local function StopTrinketESP()
+    TrinketESP.Enabled = false
+    if TrinketESP.ScanThread then pcall(task.cancel, TrinketESP.ScanThread); TrinketESP.ScanThread = nil end
+    for _, conn in ipairs(TrinketESP.FolderConns) do conn:Disconnect() end
+    TrinketESP.FolderConns = {}
+    if TrinketESP.WorkspaceConn then TrinketESP.WorkspaceConn:Disconnect(); TrinketESP.WorkspaceConn = nil end
+    RemoveAllTrinketESP()
 end
 
 -- UI in AutoFarm tab
@@ -5328,7 +5584,7 @@ TrinketGroup:AddSlider("TrinketScanInterval", {
 
 TrinketGroup:AddSlider("TrinketScanRadius", {
     Text = "Scan Radius",
-    Default = 100,
+    Default = 200,
     Min = 20,
     Max = 500,
     Rounding = 0,
@@ -5342,9 +5598,22 @@ TrinketGroup:AddToggle("TrinketTeleport", {
     Callback = function(v) AutoTrinket.TeleportToTrinket = v end
 })
 
-TrinketGroup:AddLabel("Event-driven: hooks ChildAdded on loot folders.")
-TrinketGroup:AddLabel("Preloads trinkets already in workspace on enable.")
-TrinketGroup:AddLabel("Fallback scan every N seconds (configurable).")
+TrinketGroup:AddToggle("TrinketESPToggle", {
+    Text = "Trinket ESP",
+    Default = false,
+    Callback = function(v)
+        TrinketESP.Enabled = v
+        if v then
+            StartTrinketESP()
+        else
+            StopTrinketESP()
+        end
+    end
+})
+
+TrinketGroup:AddLabel("Event-driven pickup with ChildAdded hooks.")
+TrinketGroup:AddLabel("Spams PickUp remote for reliability.")
+TrinketGroup:AddLabel("ESP shows color-coded trinkets in world.")
 
 -- Theme
 local ThemeTab = Window:AddTab("Theme")
